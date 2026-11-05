@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K05 Linux 内核调试与追踪</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item active" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">K05</span><h1>Linux 内核调试与追踪</h1><p class="ch-en">printk、ftrace、tracepoint、kprobe、perf、pstore</p></div>
+<p class="lead">先能看见，再谈改；先能量化，再谈优化。</p>
+<figure>
+<img src="../assets/k05_trace.png" alt="图 K5-1" width="1080">
+<figcaption><b>图 K5-1</b><span>六种追踪手段的特点与适用场景</span></figcaption>
+</figure>
+<h2>5.1 六件套怎么选</h2>
+<div class="tbl"><table>
+<thead><tr><th>手段</th><th>特点</th><th>适用</th></tr></thead><tbody>
+<tr><td>printk / dmesg</td><td>最土但最稳</td><td>早期启动、panic 前</td></tr>
+<tr><td>ftrace</td><td>函数级追踪，function_graph 看调用链</td><td>路径确认</td></tr>
+<tr><td>tracepoint</td><td>静态埋点，开销低</td><td>稳定观测点</td></tr>
+<tr><td>kprobe</td><td>动态插桩，可读写寄存器</td><td>任意函数入口/返回</td></tr>
+<tr><td>perf</td><td>采样与硬件计数器</td><td>热点与频率</td></tr>
+<tr><td>pstore</td><td>崩溃后保留日志到 flash</td><td>重启后取证</td></tr>
+</tbody></table></div>
+<h2>5.2 一条实用的排查顺序</h2>
+<ol><li><code>dmesg</code> 先定位“在哪个阶段出的问题”。</li><li><code>ftrace</code> 确认调用路径（<code>function_graph</code> 看谁调了谁）。</li><li><code>kprobe</code> 抓参数与返回值，确认数值。</li><li><code>perf</code> 量化开销，判断能不能长期开。</li></ol>
+<div class="code">
+<div class="code-title">ftrace 与 kprobe 的最小用法</div>
+<pre><code>cd /sys/kernel/tracing
+echo function_graph &gt; current_tracer
+echo &#x27;do_sys_open&#x27; &gt; set_graph_function
+cat trace
+ 
+echo &#x27;p:myopen do_sys_open&#x27; &gt;&gt; kprobe_events
+echo 1 &gt; events/kprobes/myopen/enable</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>内核 hook 类工程（M03–M05）几乎都要走这条链：先确认 hook 点选对了，再确认改的字节正确，最后才谈稳定性与隐藏。</div></aside>
+<h2>5.3 本章自测</h2>
+<ul><li>ftrace 与 kprobe 的区别是什么？</li><li>为什么 pstore 对崩溃取证特别有用？</li><li>perf 采样能告诉你什么、不能告诉你什么？</li><li>如果 dmesg 里什么都看不到，你的下一步是什么？</li></ul>
+<h2>5.4 深入：ftrace 的 function_graph 怎么读</h2>
+<p><code>function_graph</code> 的输出是一棵树：缩进表示调用深度，<code>|</code> 表示还在同一层，每行末尾的 <code>{ }</code> 或 <code>;</code> 表示这是一个调用点。看懂缩进，就看懂了调用链。</p>
+<div class="code">
+<div class="code-title">一段典型的 function_graph 输出</div>
+<pre><code> 0)               |  do_sys_open() {
+ 0)               |    getname_flags() {
+ 0)   0.512 us    |      kmem_cache_alloc();
+ 0)   2.104 us    |    }
+ 0)               |    do_filp_open() {
+ 0)  12.338 us    |    }
+ 0)  18.772 us    |  }</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>5.5 实战：定位“谁在频繁调用某个函数”</h2>
+<ol><li>打开 <code>function</code> tracer 或 <code>function_graph</code>。</li><li>设置 <code>set_ftrace_filter</code> 只保留目标函数（减少开销）。</li><li>跑一段时间，读 <code>trace</code>。</li><li>看调用者（function_graph 的父节点）与调用频率。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>性能提示：<code>function</code> tracer 的开销比 <code>function_graph</code> 小得多。先用它做“有没有被调用”的判断，再用 graph 看“谁调的”，效率更高。</div></aside>
+<h2>5.6 原理推演：为什么“静态埋点”比“动态插桩”便宜</h2>
+<p>tracepoint 是编译期就埋好的：调用点直接是一个函数调用或跳转，没有“替换指令”“处理断点”的开销。而 kprobe 需要在运行时替换指令、在异常里执行回调，成本高一个数量级。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>开销</th><th>灵活性</th></tr></thead><tbody>
+<tr><td>tracepoint</td><td>低</td><td>只能用已有埋点</td></tr>
+<tr><td>kprobe</td><td>中高</td><td>任意位置</td></tr>
+<tr><td>ftrace function</td><td>中</td><td>函数级</td></tr>
+<tr><td>perf 采样</td><td>低</td><td>统计而非明细</td></tr>
+</tbody></table></div>
+<p>所以“能先用 tracepoint 就用 tracepoint”。只有当已有埋点不够用时，才上 kprobe。</p>
+<h2>5.7 数据细节：一次 kprobe 的执行路径</h2>
+<div class="code">
+<div class="code-title">简化路径</div>
+<pre><code>1. 命中被替换的指令（BRK 或跳转）
+2. 进入 kprobe 异常处理
+3. 保存现场（pt_regs）
+4. 调用 pre_handler
+5. 单步执行原指令（临时恢复）
+6. 调用 post_handler
+7. 恢复并继续</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>注意第 5 步：kprobe 必须“单步执行原指令”才能继续。所以每次命中都有一次单步开销——这就是它比 tracepoint 贵的原因。</p>
+<h2>5.8 深入：trace 文件的读取姿势</h2>
+<p><code>trace</code> 文件是一个环形缓冲区的快照。读它有两个坑：<strong>读的时候会阻塞写入</strong>、<strong>读太快会丢数据</strong>。</p>
+<div class="tbl"><table>
+<thead><tr><th>读取方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
+<tr><td>cat trace</td><td>简单</td><td>会暂停记录</td></tr>
+<tr><td>trace_pipe</td><td>流式，不阻塞</td><td>只能读一次</td></tr>
+<tr><td>per_cpu/cpuN/trace</td><td>分核读</td><td>要自己合并</td></tr>
+</tbody></table></div>
+<p>需要“持续观测”时用 <code>trace_pipe</code>；需要“事后分析”时用 <code>trace</code>。混用会丢数据。</p>
+<h2>5.9 深入：为什么 filter 能大幅降低开销</h2>
+<p>ftrace 的过滤是在“记录之前”做的：不匹配的调用根本不进入缓冲区。所以“只记录我关心的那一个函数”与“记录全部”在开销上差几个数量级。</p>
+<div class="code">
+<div class="code-title">设置过滤</div>
+<pre><code>echo &#x27;do_sys_open&#x27; &gt; set_ftrace_filter
+echo &#x27;vfs_*&#x27; &gt;&gt; set_ftrace_filter        # 支持通配
+echo function &gt; current_tracer</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>5.10 实战：定位“谁在频繁打开文件”</h2>
+<ol><li>开 <code>function_graph</code>，过滤 <code>do_sys_open</code>。</li><li>跑一段时间，读 trace。</li><li>看调用的父节点（谁调的）与频率。</li><li>如果需要进程信息，配合 <code>set_ftrace_pid</code>。</li></ol>
+</article>
+<div class="pager"><a href="k04-file.html"><span class="dir">上一讲</span>K04 VFS、文件系统与 procfs</a><a href="k06-image.html" style="text-align:right"><span class="dir">下一讲</span>K06 BTF、vmlinux 与内核类型</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

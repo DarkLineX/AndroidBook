@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F10 Frida 线程结构体处理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item active" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F10</span><h1>Frida 线程结构体处理</h1><p class="ch-en">bionic pthread_internal_t、start_routine、libc decoy、pthread list 清洗</p></div>
+<p class="lead">每个线程在 TLS 顶端都挂着一个结构体，里面写着它是怎么来的。</p>
+<h2>10.1 结构体里的关键字段</h2>
+<figure>
+<img src="../assets/f_f10.png" alt="图 F10-1" width="1080">
+<figcaption><b>图 F10-1</b><span>pthread_internal_t 的字段与要洗干净的四处</span></figcaption>
+</figure>
+<div class="code">
+<div class="code-title">bionic pthread_internal_t（节选）</div>
+<pre><code>struct pthread_internal_t {
+  pthread_internal_t* next;
+  pthread_internal_t* prev;
+  pthread_t tid;
+  pid_t tid;
+  void* (*start_routine)(void*);   // 线程入口
+  void* start_routine_arg;
+};</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>10.2 检测原理</h2>
+<p>遍历所有线程，检查 <code>start_routine</code> 指向哪里。正常的 <code>start_routine</code> 一定落在 libc 或已知 so 内；如果它落在一段匿名可执行映射里，那就很可疑了。</p>
+<p>另一个入口是 TLS 里的 libc decoy 字段（例如全局线程链表），顺着链表就能枚举所有线程，绕开 <code>/proc</code> 遍历。</p>
+<h2>10.3 要洗干净的四处</h2>
+<div class="tbl"><table>
+<thead><tr><th>目标</th><th>做法</th><th>风险</th></tr></thead><tbody>
+<tr><td>pthread list</td><td>从全局链表摘掉自己的节点</td><td>写错就崩在下一个遍历者手里</td></tr>
+<tr><td>start_routine</td><td>改成看起来像 libc 的地址</td><td>被反查会露馅</td></tr>
+<tr><td>comm</td><td>线程名规范化（F08）</td><td>只能骗过粗查</td></tr>
+<tr><td>栈与 TLS</td><td>让栈落在正常 mmap 区</td><td>贴太近 agent 就露</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>改链表是双刃剑：先备份、再改、后校验。务必在“没有其他线程正在遍历”的时机动手，否则就是给自己埋一个随机崩溃。</div></aside>
+<h2>10.4 本章自测</h2>
+<ul><li>pthread_internal_t 里哪个字段最能暴露来源？</li><li>除了遍历 /proc，还有什么方式能枚举线程？</li><li>改链表前必须做哪三件事？</li><li>为什么“栈地址”也是线索？</li></ul>
+<h2>10.5 深入：TLS 是怎么找到 pthread_internal_t 的</h2>
+<p>在 bionic 里，TLS 的布局是：线程指针（TP）指向 <code>TLS_SLOT_SELF</code>，而 <code>pthread_internal_t</code> 就在 TP 附近（具体偏移由 <code>__get_tls()</code> 与结构布局决定）。所以“拿到 TP 就能拿到结构体”。</p>
+<div class="code">
+<div class="code-title">拿 TP 的方式（示意）</div>
+<pre><code>// aarch64: TP 在 tpidr_el0
+register void* tp asm(&quot;tpidr_el0&quot;);
+auto self = *(pthread_internal_t**)((char*)tp - TLS_OFFSET);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>10.6 实战：检测“start_routine 落在匿名段”</h2>
+<ol><li>遍历所有线程，读 <code>start_routine</code>。</li><li>在 maps 里查这个地址属于哪一段。</li><li>如果该段是“匿名 + 可执行”，就是可疑项。</li><li>排除 JIT 缓存等已知合法匿名段。</li></ol>
+<h2>10.7 原理推演：为什么“线程结构体”能暴露来源</h2>
+<p>因为它记录了“这个线程是怎么被创建的”——<code>start_routine</code> 指向创建时传入的函数地址。正常的线程入口在 libc 或业务 so 里；注入的线程入口在你的匿名映射里。这个差异无法用“改名”消除。</p>
+<div class="tbl"><table>
+<thead><tr><th>字段</th><th>正常值</th><th>注入后</th></tr></thead><tbody>
+<tr><td>start_routine</td><td>libc / 已知 so</td><td>匿名段</td></tr>
+<tr><td>栈地址</td><td>常规 mmap 区</td><td>可能贴着 agent</td></tr>
+<tr><td>tid</td><td>递增</td><td>可能异常</td></tr>
+<tr><td>comm</td><td>业务命名</td><td>框架默认名</td></tr>
+</tbody></table></div>
+<p>所以“洗干净”的本质是：让这四个字段都落在正常范围内。其中最难的是 <code>start_routine</code>——因为它是真实地址，不能随便编。</p>
+<h2>10.8 数据细节：TLS 偏移的取法</h2>
+<div class="code">
+<div class="code-title">在 aarch64 上拿 pthread_internal_t</div>
+<pre><code>// TP 寄存器（tpidr_el0）指向 TLS 块
+// bionic 里 pthread_internal_t 就在 TP 附近
+// 具体偏移由 __get_tls() 的实现决定，随版本变化
+register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>10.9 深入：为什么“栈地址”也是线索</h2>
+<p>线程栈是从 mmap 区分配的，正常情况下会落在“常规匿名映射区”。而注入的线程，栈可能紧贴着 agent 的映射，或者落在一个不常见的高地址——这两种都会在“栈地址分布”上体现出来。</p>
+<div class="tbl"><table>
+<thead><tr><th>观察</th><th>正常</th><th>可疑</th></tr></thead><tbody>
+<tr><td>栈地址范围</td><td>常规 mmap 区</td><td>贴近 agent</td></tr>
+<tr><td>栈大小</td><td>1MB 左右</td><td>自定义大小</td></tr>
+<tr><td>相邻映射</td><td>其他栈</td><td>agent 段</td></tr>
+</tbody></table></div>
+<p>检测方只要遍历所有线程、读它们的栈指针、看落在哪个 VMA 里，就能得到一张“栈分布图”。这张图上的离群点，就是可疑线程。</p>
+<h2>10.10 深入：libc decoy 是什么</h2>
+<p>bionic 在 TLS 附近维护了一些“看起来像全局变量”的字段（例如线程链表头）。它们的作用本来是给 libc 自己用的，但因为位置固定、语义明确，就成了“枚举线程的旁路入口”。</p>
+<div class="code">
+<div class="code-title">思路示意</div>
+<pre><code>// 找到 libc 里的线程链表头（通过符号或特征）
+// 顺着 next 指针遍历，就能拿到所有 pthread_internal_t
+// 这条路径不经过 /proc，也不产生系统调用</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>所以“洗链表”不只是为了“骗过 /proc 遍历”，也是为了“骗过这种旁路枚举”。两条路径都要处理，才算真的干净。</p>
+<h2>10.11 实战：改造前后的自检</h2>
+<div class="code">
+<div class="code-title">三查</div>
+<pre><code>1. 遍历 /proc/self/task，看有没有异常线程
+2. 走 libc 的线程链表，看节点数是否与 /proc 一致
+3. 检查每个线程的 start_routine 落在哪一段</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>第 2 步最关键：如果两条路径数出来的线程数不一致，说明你的“洗链表”把某一方骗过去了，但没有把两方都骗过去——这种不一致本身就是最强的检测信号。</div></aside>
+</article>
+<div class="pager"><a href="f09-relocation.html"><span class="dir">上一讲</span>F09 Frida 自定义 linker</a><a href="f11-maps.html" style="text-align:right"><span class="dir">下一讲</span>F11 当前工程隐藏与兼容处理总表</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

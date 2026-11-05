@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A02 附录 B · 术语表</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item active" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">A02</span><h1>附录 B · 术语表</h1><p class="ch-en">中英对照与一句话解释</p></div>
+<p class="lead">遇到不认识的词，先回来查。</p>
+<div class="tbl"><table>
+<thead><tr><th>术语</th><th>全称 / 中文</th><th>一句话解释</th></tr></thead><tbody>
+<tr><td>AVB</td><td>Android Verified Boot</td><td>启动镜像的签名校验链</td></tr>
+<tr><td>VBMETA</td><td>vbmeta 分区</td><td>存放 AVB 元数据与签名</td></tr>
+<tr><td>TEE</td><td>Trusted Execution Environment</td><td>独立安全世界</td></tr>
+<tr><td>GKI</td><td>Generic Kernel Image</td><td>通用内核镜像，要求 KMI 一致</td></tr>
+<tr><td>KMI</td><td>Kernel Module Interface</td><td>模块与内核的符号接口</td></tr>
+<tr><td>KPM</td><td>Kernel Patch Module</td><td>自带 loader 的内核模块</td></tr>
+<tr><td>BTF</td><td>BPF Type Format</td><td>精简内核类型信息</td></tr>
+<tr><td>CO-RE</td><td>Compile Once Run Everywhere</td><td>基于 BTF 的跨版本方案</td></tr>
+<tr><td>VMA</td><td>Virtual Memory Area</td><td>一段连续虚拟内存区间</td></tr>
+<tr><td>PTE</td><td>Page Table Entry</td><td>页表项</td></tr>
+<tr><td>GUP</td><td>get_user_pages</td><td>内核固定用户页的接口</td></tr>
+<tr><td>CFI</td><td>Control Flow Integrity</td><td>控制流完整性</td></tr>
+<tr><td>BTI</td><td>Branch Target Identification</td><td>ARM64 间接跳转目标校验</td></tr>
+<tr><td>PAC</td><td>Pointer Authentication</td><td>指针签名，防篡改</td></tr>
+<tr><td>ART</td><td>Android Runtime</td><td>Android 的 Java 运行时</td></tr>
+<tr><td>JVMTI</td><td>JVM Tool Interface</td><td>运行时的调试与观测接口</td></tr>
+<tr><td>ClassLoader</td><td>类加载器</td><td>决定类从哪来</td></tr>
+<tr><td>dexElements</td><td>dex 数组</td><td>类查找的搜索路径</td></tr>
+<tr><td>SELinux</td><td>Security-Enhanced Linux</td><td>强制访问控制</td></tr>
+<tr><td>AVC</td><td>Access Vector Cache</td><td>SELinux 的判定与告警入口</td></tr>
+<tr><td>Binder</td><td>Android IPC</td><td>跨进程调用的统一通道</td></tr>
+<tr><td>Stalker</td><td>Frida 的跟踪引擎</td><td>指令级可观测</td></tr>
+</tbody></table></div>
+<h2>B.1 三个容易混的概念</h2>
+<ul><li><strong>root 与解锁 bootloader</strong>：前者是权限，后者是允许你刷机。两件事互相独立。</li><li><strong>DAC 与 MAC</strong>：前者看 uid，root 能绕；后者看 domain，root 绕不了。</li><li><strong>hook 与 patch</strong>：hook 是运行时拦截，patch 是改文件。前者可撤回，后者不可。</li></ul>
+<h2>B.2 按主题分组的术语</h2>
+<div class="tbl"><table>
+<thead><tr><th>主题</th><th>术语</th></tr></thead><tbody>
+<tr><td>启动</td><td>BootROM、abl、AVB、vbmeta、dm-verity、init、zygote</td></tr>
+<tr><td>运行时</td><td>ART、dex、ArtMethod、ClassLoader、JIT、AOT、deopt</td></tr>
+<tr><td>内核</td><td>task_struct、VMA、PTE、TLB、cred、KPM、BTF、KASLR</td></tr>
+<tr><td>安全</td><td>TEE、Keymaster、attestation、SELinux、AVC、CFI、BTI、PAC</td></tr>
+<tr><td>注入</td><td>ptrace、Zygisk、LSPlant、trampoline、gating</td></tr>
+</tbody></table></div>
+<h2>B.3 五个最容易混淆的对比</h2>
+<div class="tbl"><table>
+<thead><tr><th>对比</th><th>区别</th></tr></thead><tbody>
+<tr><td>euid vs fsuid</td><td>前者是“身份”，后者是“文件访问用的身份”</td></tr>
+<tr><td>pid vs tgid</td><td>前者是线程 id，后者是进程 id</td></tr>
+<tr><td>RSS vs PSS</td><td>前者算全部驻留页，后者按共享比例均摊</td></tr>
+<tr><td>DAC vs MAC</td><td>前者看 uid，后者看域与类型</td></tr>
+<tr><td>hook vs patch</td><td>前者运行时拦截，后者改文件</td></tr>
+</tbody></table></div>
+<h2>B.4 一句话记住每个部分</h2>
+<div class="tbl"><table>
+<thead><tr><th>部分</th><th>一句话</th></tr></thead><tbody>
+<tr><td>第一部</td><td>系统怎么跑起来，检测点在哪</td></tr>
+<tr><td>第二部</td><td>内核的数据结构与观测手段</td></tr>
+<tr><td>第三部</td><td>Frida 的机制与痕迹</td></tr>
+<tr><td>第四部</td><td>在内核里做 hook 的五种武器</td></tr>
+<tr><td>第五部</td><td>模块化方案的工程细节与验证</td></tr>
+</tbody></table></div>
+<h2>B.5 五个“一词多义”的坑</h2>
+<div class="tbl"><table>
+<thead><tr><th>词</th><th>可能的含义</th><th>怎么区分</th></tr></thead><tbody>
+<tr><td>hook</td><td>API hook / 事件回调 / git hook</td><td>看上下文</td></tr>
+<tr><td>patch</td><td>二进制补丁 / 代码补丁 / 热修复</td><td>看对象</td></tr>
+<tr><td>沙箱</td><td>SELinux 沙箱 / 应用沙箱 / 分析沙箱</td><td>看层级</td></tr>
+<tr><td>映射</td><td>内存映射 / 符号映射 / 端口映射</td><td>看域</td></tr>
+<tr><td>代理</td><td>Binder 代理 / 网络代理 / 调试代理</td><td>看协议</td></tr>
+</tbody></table></div>
+</article>
+<div class="pager"><a href="a01.html"><span class="dir">上一讲</span>A01 附录 A · 全书速查表</a><a href="a03.html" style="text-align:right"><span class="dir">下一讲</span>A03 附录 C · 学习路线与实验环境</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

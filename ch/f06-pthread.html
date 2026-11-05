@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F06 Frida 默认 Hook</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item active" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F06</span><h1>Frida 默认 Hook</h1><p class="ch-en">pthread registry、module registry、signal/sigaction、ExitMonitor、child gating</p></div>
+<p class="lead">agent 一加载，就有一批“基础设施级”的 hook 被注册——它们既是能力，也是痕迹。</p>
+<h2>6.1 五项默认设施</h2>
+<figure>
+<img src="../assets/f_f06.png" alt="图 F6-1" width="1080">
+<figcaption><b>图 F6-1</b><span>五项默认 hook 与它们各自的痕迹</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>设施</th><th>作用</th><th>痕迹</th></tr></thead><tbody>
+<tr><td>pthread registry</td><td>记录所有线程</td><td>线程链表多出节点</td></tr>
+<tr><td>module registry</td><td>记录已加载模块</td><td>与 linker 账本不一致</td></tr>
+<tr><td>signal / sigaction</td><td>接管信号，保证崩溃可捕获</td><td>信号处理函数被替换</td></tr>
+<tr><td>ExitMonitor</td><td>监控进程退出</td><td>atexit 相关 hook</td></tr>
+<tr><td>child gating</td><td>拦截 fork/exec</td><td>fork 返回路径被改</td></tr>
+</tbody></table></div>
+<h2>6.2 为什么这五项恰好是检测重点</h2>
+<p>因为它们是“无论你写什么脚本都会发生”的副作用。检测方不需要知道你在 hook 什么，只要发现这五处之一异常，就足以怀疑。</p>
+<h2>6.3 两条路：关掉，或自建</h2>
+<ol><li><strong>关掉</strong>：牺牲能力换安静。比如不做 child gating，就不拦子进程。</li><li><strong>自建最小实现</strong>：只实现你需要的那一小部分，不加载整套 Gum。这是工程上更彻底的方案（F09）。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>取舍原则：先问“我真的需要这个能力吗”。大多数场景只需要“在某个函数上挂一次”，根本用不到线程注册表与信号接管。</div></aside>
+<h2>6.4 本章自测</h2>
+<ul><li>五项默认设施分别解决什么问题？</li><li>为什么说它们“无论写什么脚本都会发生”？</li><li>如果只需要 hook 一个函数，最小实现应该包含什么？</li><li>child gating 关掉后会失去什么能力？</li></ul>
+<h2>6.5 深入：module registry 与 linker 账本的差异</h2>
+<p>Frida 自己维护一份“已加载模块”的列表，用来支持 <code>Module.findBaseAddress</code> 之类的 API。这份列表来自 linker 的遍历，但它是<strong>快照</strong>——如果之后有新的 so 加载，两份账本就会不一致。</p>
+<div class="tbl"><table>
+<thead><tr><th>情况</th><th>module registry</th><th>linker solist</th></tr></thead><tbody>
+<tr><td>正常加载</td><td>有</td><td>有</td></tr>
+<tr><td>自行 mmap 加载</td><td>无</td><td>无</td></tr>
+<tr><td>运行时 dlopen</td><td>可能滞后</td><td>有</td></tr>
+</tbody></table></div>
+<h2>6.6 实战：怎么判断“某个 so 是不是被 Frida 记录过”</h2>
+<div class="code">
+<div class="code-title">对比两份账本</div>
+<pre><code>// Frida 侧
+Process.enumerateModules().map(m =&gt; m.path)
+ 
+// 系统侧
+// 遍历 /proc/self/maps 里所有 .so 路径，去重</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>如果系统侧有、Frida 侧没有，说明这个 so 是“后加载”的，或者 Frida 的列表没刷新。这个小差异本身也是一个可用于检测的信号。</div></aside>
+<h2>6.7 原理推演：为什么“默认 hook”是设计选择而非疏忽</h2>
+<p>Frida 的目标是“让脚本作者不用关心底层”。要做到这一点，它必须接管信号（否则崩溃就丢了）、记录线程（否则 pause/resume 做不到）、记录模块（否则 findModule 做不到）。这些能力都有代价，但去掉它们，可用性会大幅下降。</p>
+<div class="tbl"><table>
+<thead><tr><th>能力</th><th>依赖的 hook</th><th>去掉后的后果</th></tr></thead><tbody>
+<tr><td>崩溃捕获</td><td>sigaction</td><td>看不到崩溃</td></tr>
+<tr><td>线程控制</td><td>pthread registry</td><td>无法暂停/恢复</td></tr>
+<tr><td>模块查询</td><td>module registry</td><td>API 失效</td></tr>
+</tbody></table></div>
+<p>所以“低痕迹”方案的本质，是“自己实现一个更小的子集”，而不是“让 Frida 变安静”。</p>
+<h2>6.8 数据细节：最小实现需要多少代码</h2>
+<div class="tbl"><table>
+<thead><tr><th>功能</th><th>最小实现规模</th><th>说明</th></tr></thead><tbody>
+<tr><td>单点 inline hook</td><td>约 100 行</td><td>含跳转与蹦床</td></tr>
+<tr><td>Java 方法 hook</td><td>约 500 行</td><td>含 ArtMethod 处理</td></tr>
+<tr><td>自定义加载 so</td><td>约 800 行</td><td>含重定位</td></tr>
+<tr><td>完整替代 Frida</td><td>数万行</td><td>不现实</td></tr>
+</tbody></table></div>
+<p>结论：不要试图替代 Frida，而是“裁剪出你真正需要的那一小块”。</p>
+<h2>6.9 深入：signal 接管为什么必须“链式”</h2>
+<p>因为 App 自己可能也注册了信号处理（比如崩溃收集 SDK）。如果你直接替换，就把它的逻辑吃掉了——表现为“崩溃收集失效”或“某些功能异常”。</p>
+<div class="tbl"><table>
+<thead><tr><th>做法</th><th>App 感知</th><th>风险</th></tr></thead><tbody>
+<tr><td>直接替换</td><td>能感知</td><td>吃掉业务逻辑</td></tr>
+<tr><td>链式调用</td><td>无感</td><td>需保存原 handler</td></tr>
+</tbody></table></div>
+<p>所以正确做法是：保存原 handler，在你的处理函数里先做自己的事，再调用原来的。</p>
+<h2>6.10 深入：ExitMonitor 的实现方式</h2>
+<p>它通常 hook <code>exit</code> / <code>_exit</code> / <code>abort</code> / <code>pthread_exit</code> 等函数，以及 <code>atexit</code> 注册链。目的是“在进程死之前，把消息发出去”。</p>
+<div class="code">
+<div class="code-title">为什么会漏</div>
+<pre><code>// 如果进程被 SIGKILL，任何 hook 都来不及跑
+// 所以 ExitMonitor 只能覆盖“正常退出”与“可捕获的异常”</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>6.11 实战：判断“默认 hook 是否被触发过”</h2>
+<div class="code">
+<div class="code-title">反查痕迹</div>
+<pre><code># 1. 线程链表里是否多了节点
+ls /proc/self/task | wc -l
+# 2. 信号处理是否被换（需要读内存，门槛较高）
+# 3. 模块列表是否与 maps 一致</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="f05-patch.html"><span class="dir">上一讲</span>F05 Frida server 与 Android SELinux</a><a href="f07-follow.html" style="text-align:right"><span class="dir">下一讲</span>F07 Frida Stalker 原理与修复</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

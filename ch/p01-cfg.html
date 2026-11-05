@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P01 二期主线：从编译原理到 VMP</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item active" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">P01</span><h1>二期主线：从编译原理到 VMP</h1><p class="ch-en">词法分析、CFG、IR 优化 → VMP 分析（转 IR）</p></div>
+<p class="lead">想读懂 VMP，先得知道“正常编译器把代码变成了什么”。</p>
+<h2>1.1 四步路线</h2>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>学什么</th><th>为什么</th></tr></thead><tbody>
+<tr><td>词法 / 语法</td><td>token、AST</td><td>看懂反编译输出的结构</td></tr>
+<tr><td>CFG</td><td>基本块、支配树</td><td>识别混淆打散的控制流</td></tr>
+<tr><td>IR 与优化</td><td>SSA、常量折叠、内联</td><td>理解“代码为什么变成这样”</td></tr>
+<tr><td>VMP 分析</td><td>handler 表、语义重建</td><td>把自定义字节码翻回 IR</td></tr>
+</tbody></table></div>
+<h2>1.2 为什么先学编译原理</h2>
+<p>VMP 的本质是“自己实现一个虚拟机”。它的 handler 分派、栈机模型、寄存器分配，全都是编译器教科书的反面。你只有先知道“正常长什么样”，才能认出“哪里不正常”。</p>
+<h2>1.3 一条练习路线</h2>
+<ol><li>用 Python 写一个玩具语言的 lexer + parser，输出 AST。</li><li>把 AST 转成三地址码（IR），画出 CFG。</li><li>实现两个优化：常量折叠、死代码消除。</li><li>读一个真实 VMP 样本的 dispatcher，试着还原 10 条指令的语义。</li><li>把还原结果写成 IR，再用自己的工具重新生成代码对比。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这条路线看起来“偏学术”，但它是唯一能让你在面对新 VMP 变种时“不慌”的路径。工具会过期，抽象能力不会。</div></aside>
+<h2>1.4 本章自测</h2>
+<ul><li>CFG 与基本块的关系是什么？</li><li>SSA 形式解决了什么问题？</li><li>VMP 与普通编译器的关系是什么？</li><li>为什么说“抽象能力不会过期”？</li></ul>
+<h2>1.5 深入：为什么要从“玩具编译器”开始</h2>
+<p>因为编译器是“把人类意图翻译成机器指令”的完整流程。你自己写一遍，就会对“指令为什么长这样”有肌肉记忆——这正是读 VMP 时最需要的东西。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>产出</th><th>对应能力</th></tr></thead><tbody>
+<tr><td>lexer</td><td>token 流</td><td>看懂字节码</td></tr>
+<tr><td>parser</td><td>AST</td><td>看懂结构</td></tr>
+<tr><td>IR</td><td>三地址码</td><td>看懂数据流</td></tr>
+<tr><td>优化</td><td>更简的 IR</td><td>识破混淆</td></tr>
+</tbody></table></div>
+<h2>1.6 原理推演：为什么 VMP 的本质是“换了一套指令集”</h2>
+<p>因为 VMP 把原本的 ARM64 指令翻译成“自定义字节码”，再由一个解释器（dispatcher）执行。对分析者来说，这就相当于“遇到了一门没见过的手写汇编”——你必须先学会它的指令语义。</p>
+<div class="tbl"><table>
+<thead><tr><th>层次</th><th>正常</th><th>VMP</th></tr></thead><tbody>
+<tr><td>指令集</td><td>ARM64</td><td>自定义字节码</td></tr>
+<tr><td>执行方式</td><td>CPU 直接执行</td><td>dispatcher 解释</td></tr>
+<tr><td>分析入口</td><td>反汇编即可</td><td>先逆 dispatcher</td></tr>
+</tbody></table></div>
+<p>所以“学编译原理”的价值就在这里：你已经知道“一个解释器大概长什么样”，于是能更快认出它的结构。</p>
+<h2>1.7 数据细节：一个 dispatcher 的典型结构</h2>
+<div class="code">
+<div class="code-title">概念结构</div>
+<pre><code>while (1) {
+    op = *pc++;
+    switch (op) {
+    case 0x01: /* add  */ ...; break;
+    case 0x02: /* load */ ...; break;
+    ...
+    }
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>优化的 VMP 不会用 switch，而是用“handler 表 + 间接跳转”，甚至每个 handler 都做了变形。但结构本质不变：取指 → 译码 → 执行。</p>
+<h2>1.8 深入：CFG 为什么是分析的起点</h2>
+<p>因为“控制流图”把“代码”变成了“图”：节点是基本块，边是跳转。有了图，才能谈“支配关系”“循环结构”“可达性”——这些是所有后续分析的基础。</p>
+<div class="tbl"><table>
+<thead><tr><th>概念</th><th>含义</th><th>用途</th></tr></thead><tbody>
+<tr><td>基本块</td><td>顺序执行的一段</td><td>分析单元</td></tr>
+<tr><td>支配树</td><td>谁能到达谁</td><td>识别循环</td></tr>
+<tr><td>可达性</td><td>能不能走到</td><td>死代码消除</td></tr>
+</tbody></table></div>
+<p>混淆（尤其是平坦化）的本质就是“破坏 CFG 的可读性”。所以反混淆的第一步永远是“把 CFG 重建出来”。</p>
+<h2>1.9 深入：IR 的三种常见形态</h2>
+<div class="code">
+<div class="code-title">从高到低</div>
+<pre><code>// 1. 三地址码
+t1 = a + b;  t2 = t1 * c;
+ 
+// 2. SSA（每个变量只赋值一次）
+t1_0 = a;  t2_0 = t1_0 + b;
+ 
+// 3. 字节码（栈机）
+load a; load b; add; load c; mul;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>VMP 的字节码通常是第三种（栈机）。所以“转 IR”往往意味着“栈机 → 三地址码”的翻译。</p>
+<h2>1.10 实战：一个最小的栈机解释器</h2>
+<div class="code">
+<div class="code-title">三十行就能跑</div>
+<pre><code>stack = []
+for op in code:
+    if op == &#x27;push&#x27;: stack.append(next_arg())
+    elif op == &#x27;add&#x27;:  b, a = stack.pop(), stack.pop(); stack.append(a+b)
+    elif op == &#x27;mul&#x27;:  b, a = stack.pop(), stack.pop(); stack.append(a*b)
+    elif op == &#x27;jmp&#x27;:  pc = next_arg()</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>写一遍这个，你对 VMP 的“恐惧感”会消失一大半——因为它真的就只是“取指、译码、执行”。</div></aside>
+</article>
+<div class="pager"><a href="d03.html"><span class="dir">上一讲</span>D03 Promon 类方案的对抗思路</a><a href="p02.html" style="text-align:right"><span class="dir">下一讲</span>P02 混淆与反混淆的基本盘</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

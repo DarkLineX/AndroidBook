@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 Android App 启动过程</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item active" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">05</span><h1>Android App 启动过程</h1><p class="ch-en">从 zygote 开始</p></div>
+<p class="lead">这一章是后面所有 Hook 内容的“地图”：知道每一步在哪，才知道能插在哪。</p>
+<h2>5.1 zygote 的准备工作</h2>
+<p>zygote 启动时做了三件影响深远的事：预加载 framework 的类（<code>preloaded-classes</code>）、预加载资源、启动一个 socket 服务端（<code>zygote</code>）。预加载让后续 fork 出的进程启动更快——因为类是共享的。</p>
+<p>这也是为什么“注入 zygote 就能影响所有 App”：所有 App 进程都是它的 fork 产物，继承它已经加载的一切。</p>
+<h2>5.2 一次启动的完整时序</h2>
+<figure>
+<img src="../assets/f05_app_launch.png" alt="图 5-1" width="1080">
+<figcaption><b>图 5-1</b><span>四列时序：zygote、system_server、ActivityThread、主线程</span></figcaption>
+</figure>
+<p>把这张图拆成六句话：</p>
+<ol><li>AMS 通过本地 socket 向 zygote 发请求，带上 uid、gid、seinfo、nice 等参数。</li><li>zygote fork 出子进程，子进程继承已加载的 framework。</li><li>子进程跑 <code>RuntimeInit.commonInit()</code>，设置默认异常处理、时区、DNS 等。</li><li>进入 <code>ActivityThread.main()</code>，创建主线程 Looper，开启消息循环。</li><li><code>attachApplication</code> 把 <code>ApplicationThread</code> 的 Binder 代理交给 AMS，AMS 从此可以回调这个进程。</li><li>AMS 回调 <code>bindApplication</code> → 创建 Application → <code>scheduleLaunchActivity</code> → onCreate/onResume。</li></ol>
+<h2>5.3 四个可以插手的点</h2>
+<div class="tbl"><table>
+<thead><tr><th>时机</th><th>能做什么</th><th>典型用途</th></tr></thead><tbody>
+<tr><td>fork 之后、specialize 之前</td><td>读模块目录、改配置</td><td>Zygisk pre-specialize</td></tr>
+<tr><td>bindApplication 前后</td><td>替换 Application、替换 ClassLoader</td><td>插件化、热修复</td></tr>
+<tr><td>ClassLoader 创建时</td><td>插入自定义 dex</td><td>模块加载</td></tr>
+<tr><td>Activity 启动前</td><td>改 Intent、改启动参数</td><td>自动化、埋点</td></tr>
+</tbody></table></div>
+<h2>5.4 为什么类加载是核心</h2>
+<p>Java 世界里，“类从哪来”由 ClassLoader 决定。App 的 <code>PathClassLoader</code> 里有一个 <code>dexElements</code> 数组，按顺序查找类。往这个数组里插一个 dex，就等于给你的代码开了一扇门——这也是热修复与模块化方案的共同基础（见 L04）。</p>
+<div class="code">
+<div class="code-title">观察类加载器（Frida 脚本片段）</div>
+<pre><code>Java.perform(() =&gt; {
+  const AT = Java.use(&#x27;android.app.ActivityThread&#x27;);
+  const app = AT.currentApplication();
+  const cl = app.getClassLoader();
+  console.log(&#x27;loader =&#x27;, cl);
+  const BaseDex = Java.use(&#x27;dalvik.system.BaseDexClassLoader&#x27;);
+  console.log(&#x27;dexPath =&#x27;, Java.cast(cl, BaseDex).getDexPathList());
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>现场经验：如果 hook 明明写对了却不生效，八成是“目标类还没被加载”。解决办法不是加 sleep，而是挂到 ClassLoader 的加载方法上，等它真正加载时再动手。</div></aside>
+<h2>5.5 本章自测</h2>
+<ul><li>zygote 预加载了哪三样东西？为什么这决定了它的战略价值？</li><li>bindApplication 与 attachApplication 的先后顺序是什么？各自能做什么？</li><li>为什么“往 dexElements 插一个 dex”能实现热修复？</li><li>如果目标类由另一个 ClassLoader 加载，<code>Java.use</code> 会失败吗？为什么？</li></ul>
+<h2>5.6 深入：Application 与 Activity 的创建顺序</h2>
+<p>很多人以为顺序是“先创建 Application，再创建 Activity”。这句话对，但不够精确：真正发生的是 <code>LoadedApk.makeApplication</code> 先被调用（可能由 <code>bindApplication</code> 触发），然后 <code>ActivityThread</code> 才通过 <code>Instrumentation.newActivity</code> 反射构造 Activity 实例。</p>
+<div class="code">
+<div class="code-title">顺序上的关键调用</div>
+<pre><code>// 1. 进程 attach 后，AMS 回调：
+bindApplication(packageName, appInfo, providers, ...)
+ 
+// 2. 内部：
+LoadedApk.makeApplication()   -&gt;  newApplication -&gt; attach(context)
+ 
+// 3. 启动 Activity 时：
+Instrumentation.newActivity(cl, className, intent)
+Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>5.7 ContentProvider 的“提前”陷阱</h2>
+<p>ContentProvider 的 <code>onCreate</code> 在 <code>Application.onCreate</code> <strong>之前</strong>执行。这意味着：如果你的 hook 逻辑依赖 Application 已初始化，但目标在 Provider 里就开始干活了，就会踩空。</p>
+<div class="tbl"><table>
+<thead><tr><th>时机</th><th>早于</th></tr></thead><tbody>
+<tr><td>ContentProvider.onCreate</td><td>Application.onCreate</td></tr>
+<tr><td>Application.attachBaseContext</td><td>Application.onCreate</td></tr>
+<tr><td>Activity.onCreate</td><td>Activity.onStart</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>实战意义：需要“尽早介入”的场景，应该挂 <code>bindApplication</code> 或 <code>attachBaseContext</code>，而不是等 <code>onCreate</code>。很多“hook 晚了”的问题，根源就在这个顺序。</div></aside>
+<h2>5.8 原理推演：为什么“fork + 写时复制”让启动变快</h2>
+<p>App 启动的瓶颈之一是“加载 framework”。如果每个 App 都独立加载一遍，代价是几百毫秒。zygote 的做法是：只加载一次，然后 fork。fork 复制的是页表（标记 COW），所以新进程“看起来”拥有全部已加载的类，但实际上共享同一份物理内存。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>加载开销</th><th>内存占用</th></tr></thead><tbody>
+<tr><td>每进程独立加载</td><td>数百毫秒</td><td>每进程一份</td></tr>
+<tr><td>zygote fork</td><td>接近 0</td><td>共享（COW）</td></tr>
+</tbody></table></div>
+<p>这也带来一个副作用：<strong>所有 App 进程的“已加载类”起点是一样的</strong>。所以“某个类在 App 里存在但 zygote 里不存在”这类判断，天然就是一个可用的检测维度。</p>
+<h2>5.9 数据细节：一个 App 启动期间的 Binder 调用</h2>
+<p>用 <code>frida-trace -i ioctl</code> 抓启动过程，会看到几十到上百次 Binder 事务。其中有几个是“必然出现”的：</p>
+<div class="tbl"><table>
+<thead><tr><th>调用</th><th>时机</th><th>用途</th></tr></thead><tbody>
+<tr><td>attachApplication</td><td>attach 后立刻</td><td>注册 ApplicationThread</td></tr>
+<tr><td>bindApplication</td><td>AMS 回调</td><td>创建 Application</td></tr>
+<tr><td>getPackageInfo</td><td>早期</td><td>读自身包信息</td></tr>
+<tr><td>checkPermission</td><td>按需</td><td>权限校验</td></tr>
+</tbody></table></div>
+<p>如果有人 hook 了这几个调用，就会在“启动的第一个 100ms 内”留下痕迹。这也是为什么“启动阶段”是检测与反检测的高频战场。</p>
+</article>
+<div class="pager"><a href="04.html"><span class="dir">上一讲</span>04 Android root 检测</a><a href="06-open.html" style="text-align:right"><span class="dir">下一讲</span>06 Android linker 启动过程</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

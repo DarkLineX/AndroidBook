@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L10 验证矩阵与工程交付</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item active" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">L10</span><h1>验证矩阵与工程交付</h1><p class="ch-en">基本 Hook、原方法、连续调用、冷启动、full GC、晚附加、tombstone、产物哈希</p></div>
+<p class="lead">能被重复验证的，才叫“做完了”。</p>
+<figure>
+<img src="../assets/l_l10.png" alt="图 L10-1" width="1080">
+<figcaption><b>图 L10-1</b><span>八项验证用例与判定标准</span></figcaption>
+</figure>
+<h2>10.1 八项用例</h2>
+<div class="tbl"><table>
+<thead><tr><th>用例</th><th>判定标准</th><th>手段</th></tr></thead><tbody>
+<tr><td>基本 Hook</td><td>目标方法被替换</td><td>日志 + 返回值</td></tr>
+<tr><td>原方法调用</td><td>call original 正常</td><td>对比未 hook 结果</td></tr>
+<tr><td>连续调用</td><td>高频不崩</td><td>10k 次压测</td></tr>
+<tr><td>冷启动</td><td>冷启后仍生效</td><td>强杀重启</td></tr>
+<tr><td>full GC</td><td>GC 后引用仍有效</td><td>多轮 System.gc()</td></tr>
+<tr><td>晚附加</td><td>运行中加载也生效</td><td>attach 后观察</td></tr>
+<tr><td>tombstone</td><td>崩溃有符号化栈</td><td>解析 tombstone</td></tr>
+<tr><td>产物哈希</td><td>构建可复现</td><td>记录并比对 sha256</td></tr>
+</tbody></table></div>
+<h2>10.2 交付物清单</h2>
+<ol><li><strong>源码</strong>：可编译，依赖明确。</li><li><strong>构建脚本</strong>：一条命令出产物。</li><li><strong>验证脚本</strong>：能自动跑完上面八项。</li><li><strong>基线数据</strong>：干净环境采的对照数据。</li><li><strong>已知限制清单</strong>：哪些版本不支持、哪些场景会失效。</li></ol>
+<p>少一样，下一个人就要重走一遍你走过的所有坑。这不只是“文档要求”，而是工程效率问题。</p>
+<h2>10.3 全书收束</h2>
+<p>五部 51 讲，从 boot.img 一路走到 KPM 与 LSPosed。回头看，主线只有三条：<strong>可信链</strong>（怎么验证）、<strong>运行链</strong>（怎么执行）、<strong>检测链</strong>（怎么发现）。所有技术都是在这三条线上的某个点做文章。</p>
+<blockquote>把地图画对，把实验做扎实，剩下的只是时间问题。</blockquote>
+<aside class="note"><span class="note-tag">要点</span><div>下一步：企业壳实战（DexProtect / Promon）与二期（编译原理 → VMP）。前者是“真实对手”，后者是“更深的抽象层”。两件事都会反复用到本书的全部内容。</div></aside>
+<h2>10.11 本章自测</h2>
+<ul><li>八项用例里，哪三项最容易被忽略？</li><li>交付物清单为什么必须有“已知限制”？</li><li>三条主线分别是什么？</li><li>如果让你给自己出一道综合题，你会选哪一个场景？</li></ul>
+<h2>10.4 深入：tombstone 怎么读</h2>
+<p>tombstone 是 Native 崩溃时系统生成的现场快照，里面有寄存器、调用栈、以及 maps。如果崩溃发生在 hook 之后，栈里往往能看到你的 agent 或蹦床的地址。</p>
+<div class="code">
+<div class="code-title">关键字段</div>
+<pre><code>pid / tid / signal        # 谁崩的、什么信号
+backtrace:                # 调用栈（有符号化最好）
+stack:                    # 栈内存
+memory near ...           # 相关内存</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>信号</th><th>含义</th><th>常见原因</th></tr></thead><tbody>
+<tr><td>SIGSEGV</td><td>段错误</td><td>空指针、越界、改错内存</td></tr>
+<tr><td>SIGILL</td><td>非法指令</td><td>跳到了数据、BTI 失败</td></tr>
+<tr><td>SIGABRT</td><td>主动 abort</td><td>断言失败、检测到异常</td></tr>
+</tbody></table></div>
+<h2>10.5 原理推演：为什么“验证矩阵”比“功能实现”更重要</h2>
+<p>因为功能实现是“一次性的”，验证矩阵是“可持续的”。没有矩阵，你无法判断“这次改动有没有破坏之前的能力”；有了矩阵，每次改动都能在几分钟内得到答案。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>有无矩阵</th><th>结果</th></tr></thead><tbody>
+<tr><td>开发期</td><td>无</td><td>靠记忆，容易回归</td></tr>
+<tr><td>开发期</td><td>有</td><td>每次改动可验证</td></tr>
+<tr><td>维护期</td><td>无</td><td>不敢改，越改越乱</td></tr>
+<tr><td>维护期</td><td>有</td><td>可持续迭代</td></tr>
+</tbody></table></div>
+<p>所以“矩阵”不是质量保证的附属品，而是工程可持续性的核心资产。</p>
+<h2>10.6 数据细节：一次完整回归的耗时</h2>
+<div class="tbl"><table>
+<thead><tr><th>项</th><th>耗时</th><th>可自动化</th></tr></thead><tbody>
+<tr><td>基本 Hook</td><td>秒级</td><td>是</td></tr>
+<tr><td>冷启动</td><td>10~30 秒</td><td>是</td></tr>
+<tr><td>full GC</td><td>10~20 秒</td><td>是</td></tr>
+<tr><td>tombstone 解析</td><td>秒级</td><td>是</td></tr>
+<tr><td>产物哈希</td><td>秒级</td><td>是</td></tr>
+</tbody></table></div>
+<p>整轮下来通常 1~2 分钟。这个成本完全可以放进 CI。</p>
+<h2>10.7 深入：为什么“冷启动”用例最容易被忽略</h2>
+<p>因为开发时通常“热启动”调试：进程还在，hook 已经挂上。而用户拿到的是“冷启动”——所有初始化都要从零走一遍，很多“依赖前一次状态”的逻辑就会失效。</p>
+<div class="tbl"><table>
+<thead><tr><th>场景</th><th>开发时</th><th>用户实际</th></tr></thead><tbody>
+<tr><td>进程状态</td><td>已存在</td><td>新建</td></tr>
+<tr><td>hook 时机</td><td>手动 attach</td><td>自动注入</td></tr>
+<tr><td>初始化顺序</td><td>跳过</td><td>完整走一遍</td></tr>
+</tbody></table></div>
+<p>所以“冷启动”必须作为独立用例，而且要在“完全退出进程”之后测。</p>
+<h2>10.8 深入：产物哈希为什么重要</h2>
+<p>因为它能回答“这次构建和上次构建，除了我改的那一行，还有没有别的变化”。没有哈希，你永远不知道“行为变了”是因为你的改动，还是因为构建环境变了。</p>
+<div class="code">
+<div class="code-title">记录与比对</div>
+<pre><code>sha256sum out/app-release.apk &gt; hash.txt
+# 下次构建后比对；不一致就先解释差异，再谈功能</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>10.9 实战：把八项用例写成脚本</h2>
+<div class="code">
+<div class="code-title">骨架</div>
+<pre><code>CASES = [case_basic, case_original, case_stress, case_cold,
+         case_gc, case_late_attach, case_tombstone, case_hash]
+for c in CASES:
+    ok = c(); print(c.__name__, &#x27;PASS&#x27; if ok else &#x27;FAIL&#x27;)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="l09-classloader.html"><span class="dir">上一讲</span>L09 侧信道与结构差分检测</a><a href="d01.html" style="text-align:right"><span class="dir">下一讲</span>D01 DexProtect 的检测逻辑拆解</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

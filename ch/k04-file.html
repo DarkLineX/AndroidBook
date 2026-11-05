@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K04 VFS、文件系统与 procfs</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item active" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">K04</span><h1>VFS、文件系统与 procfs</h1><p class="ch-en">fd、file、inode、mount namespace、seq_file、sysfs</p></div>
+<p class="lead">“看不见”有两种：真的没有，以及你的 namespace 里没有。</p>
+<h2>4.1 一次 open 的对象链</h2>
+<figure>
+<img src="../assets/k04_vfs.png" alt="图 K4-1" width="1080">
+<figcaption><b>图 K4-1</b><span>fd 表 → file → dentry/inode → super_block 的对象链</span></figcaption>
+</figure>
+<ol><li><strong>fd 表</strong>（<code>files_struct</code>）：进程级数组，fd → <code>struct file*</code>。</li><li><strong>struct file</strong>：一次打开实例，记录 <code>f_pos</code>、<code>f_flags</code>、<code>f_op</code>。</li><li><strong>dentry / inode</strong>：目录项与索引节点，权限、大小、<code>i_ino</code> 都在 inode 上。</li><li><strong>super_block / mount</strong>：文件系统实例与挂载点。</li></ol>
+<h2>4.2 procfs 与 sysfs 的写法</h2>
+<div class="tbl"><table>
+<thead><tr><th>接口</th><th>特点</th><th>注意</th></tr></thead><tbody>
+<tr><td>seq_file</td><td>大文件用 seq_printf 分段输出</td><td>一次 read 可能只拿一页</td></tr>
+<tr><td>sysfs</td><td>kobject 映射成目录，一属性一文件</td><td>写入要校验</td></tr>
+<tr><td>mount namespace</td><td>每个 ns 有自己的 mount 树</td><td>隐藏的主战场</td></tr>
+<tr><td>statx</td><td>返回 dev + inode + 更多属性</td><td>识别 bind 覆盖</td></tr>
+</tbody></table></div>
+<h2>4.3 为什么 mount namespace 是隐藏的战场</h2>
+<p>模块化方案替换系统文件，靠的是在目标进程的 namespace 里做 <code>mount --bind</code>。效果是：这个进程读文件看到新内容，别的进程看到旧的。</p>
+<p>破绽在于“身份”：<code>stat</code> 返回的 <code>st_dev</code> 与 <code>st_ino</code> 还是被覆盖文件的，而内容却是模块的。<strong>内容与身份不符</strong>，就是最硬的证据。</p>
+<div class="code">
+<div class="code-title">三条自查命令</div>
+<pre><code>cat /proc/self/mountinfo | grep -i bind
+stat -c &#x27;%d %i %s %n&#x27; /system/app/Foo/Foo.apk
+ls -l /proc/self/map_files/ | head</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.4 本章自测</h2>
+<ul><li>fd、file、inode 三者的关系是什么？</li><li>seq_file 为什么不能一次读完全部内容？</li><li>mount 覆盖留下了哪两个可查的破绽？</li><li>如果只改 inode 里的内容不改 inode 号，能被发现吗？</li></ul>
+<h2>4.5 深入：dentry cache 与路径解析</h2>
+<p>打开 <code>/a/b/c</code> 时，内核不会每次都从根目录逐级读磁盘——它先查 dentry cache（dcache）。命中就直接拿到 inode，未命中才走文件系统。这让路径解析非常快，也让“路径”变成了一种缓存视图。</p>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>缓存</th><th>失效时机</th></tr></thead><tbody>
+<tr><td>dentry</td><td>dcache</td><td>文件被删除/重命名</td></tr>
+<tr><td>inode</td><td>inode cache</td><td>引用计数归零</td></tr>
+<tr><td>page</td><td>page cache</td><td>内存压力、显式 drop</td></tr>
+</tbody></table></div>
+<h2>4.6 实战：为什么“删了文件但空间没释放”</h2>
+<p>因为还有进程持有这个文件的 fd。inode 的引用计数不为零，磁盘块就不会释放。<code>lsof +L1</code> 或遍历 <code>/proc/*/fd</code> 就能找到是谁占着。</p>
+<div class="code">
+<div class="code-title">找出被删除但仍被占用的文件</div>
+<pre><code>ls -l /proc/*/fd 2&gt;/dev/null | grep deleted
+# 或者：
+lsof +L1 2&gt;/dev/null | head</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>这个现象在“隐藏”场景里同样成立：一个被删除的 so 如果还被映射着，它在 maps 里仍然可见，且 <code>/proc/pid/map_files</code> 会指向一个已删除的 inode。</div></aside>
+<h2>4.7 原理推演：为什么“路径”不是“身份”</h2>
+<p>路径只是“从某个根出发的一串名字”，而身份是 <code>(dev, inode)</code> 这个二元组。两者可以不一致——bind mount、overlayfs、甚至符号链接，都能让同一个路径指向不同身份的文件。</p>
+<div class="tbl"><table>
+<thead><tr><th>机制</th><th>路径</th><th>身份</th></tr></thead><tbody>
+<tr><td>bind mount</td><td>同一路径</td><td>可能不同 inode</td></tr>
+<tr><td>overlayfs</td><td>合并视图</td><td>上层优先</td></tr>
+<tr><td>hard link</td><td>不同路径</td><td>同一 inode</td></tr>
+<tr><td>symlink</td><td>指向别处</td><td>解析后才是真身份</td></tr>
+</tbody></table></div>
+<p>检测方因此更信任 <code>(dev, inode)</code>，而不是路径。但方向要注意：<strong>bind mount 之后，`stat` 返回的是“被 bind 过来的源文件”的 dev/ino</strong>（通常落在 <code>/data</code> 所在文件系统），而不是原厂镜像里那个文件的 dev/ino。所以破绽不是“inode 没变”，而是“<strong>inode 变了、路径却没变</strong>”——拿同路径的官方固件文件一比，dev/ino 与内容哈希都对不上；再加上 <code>mountinfo</code> 里多出的 bind 记录，三处一起构成证据。</p>
+<h2>4.8 数据细节：mountinfo 的一行</h2>
+<div class="code">
+<div class="code-title">一行 mountinfo 的字段</div>
+<pre><code>36 25 0:32 / /system rw,relatime shared:1 - ext4 /dev/block/dm-2 rw
+│  │  │    │  │       │                             │
+│  │  │    │  │       │                             └ 源与挂载选项
+│  │  │    │  │       └ 文件系统类型
+│  │  │    │  └ 挂载点
+│  │  │    └ 根（子树）
+│  │  └ 主:次 设备号
+│  └ 父 mount id
+└ mount id</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.9 深入：为什么 seq_file 要“分段”</h2>
+<p>因为内核不能一次性分配“可能很大”的缓冲区。<code>seq_file</code> 的做法是：每次 <code>read</code> 只生成一页内容，下次从上次停的地方继续。这样内存占用固定，且支持任意大小的输出。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>内存占用</th><th>适用</th></tr></thead><tbody>
+<tr><td>一次性 buffer</td><td>与输出同大</td><td>小文件</td></tr>
+<tr><td>seq_file</td><td>一页</td><td>任意大小</td></tr>
+</tbody></table></div>
+<p>副作用：如果你在“两次 read 之间”改变了数据源，输出可能不一致。这是 <code>/proc</code> 类接口的固有问题。</p>
+<h2>4.10 深入：/proc/self 是什么</h2>
+<p>它是一个“魔法符号链接”，指向“当前进程”的目录。所以 <code>cat /proc/self/maps</code> 与 <code>cat /proc/&lt;你的pid&gt;/maps</code> 等价。这个设计让“读自己的信息”变得非常方便。</p>
+<div class="code">
+<div class="code-title">几个常用</div>
+<pre><code>/proc/self/maps       # 内存映射
+/proc/self/status     # 进程状态（含 TracerPid）
+/proc/self/fd         # 打开的文件
+/proc/self/task       # 所有线程
+/proc/self/mountinfo  # 挂载树</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.11 实战：判断“文件是否被 bind 覆盖”</h2>
+<div class="code">
+<div class="code-title">对比 inode</div>
+<pre><code>stat -c &#x27;%d %i&#x27; /system/app/Foo/Foo.apk
+# 与官方固件里的同一文件对比
+# 不一致 = 被覆盖过</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="k03-vector.html"><span class="dir">上一讲</span>K03 ARM64 异常、中断与信号</a><a href="k05-printk.html" style="text-align:right"><span class="dir">下一讲</span>K05 Linux 内核调试与追踪</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

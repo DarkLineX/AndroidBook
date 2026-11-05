@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K01 Linux 进程、线程与调度</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item active" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">K01</span><h1>Linux 进程、线程与调度</h1><p class="ch-en">task_struct、fork/clone/exec、runqueue、cgroup、cred</p></div>
+<p class="lead">内核眼里的“一个任务”长什么样，决定了你所有的 hook 手段能改到哪。</p>
+<h2>1.1 task_struct：内核的总账本</h2>
+<p>Linux 不区分“进程”和“线程”，它们都是 <code>task_struct</code>。区别只在共享了什么：同一线程组的任务共享 <code>mm</code>、<code>files</code>、<code>sighand</code>；进程则各有一份。所以“创建一个线程”在内核看来就是“clone 时带上 CLONE_VM | CLONE_FILES | CLONE_THREAD”。</p>
+<div class="tbl"><table>
+<thead><tr><th>字段</th><th>作用</th><th>为什么会关心它</th></tr></thead><tbody>
+<tr><td>mm / active_mm</td><td>用户地址空间</td><td>注入、脱壳、内存马都要碰</td></tr>
+<tr><td>tasks</td><td>全局双向链表，串起所有进程</td><td>遍历进程的最快方式</td></tr>
+<tr><td>pid / tgid</td><td>线程 id 与进程 id</td><td>检测与隐藏的第一道字段</td></tr>
+<tr><td>cred / real_cred</td><td>uid、gid、capabilities</td><td>提权就是改这里</td></tr>
+<tr><td>seccomp</td><td>系统调用过滤器</td><td>影响 ptrace/注入可行性</td></tr>
+<tr><td>stack</td><td>内核栈指针；pt_regs 压在这块栈的高地址端</td><td>hook 要改现场就改它</td></tr>
+<tr><td>thread_info</td><td>现代 arm64（CONFIG_THREAD_INFO_IN_TASK）内嵌在 task_struct 里，不在栈上</td><td>别再按老资料去栈底找</td></tr>
+</tbody></table></div>
+<figure>
+<img src="../assets/k01_task.png" alt="图 K1-1" width="1080">
+<figcaption><b>图 K1-1</b><span>task_struct 关键字段与 fork/clone/exec 的分工</span></figcaption>
+</figure>
+<h2>1.2 fork / clone / exec 三兄弟</h2>
+<p><code>fork()</code> 复制一份 mm（用 COW 省内存）与 fd 表，返回两次；<code>clone()</code> 按 flags 决定共享哪些资源；<code>execve()</code> 不创建新进程，只是把当前进程的 mm 换成新程序的，pid 保留。</p>
+<div class="code">
+<div class="code-title">三条路径的内核差异</div>
+<pre><code>fork()   -&gt; copy_mm(COW) + copy_files + copy_sighand
+clone()  -&gt; 按 flags 选择性共享（CLONE_VM / CLONE_FILES / CLONE_THREAD）
+execve() -&gt; 换 mm、换用户栈、保留 pid，从 ELF 入口重新开始</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>1.3 调度：谁先跑</h2>
+<p>每个 CPU 有一个 runqueue，里面的任务按调度类排队（stop &gt; dl &gt; rt &gt; fair &gt; idle）。普通进程走 CFS/EEVDF，用 <code>nice</code> 与 <code>cpu.weight</code>（cgroup）影响权重。</p>
+<p>这一节对做单步 trace（M04）很关键：<strong>单步必须绑定 CPU 亲和性</strong>，否则任务被迁到别的核，调试寄存器的状态就乱了。</p>
+<h2>1.4 cred：权限的唯一真相</h2>
+<p><code>cred</code> 是内核里“你是谁”的完整描述：uid、gid、补充组、capabilities、SELinux SID。提权操作的本质就是把 <code>cred</code> 换成一个 uid=0 的版本（<code>commit_creds(prepare_kernel_cred(0))</code> 是经典写法）。</p>
+<aside class="note"><span class="note-tag">要点</span><div>检测连接点：如果 cred 被改过，那么 <code>/proc/pid/status</code> 的 Uid 行、capability 集合、以及实际能做的操作之间会出现不一致。这种“能力与身份不匹配”比任何特征都可靠。</div></aside>
+<h2>1.5 本章自测</h2>
+<ul><li>进程与线程在内核里的唯一区别是什么？</li><li>为什么 fork 比想象中便宜？</li><li>cred 里包含哪些信息？提权改的是哪几个字段？</li><li>为什么单步 trace 必须绑核？</li></ul>
+<h2>1.6 深入：一次 fork 到底复制了什么</h2>
+<p>fork 的开销之所以小，是因为它复制的是“表的指针”，而不是表里的内容：页表被标记为只读并被双方共享（COW），fd 表被 <code>copy_files</code> 处理（引用计数 +1，除非带了 CLONE_FILES），信号处理表也类似。</p>
+<div class="tbl"><table>
+<thead><tr><th>资源</th><th>fork（不带对应 flag）</th><th>带 flag 时</th></tr></thead><tbody>
+<tr><td>mm 页表</td><td>复制 mm_struct，页表标记 COW</td><td>CLONE_VM：共享同一个 mm</td></tr>
+<tr><td>fd 表</td><td>新建 files_struct 并复制 fd 数组，每个 file 各 +1</td><td>CLONE_FILES：refcount+1，共享同一个 files_struct</td></tr>
+<tr><td>信号处理</td><td>新建 sighand 并复制处理函数表</td><td>CLONE_SIGHAND：共享同一张表</td></tr>
+<tr><td>线程组</td><td>新建 tgid</td><td>CLONE_THREAD：加入同一线程组</td></tr>
+</tbody></table></div>
+<p>这里有个常见误解：<strong>fork 不是“引用计数 +1 共享 fd 表”，而是“真的复制一份表”</strong>——所以父子进程之后各自 open/close 互不影响，但已打开的 <code>struct file</code> 是共享的（refcount 各 +1）。只有 <code>CLONE_FILES</code> 才是共享同一个 <code>files_struct</code>。</p>
+<h2>1.7 实战：遍历所有进程的两种方式</h2>
+<div class="code">
+<div class="code-title">方式一：/proc（用户态）</div>
+<pre><code>for pid in $(ls /proc | grep -E &#x27;^[0-9]+$&#x27;); do
+  echo &quot;$pid $(cat /proc/$pid/comm 2&gt;/dev/null)&quot;
+done</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="code">
+<div class="code-title">方式二：内核链表（模块内）</div>
+<pre><code>struct task_struct* t;
+rcu_read_lock();
+for_each_process(t) {
+    pr_info(&quot;%d %s\n&quot;, t-&gt;pid, t-&gt;comm);
+}
+rcu_read_unlock();</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>注意方式二必须包在 <code>rcu_read_lock</code> 里，因为 <code>for_each_process</code> 遍历的是 RCU 保护的链表。少了这把锁，就是标准的 use-after-free。</div></aside>
+<h2>1.8 原理推演：为什么 Linux 不需要“线程”这个概念</h2>
+<p>因为“进程”与“线程”的差别，本质上只是“共享了哪些资源”。Linux 把这个问题交给 <code>clone</code> 的 flags，于是“线程”只是“共享 mm 与 files 的 task”，不需要单独的数据结构与调度逻辑。</p>
+<div class="tbl"><table>
+<thead><tr><th>概念</th><th>Linux 里的实现</th><th>共享</th></tr></thead><tbody>
+<tr><td>进程</td><td>task + 独立 mm/files</td><td>无</td></tr>
+<tr><td>线程</td><td>task + CLONE_VM|CLONE_FILES</td><td>mm、files</td></tr>
+<tr><td>容器</td><td>namespace + cgroup</td><td>内核视图</td></tr>
+</tbody></table></div>
+<p>这个设计的直接后果：<code>/proc</code> 里每个 task 都有自己的目录，但同组的线程共享 <code>tgid</code>。所以“数线程”和“数进程”是两个不同的操作。</p>
+<h2>1.9 数据细节：cred 的字段</h2>
+<div class="code">
+<div class="code-title">struct cred 的关键成员</div>
+<pre><code>kuid_t  uid, euid, suid, fsuid;
+kgid_t  gid, egid, sgid, fsgid;
+kernel_cap_t cap_inheritable, cap_permitted, cap_effective;
+struct user_struct *user;
+struct ucounts *ucounts;
+// SELinux 的 SID 也存在这里（通过 security 指针）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>注意 <code>fsuid</code> 与 <code>euid</code> 的区别：文件访问用的是 <code>fsuid</code>。有些“提权”只改了 <code>euid</code>，结果读文件还是失败——这就是“改了但没生效”的经典原因。</p>
+</article>
+<div class="pager"><a href="16.html"><span class="dir">上一讲</span>16 基础 hook 脚本、检测与算法分析</a><a href="k02-vma.html" style="text-align:right"><span class="dir">下一讲</span>K02 Linux 内存管理</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

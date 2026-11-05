@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F01 Frida 整体启动、进程注入与 Zygote 门控</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item active" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F01</span><h1>Frida 整体启动、进程注入与 Zygote 门控</h1><p class="ch-en">frida-tools、server/HostSession、ptrace/bootstrap/loader、zygote/USAP、子进程 agent、mapper 与自卸载</p></div>
+<p class="lead">先建立整条链的心理模型：谁发起、谁中转、谁落地、谁执行。</p>
+<h2>1.1 五层结构</h2>
+<figure>
+<img src="../assets/f_f01.png" alt="图 F1-1" width="1080">
+<figcaption><b>图 F1-1</b><span>host → server → 注入器 → agent → 脚本的五层结构</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>层</th><th>代表</th><th>职责</th></tr></thead><tbody>
+<tr><td>host 工具</td><td>frida-tools</td><td>CLI / Python，发起所有请求</td></tr>
+<tr><td>设备端 server</td><td>frida-server</td><td>监听端口、管理 Session、执行注入</td></tr>
+<tr><td>注入器</td><td>ptrace / zygote 门控</td><td>把 agent 映射进目标</td></tr>
+<tr><td>agent</td><td>frida-agent.so</td><td>Gum + JS 运行时</td></tr>
+<tr><td>脚本</td><td>你的 JS</td><td>Interceptor / Java.perform</td></tr>
+</tbody></table></div>
+<h2>1.2 三个对象模型</h2>
+<p>Device 管连接，Session 管“连上了哪个进程”，Script 管“跑哪段代码”。这三个对象把问题切得很干净——出问题先判断是哪一层断了。</p>
+<h2>1.3 zygote 门控为什么存在</h2>
+<p>常规 attach 只能注入“已经跑起来的进程”，而大量反调试是在进程最早期的几百毫秒内完成的。zygote 门控的做法是：attach 到 zygote，拦截 <code>fork</code>，在子进程“刚出生”时就注入 agent。这样目标从第一条指令起就在视野里。</p>
+<div class="code">
+<div class="code-title">spawn 与 gating 的差别</div>
+<pre><code>frida -U -f com.app -l a.js       # spawn：暂停在入口，等脚本加载
+frida -U -n com.app -l a.js       # attach：进程已在跑，只能“后半程”介入
+ 
+# 子进程门控：需要在脚本或 API 里启用 child gating
+# 否则目标 fork 出的子进程不会被自动接管</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>1.4 mapper 与自卸载</h2>
+<p>Frida 的 agent 不是简单 dlopen 进来的——它有自研的 mapper，处理 PT_LOAD 映射、重定位、以及“卸载时把自己清干净”。后者对“低痕迹”很重要：agent 卸载后，理论上不该在 maps 里留下空白区。</p>
+<aside class="note"><span class="note-tag">要点</span><div>学习顺序建议：先读第 10 章（整体启动）建立直觉，再读本章（细节），最后读 F09（自定义 linker）理解“为什么不用系统 dlopen”。</div></aside>
+<h2>1.5 本章自测</h2>
+<ul><li>五层结构各自负责什么？哪一层出错会导致“脚本没反应”？</li><li>spawn 和 attach 的本质区别是什么？</li><li>zygote 门控解决了什么具体问题？</li><li>自卸载的目标是什么？能做到“完全无痕”吗？</li></ul>
+<h2>1.6 深入：agent 的映射与初始化顺序</h2>
+<p>agent 被映射进目标后，不是立刻就能跑 JS。它要经历：重定位 → 初始化 GLib/Gum → 建立线程 → 连回 server → 才开始接受脚本。任何一个环节失败，表现都是“连上了但脚本不跑”。</p>
+<div class="tbl"><table>
+<thead><tr><th>环节</th><th>失败表现</th><th>排查</th></tr></thead><tbody>
+<tr><td>映射</td><td>attach 直接失败</td><td>权限 / SELinux</td></tr>
+<tr><td>重定位</td><td>进程崩溃</td><td>地址冲突</td></tr>
+<tr><td>Gum 初始化</td><td>脚本不执行</td><td>线程创建失败</td></tr>
+<tr><td>回连 server</td><td>消息发不出</td><td>socket 被拦</td></tr>
+</tbody></table></div>
+<h2>1.7 实战：验证 agent 是否真的在跑</h2>
+<div class="code">
+<div class="code-title">三个层次的验证</div>
+<pre><code># 1. 进程里有没有 agent 的映射
+grep -i frida /proc/&lt;pid&gt;/maps
+ 
+# 2. 有没有 agent 的线程
+ls /proc/&lt;pid&gt;/task/*/comm | xargs -n1 basename | sort -u
+ 
+# 3. 能不能收到消息
+#    脚本里 send(&#x27;alive&#x27;) 是最直接的证据</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>1.8 原理推演：为什么注入必须“先停后写”</h2>
+<p>在目标进程还在运行时往它的地址空间里写数据，等于一边读一边改一本书。你写进去的路径字符串可能被目标当成数据读走，你分配的栈空间可能正在被使用。所以注入的标准流程一定是“先让它停下，再动手”。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>目标状态</th><th>为什么</th></tr></thead><tbody>
+<tr><td>attach</td><td>已停止</td><td>保证寄存器不被改</td></tr>
+<tr><td>写内存</td><td>已停止</td><td>保证写入是原子的</td></tr>
+<tr><td>改寄存器</td><td>已停止</td><td>保证现场一致</td></tr>
+<tr><td>detach</td><td>继续运行</td><td>恢复业务</td></tr>
+</tbody></table></div>
+<p>这也解释了为什么“注入失败的代价很高”：如果中途出错而没有 detach，目标会永久停在 T 状态，只能重启。</p>
+<h2>1.9 数据细节：host 与 server 的握手</h2>
+<div class="code">
+<div class="code-title">一次连接的关键步骤</div>
+<pre><code>1. TCP 连接（adb forward 出来的端口）
+2. 协议版本协商
+3. token 认证（新版本）
+4. 枚举能力（支持哪些操作）
+5. 建立 HostSession</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>排查时，如果卡在第 3 步，表现通常是“能连上但所有命令都失败”——这与“端口不通”的表现完全不同，可以据此快速区分。</p>
+</article>
+<div class="pager"><a href="k08-domain.html"><span class="dir">上一讲</span>K08 SELinux 安全模型</a><a href="f02-gumjs.html" style="text-align:right"><span class="dir">下一讲</span>F02 Frida 第一个脚本运行时机</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

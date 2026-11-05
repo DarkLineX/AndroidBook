@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F04 Frida server IPC 逻辑</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item active" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F04</span><h1>Frida server IPC 逻辑</h1><p class="ch-en">WebService、Socket、DBusConnection、ControlService、HostSession、AgentSession</p></div>
+<p class="lead">不必背类名，但要记住：每条消息都要经过 server 中转。</p>
+<h2>4.1 四层对象</h2>
+<figure>
+<img src="../assets/f_f04.png" alt="图 F4-1" width="1080">
+<figcaption><b>图 F4-1</b><span>一次脚本调用经过的四层对象</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>作用</th><th>断开后的表现</th></tr></thead><tbody>
+<tr><td>Connection</td><td>传输通道（TCP / USB）</td><td>全部失联</td></tr>
+<tr><td>HostSession</td><td>host 与 server 的会话</td><td>无法枚举进程</td></tr>
+<tr><td>AgentSession</td><td>server 与 agent 的会话</td><td>脚本无法加载</td></tr>
+<tr><td>Script</td><td>一段代码的运行时</td><td>hook 停止工作</td></tr>
+</tbody></table></div>
+<h2>4.2 为什么理解 IPC 有用</h2>
+<p>因为绝大多数“frida 不稳定”的表现，本质是某一层断了或超时了。知道层级，就能快速定位，而不是盲目重装。</p>
+<div class="code">
+<div class="code-title">按层排查</div>
+<pre><code>1. 传输：adb devices / ping 端口        -&gt; Connection
+2. server 存活：frida-ps -U            -&gt; HostSession
+3. 注入成功：frida -U -p PID -e &#x27;1+1&#x27;  -&gt; AgentSession
+4. 脚本逻辑：加 send 打点               -&gt; Script</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.3 本章自测</h2>
+<ul><li>四层对象各自断开后的表现是什么？</li><li>为什么 server 被杀掉后 agent 会失联？</li><li>给出一条从外到内的排查顺序。</li><li>如果要让脚本在断连后自动恢复，你会怎么做？</li></ul>
+<h2>4.4 深入：为什么 server 需要“认证”</h2>
+<p>frida-server 默认监听 27042，任何能连上这个端口的进程都能控制它。这在多用户 / 多 App 环境里是巨大的风险——所以新版本引入了 token 认证，host 必须带上正确的 token 才能建立 Session。</p>
+<div class="tbl"><table>
+<thead><tr><th>机制</th><th>作用</th><th>副作用</th></tr></thead><tbody>
+<tr><td>token 认证</td><td>阻止未授权连接</td><td>需要正确配置</td></tr>
+<tr><td>Unix socket</td><td>只允许本地连接</td><td>跨容器时不可用</td></tr>
+<tr><td>端口自定义</td><td>避免被扫描</td><td>需要同步配置</td></tr>
+</tbody></table></div>
+<h2>4.5 实战：连不上时的分层排查</h2>
+<div class="code">
+<div class="code-title">从外到内</div>
+<pre><code>adb devices                     # 设备在不在
+adb forward tcp:27042 tcp:27042 # 转发有没有建立
+frida-ps -U                     # server 有没有响应
+frida-ps -H 127.0.0.1:27042     # 直连端口试试
+dmesg | tail -30                # 有没有 SELinux 拒绝</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.6 原理推演：为什么 IPC 要分“控制面”与“数据面”</h2>
+<p>控制面是“创建 Session、加载脚本”这类低频操作；数据面是“hook 回调、send 消息”这类高频操作。两者走不同的通道，才能各自优化。</p>
+<div class="tbl"><table>
+<thead><tr><th>面</th><th>频率</th><th>通道</th></tr></thead><tbody>
+<tr><td>控制面</td><td>低</td><td>HostSession / AgentSession</td></tr>
+<tr><td>数据面</td><td>高</td><td>Script 的消息通道</td></tr>
+</tbody></table></div>
+<p>理解了这一点，就能解释一个常见现象：脚本加载很慢，但 hook 回调很快——因为前者走控制面（要建 Session），后者走数据面（已建立的通道）。</p>
+<h2>4.7 数据细节：一次 send 的路径</h2>
+<div class="code">
+<div class="code-title">从 JS 到 host</div>
+<pre><code>JS: send({a: 1})
+  -&gt; Script 的 message 回调
+  -&gt; AgentSession 序列化
+  -&gt; socket 写给 server
+  -&gt; server 转发给 host
+  -&gt; 你的 on_message 被调用</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.8 深入：server 内部的对象树</h2>
+<p>把 <code>frida-server</code> 想象成一个小型“进程管理器”：它维护一张“当前有哪些 Device / Session / Script”的表，每个对象都有 id，所有请求都带着 id 来找目标。这样即使同时连着多个进程，也不会串。</p>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>关键字段</th><th>清理时机</th></tr></thead><tbody>
+<tr><td>Device</td><td>id、name、type</td><td>连接断开</td></tr>
+<tr><td>Session</td><td>pid、对象表、注入状态</td><td>detach</td></tr>
+<tr><td>Script</td><td>id、运行时、消息通道</td><td>unload</td></tr>
+</tbody></table></div>
+<p>这个设计带来的一个实用推论：<strong>如果某个 Session 没被正确 detach，它会一直占着目标进程</strong>。表现为“目标进程活着但行为怪异”，或者“再次 attach 时报错”。</p>
+<h2>4.9 深入：一次异常的传播路径</h2>
+<p>脚本里抛出的异常，不会让目标进程崩溃——它会被 JS 运行时捕获，打包成 <code>error</code> 消息发回 host，然后由 host 决定是“打印”还是“抛出”。这解释了一个常见现象：<strong>脚本报错但 App 安然无恙</strong>。</p>
+<div class="code">
+<div class="code-title">异常在脚本里的表现</div>
+<pre><code>try {
+  Java.use(&#x27;com.not.exist.Class&#x27;);
+} catch (e) {
+  send(&#x27;load failed: &#x27; + e.message);
+}
+// 不写 try/catch，异常会冒泡到 host，看起来像“脚本没跑”</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>所以“脚本没反应”有两种完全不同的原因：<strong>没加载</strong>（host 侧无输出）与<strong>加载了但抛异常</strong>（host 侧有 error）。看日志的时候一定要区分这两类。</p>
+<h2>4.10 实战：写一个“连接健康检查”</h2>
+<div class="code">
+<div class="code-title">三行判断链路是否完好</div>
+<pre><code>device = frida.get_usb_device(timeout=3)
+session = device.attach(pid)
+script = session.create_script(&#x27;send(&quot;ok&quot;)&#x27;)
+# 能收到 ok，说明三层都通</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>把这个检查做成脚本，每次动手前先跑一遍。能省掉大量“到底是环境问题还是代码问题”的纠结。</div></aside>
+</article>
+<div class="pager"><a href="f03-java.html"><span class="dir">上一讲</span>F03 Frida Java.perform 原理</a><a href="f05-patch.html" style="text-align:right"><span class="dir">下一讲</span>F05 Frida server 与 Android SELinux</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

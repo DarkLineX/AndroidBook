@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>16 基础 hook 脚本、检测与算法分析</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item active" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">16</span><h1>基础 hook 脚本、检测与算法分析</h1><p class="ch-en">把工具用成方法论</p></div>
+<p class="lead">先定位“算出来的地方”，再决定“改输入还是改输出”。</p>
+<h2>16.1 两个最小可用脚本</h2>
+<figure>
+<img src="../assets/f16_script.png" alt="图 16-1" width="1080">
+<figcaption><b>图 16-1</b><span>Java 层抓输入输出 + Native 层抓比较点</span></figcaption>
+</figure>
+<div class="code">
+<div class="code-title">Java 层：抓输入输出</div>
+<pre><code>Java.perform(() =&gt; {
+  const C = Java.use(&#x27;com.x.Sign&#x27;);
+  C.sign.implementation = function (a) {
+    console.log(&#x27;in &#x27;, a);
+    const r = this.sign(a);   // 调原方法
+    console.log(&#x27;out&#x27;, r);
+    return r;
+  };
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="code">
+<div class="code-title">Native 层：抓比较点</div>
+<pre><code>Interceptor.attach(Module.findExportByName(null, &#x27;strcmp&#x27;), {
+  onEnter(args) {
+    this.a = args[0].readUtf8String();
+    this.b = args[1].readUtf8String();
+  },
+  onLeave(ret) { send([this.a, this.b]); }
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>16.2 算法分析的标准化流程</h2>
+<ol><li><strong>定边界</strong>：输入是什么、输出是什么。从 UI 反推调用链。</li><li><strong>找汇聚点</strong>：所有校验最终都要比较，盯 <code>strcmp</code> / <code>memcmp</code> / <code>equals</code>。</li><li><strong>判类型</strong>：对称加密？哈希？白盒？看常量与循环结构。</li><li><strong>复现</strong>：用同语言重写，跑通样本，再用新输入验证。</li><li><strong>落脚本</strong>：把结论固化成 hook，可回归、可批量。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>线索</th><th>可能的算法</th><th>验证方法</th></tr></thead><tbody>
+<tr><td>常量 0x9E3779B9</td><td>TEA / XXTEA 类</td><td>看轮数与移位</td></tr>
+<tr><td>大量 32 位循环 + 异或</td><td>自研混淆 / 哈希</td><td>改一位输入看扩散</td></tr>
+<tr><td>S 盒数组（256 项）</td><td>AES / SM4</td><td>找轮密钥生成</td></tr>
+<tr><td>64 位乘加链</td><td>哈希或签名</td><td>对比标准实现的输出</td></tr>
+</tbody></table></div>
+<h2>16.3 反调试的常见位置</h2>
+<p>反调试几乎总是出现在算法入口附近，因为那是最值得保护的地方。常见手法：检测 TracerPid、检测代码段 CRC、检测关键函数是否被改、检测执行耗时是否异常。</p>
+<p>应对顺序：<strong>先确认脚本真的挂上了</strong>（打印栈、计数、与基线对比），再谈分析。很多“算法分析失败”，其实是 hook 根本没生效，分析的是未被修改的原逻辑。</p>
+<aside class="note"><span class="note-tag">要点</span><div>工程习惯：每个结论都配一个“可证伪实验”。比如“这个函数是 MD5”——那就构造一个已知输入的输出对比；对不上，说明结论错了。这样能避免把巧合当规律。</div></aside>
+<h2>16.4 第一部的收束</h2>
+<p>到这里，第一部的 16 章走完了一条完整的链路：从 boot.img 到内核启动，从 zygote 到 App 进程，从 linker 到 dex，从 hook 到检测。接下来的第二部会往下挖到内核，第三部会解剖 Frida，第四部会进入 KPM，第五部会拆 LSPosed。</p>
+<blockquote>先把地图画对，再谈走多快。</blockquote>
+<h2>16.5 本章自测</h2>
+<ul><li>写出一个“抓输入输出”的 Java hook 脚本。</li><li>算法分析的五个步骤是什么？</li><li>为什么“先确认 hook 挂上了”比“分析算法”更优先？</li><li>举一个“可证伪实验”的例子。</li></ul>
+<h2>16.6 深入：一个完整的算法分析实战记录</h2>
+<p>目标：某 App 的请求签名。已知输入是“参数串 + 时间戳”，输出是一个 32 位十六进制串。</p>
+<ol><li><strong>定边界</strong>：hook OkHttp 的 <code>Request.Builder.build</code>，拿到最终 URL 与 header，确认签名放在哪个字段。</li><li><strong>找汇聚点</strong>：hook <code>MessageDigest.digest</code> 与 <code>String.equals</code>，发现签名比较走的是 <code>equals</code>。</li><li><strong>抓输入</strong>：在 <code>equals</code> 的两个参数上打点，拿到“本地算出的签名”和“服务端期望的签名”。</li><li><strong>定位算法</strong>：回溯调用栈，找到计算函数，发现是 <code>MD5(排序后的参数 + salt)</code>。</li><li><strong>验证</strong>：用 Python 复现，对 5 组样本全部匹配。</li><li><strong>落脚本</strong>：把复现逻辑写成独立工具，不再依赖 hook。</li></ol>
+<div class="code">
+<div class="code-title">复现验证（Python）</div>
+<pre><code>import hashlib
+ 
+def sign(params: dict, salt: str) -&gt; str:
+    s = &quot;&amp;&quot;.join(f&quot;{k}={params[k]}&quot; for k in sorted(params))
+    return hashlib.md5((s + salt).encode()).hexdigest()
+ 
+assert sign(case1, salt) == expected1</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>关键一步是“<strong>抓输入而不是猜算法</strong>”。很多人一上来就反编译找算法，结果在混淆代码里打转；而先 hook 拿到真实输入输出，往往十分钟就能确定算法类型。</div></aside>
+<h2>16.7 算法类型速判表</h2>
+<div class="tbl"><table>
+<thead><tr><th>特征</th><th>可能算法</th><th>确认方法</th></tr></thead><tbody>
+<tr><td>输出 32 位 hex</td><td>MD5</td><td>换输入看是否雪崩</td></tr>
+<tr><td>输出 40 位 hex</td><td>SHA1</td><td>同上</td></tr>
+<tr><td>输出 64 位 hex</td><td>SHA256</td><td>同上</td></tr>
+<tr><td>输出含 +/ 与 =</td><td>Base64</td><td>解码看是否可读</td></tr>
+<tr><td>常量 0x9E3779B9</td><td>TEA 系</td><td>看轮数与移位</td></tr>
+<tr><td>256 字节表</td><td>AES / SM4</td><td>找轮密钥</td></tr>
+</tbody></table></div>
+<h2>16.8 从“能用”到“可靠”</h2>
+<p>把结论写成脚本只是开始。要让它可靠，还需要：处理异常输入、加超时与重试、在版本变化时能快速定位差异、以及有办法验证“结果仍然正确”。</p>
+<ul><li><strong>输入校验</strong>：空值、超长、特殊字符都要有明确行为。</li><li><strong>回归样本</strong>：至少保留 10 组“输入 → 期望输出”，每次改动都跑。</li><li><strong>版本探测</strong>：算法变了要能发现（比如输出长度变化、常量变化）。</li><li><strong>降级路径</strong>：算法搞不定时，能不能退回“hook 直接取结果”。</li></ul>
+<h2>16.9 原理推演：为什么“汇聚点”一定存在</h2>
+<p>因为校验必须“产生一个布尔结果”。无论中间做了多少变换、加了多少层，最终一定有一次“比较”或“分支”。这个比较点就是汇聚点。</p>
+<div class="tbl"><table>
+<thead><tr><th>校验形式</th><th>汇聚点</th><th>抓法</th></tr></thead><tbody>
+<tr><td>字符串比较</td><td>strcmp / equals</td><td>hook 返回值</td></tr>
+<tr><td>数值比较</td><td>条件分支</td><td>改寄存器</td></tr>
+<tr><td>签名验证</td><td>验签函数返回值</td><td>hook 返回 true</td></tr>
+<tr><td>哈希校验</td><td>memcmp</td><td>抓两个参数</td></tr>
+</tbody></table></div>
+<p>所以“找汇聚点”是算法分析里性价比最高的一步：它把“理解全部逻辑”降级成“找到那一个比较”。</p>
+<h2>16.10 数据细节：常见签名的输出长度</h2>
+<div class="tbl"><table>
+<thead><tr><th>算法</th><th>输出长度</th><th>特征</th></tr></thead><tbody>
+<tr><td>MD5</td><td>32 hex</td><td>最快，最常见</td></tr>
+<tr><td>SHA1</td><td>40 hex</td><td>Git、老系统</td></tr>
+<tr><td>SHA256</td><td>64 hex</td><td>现代标准</td></tr>
+<tr><td>HMAC-SHA256</td><td>64 hex</td><td>带密钥</td></tr>
+<tr><td>CRC32</td><td>8 hex</td><td>校验用，非安全</td></tr>
+</tbody></table></div>
+<p>看到输出长度就能排除一大半可能性。再结合“是否有密钥参与”（改一个字符看输出是否全变），基本能锁定算法族。</p>
+</article>
+<div class="pager"><a href="15-scrcpy.html"><span class="dir">上一讲</span>15 Android 自动化</a><a href="k01-fork.html" style="text-align:right"><span class="dir">下一讲</span>K01 Linux 进程、线程与调度</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F05 Frida server 与 Android SELinux</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item active" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F05</span><h1>Frida server 与 Android SELinux</h1><p class="ch-en">patch policy、frida_file、pipe socket、zygote ptrace、setcontext</p></div>
+<p class="lead">root 只是“有权限”，SELinux 决定“允不允许”。</p>
+<h2>5.1 两种“拒绝”</h2>
+<figure>
+<img src="../assets/f_f05.png" alt="图 F5-1" width="1080">
+<figcaption><b>图 F5-1</b><span>DAC 与 MAC 的区别，以及三条排查命令</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>机制</th><th>依据</th><th>root 能否绕过</th></tr></thead><tbody>
+<tr><td>DAC</td><td>uid/gid + 文件权限位</td><td>能</td></tr>
+<tr><td>MAC (SELinux)</td><td>domain × type 的策略</td><td>不能</td></tr>
+</tbody></table></div>
+<p>所以“我已经 root 了为什么还是 Permission denied”这个问题的答案，永远是：你过的是 MAC 那一关，不是 DAC。</p>
+<h2>5.2 关键概念</h2>
+<ul><li><strong>frida_file</strong>：为 frida 相关文件定义的 type；策略里要允许访问它。</li><li><strong>pipe / socket</strong>：agent 与 server 通信要用到，需要相应的 allow 规则。</li><li><strong>zygote ptrace</strong>：门控注入需要 <code>allow untrusted_app zygote:process ptrace</code> 之类的规则。</li><li><strong>setcontext</strong>：改进程上下文（寄存器）的权限要求，注入时会用到。</li></ul>
+<div class="code">
+<div class="code-title">看拒绝现场</div>
+<pre><code>id -Z                          # 当前域
+dmesg | grep avc               # 拒绝日志
+ 
+# 典型：
+# avc: denied { ptrace } for scontext=u:r:untrusted_app
+#                          tcontext=u:r:zygote</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>5.3 两条处理路线</h2>
+<ol><li><strong>放宽策略</strong>：改 sepolicy 或加载自定义规则。见效快，但策略文件的改动本身是痕迹。</li><li><strong>换路径</strong>：用不被检查的方式完成同样的操作（比如内核态直接干活，见 M06）。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>注意：策略放宽会留下可观测证据——avc 日志、policy 版本号、<code>/sys/fs/selinux</code> 的状态。如果目标是“安静”，第一条路要慎用。</div></aside>
+<h2>5.4 本章自测</h2>
+<ul><li>DAC 与 MAC 的区别是什么？</li><li>frida 注入通常需要哪几类 SELinux 权限？</li><li>放宽策略会留下哪些痕迹？</li><li>除了改策略，还有什么思路？</li></ul>
+<h2>5.5 深入：为什么 setcontext 也要权限</h2>
+<p>注入过程中要改目标的寄存器（PC、SP），这在 SELinux 里对应 <code>process:setcontext</code> 权限。没有这个权限，即使能 ptrace attach，也改不了现场。</p>
+<div class="tbl"><table>
+<thead><tr><th>权限</th><th>对应操作</th><th>典型拒绝</th></tr></thead><tbody>
+<tr><td>ptrace</td><td>attach / read / write</td><td>avc: denied { ptrace }</td></tr>
+<tr><td>setcontext</td><td>改寄存器 / 恢复现场</td><td>avc: denied { setcontext }</td></tr>
+<tr><td>sigchld</td><td>处理子进程信号</td><td>少见</td></tr>
+<tr><td>execute</td><td>执行注入的代码</td><td>avc: denied { execute }</td></tr>
+</tbody></table></div>
+<h2>5.6 实战：写一条最小 allow 规则</h2>
+<div class="code">
+<div class="code-title">sepolicy 片段（示意）</div>
+<pre><code>allow untrusted_app zygote:process ptrace;
+allow untrusted_app zygote:process setcontext;
+allow untrusted_app frida_file:file { read open getattr };
+allow untrusted_app frida_file:dir search;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>注意：<code>untrusted_app</code> 是所有第三方 App 的域，放开它等于对所有 App 放开。更精细的做法是给特定包定义独立域。</div></aside>
+<h2>5.7 原理推演：为什么“root 不等于万能”</h2>
+<p>root 只是 DAC 层面的“全通行证”。SELinux 是 MAC，它不看你是谁，只看“你的域”与“目标的类型”之间有没有 allow 规则。所以 root 进程如果处在受限域里，照样被拒。</p>
+<div class="tbl"><table>
+<thead><tr><th>场景</th><th>DAC</th><th>MAC</th><th>结果</th></tr></thead><tbody>
+<tr><td>root + 受限域</td><td>通过</td><td>拒绝</td><td>失败</td></tr>
+<tr><td>root + 宽域</td><td>通过</td><td>允许</td><td>成功</td></tr>
+<tr><td>普通用户 + 允许规则</td><td>拒绝</td><td>允许</td><td>失败</td></tr>
+</tbody></table></div>
+<p>这解释了为什么“root 了但 frida 还是不行”——不是 frida 有问题，是域不对。</p>
+<h2>5.8 数据细节：查看当前域</h2>
+<div class="code">
+<div class="code-title">三条命令</div>
+<pre><code>id -Z                     # 当前进程的 SELinux 上下文
+getenforce                # Enforcing / Permissive
+ls -Z /data/adb           # 文件的上下文</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>5.9 深入：SELinux 的三种模式</h2>
+<div class="tbl"><table>
+<thead><tr><th>模式</th><th>行为</th><th>痕迹</th></tr></thead><tbody>
+<tr><td>Enforcing</td><td>拒绝并记录</td><td>avc denied</td></tr>
+<tr><td>Permissive</td><td>允许但记录</td><td>avc denied（permissive=1）</td></tr>
+<tr><td>Disabled</td><td>完全不检查</td><td>无</td></tr>
+</tbody></table></div>
+<p>注意中间那行：<strong>Permissive 模式不是“没有痕迹”，而是“允许了但记了一笔”</strong>。所以把系统切到 permissive 来“方便调试”，本身就是一个非常明显的信号。</p>
+<h2>5.10 深入：为什么 zygote 的 ptrace 特别难</h2>
+<p>因为 zygote 是所有 App 的父进程，权限敏感度极高。系统对它的保护是多层的：SELinux 域限制、Yama 的 ptrace_scope、以及部分厂商的额外 LSM 钩子。</p>
+<div class="tbl"><table>
+<thead><tr><th>限制层</th><th>内容</th><th>绕过难度</th></tr></thead><tbody>
+<tr><td>SELinux</td><td>untrusted_app 不能 ptrace zygote</td><td>高（需改策略）</td></tr>
+<tr><td>Yama</td><td>只能 attach 子进程</td><td>中</td></tr>
+<tr><td>厂商 LSM</td><td>自定义检查</td><td>视实现</td></tr>
+</tbody></table></div>
+<p>这就是为什么“zygote 门控”类方案通常要 root：不是因为“需要 root 权限”，而是因为“需要处在能 ptrace 的域里”。</p>
+<h2>5.11 实战：确认是 SELinux 还是别的</h2>
+<div class="code">
+<div class="code-title">三步定位</div>
+<pre><code>1. getenforce                 # 是不是 Enforcing
+2. dmesg | grep avc | tail    # 有没有拒绝记录
+3. setenforce 0 &amp;&amp; 重试        # 切成 permissive 再试
+# 第 3 步成功 = 确实是 SELinux 问题</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>第 3 步只是诊断手段，不是解决方案。把系统长期跑在 permissive 上，等于对所有 App 敞开大门。</div></aside>
+</article>
+<div class="pager"><a href="f04-webservice.html"><span class="dir">上一讲</span>F04 Frida server IPC 逻辑</a><a href="f06-pthread.html" style="text-align:right"><span class="dir">下一讲</span>F06 Frida 默认 Hook</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

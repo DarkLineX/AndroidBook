@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>12 Android Java Hook 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item active" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">12</span><h1>Android Java Hook 原理</h1><p class="ch-en">Java Hook 到底改了什么</p></div>
+<p class="lead">一个指针的替换，撑起了整个 Java 层的注入生态。</p>
+<h2>12.1 一次 Java 方法调用的真实过程</h2>
+<p>字节码里的 <code>invoke-virtual</code> 只带一个方法索引。ART 执行时会先 resolve 出 <code>ArtMethod*</code>，再读它的 <code>entry_point_from_quick_compiled_code</code>，然后跳过去。也就是说：<strong>方法调用的本质是“查表 + 跳转”</strong>。</p>
+<figure>
+<img src="../assets/f12_java_hook.png" alt="图 12-1" width="1080">
+<figcaption><b>图 12-1</b><span>正常调用与 Hook 之后的调用路径对比</span></figcaption>
+</figure>
+<h2>12.2 把表项换掉</h2>
+<ol><li>拿到目标方法的 <code>ArtMethod*</code>（反射、JVMTI、或扫描内存）。</li><li>备份原始的 entrypoint，以便“调用原方法”。</li><li>把自己的桩函数地址写进 entrypoint。</li><li>如果桩函数是 native 实现，还要把方法标志位改成 <code>kAccNative</code>。</li></ol>
+<p>听起来简单，实际有三个坑：<strong>一是 ArtMethod 的布局随版本变化</strong>（Android 14/16 有调整，见 L07/L08）；<strong>二是 JIT 可能已经把方法内联到调用者里</strong>，改 entrypoint 不生效，需要去优化（deopt，见 L03）；<strong>三是调用原方法要遵守 ART 的调用约定</strong>，不能简单跳回旧入口。</p>
+<h2>12.3 检测方怎么看</h2>
+<div class="tbl"><table>
+<thead><tr><th>痕迹</th><th>怎么看</th><th>说明</th></tr></thead><tbody>
+<tr><td>方法变 native</td><td>Method.getModifiers()</td><td>原本 Java 实现突然带 native 标志</td></tr>
+<tr><td>entrypoint 落在匿名段</td><td>读 ArtMethod 内存</td><td>需要 native 能力</td></tr>
+<tr><td>backup 方法可枚举</td><td>遍历类的方法列表</td><td>实现不严谨时会多出方法</td></tr>
+<tr><td>调用耗时异常</td><td>统计 p95 延迟</td><td>桩函数 + 蹦床带来额外开销</td></tr>
+</tbody></table></div>
+<div class="code">
+<div class="code-title">一个“能跑但会被抓”的最小实现（示意）</div>
+<pre><code>auto m = get_art_method(env, clazz, &quot;sign&quot;, &quot;(Ljava/lang/String;)Ljava/lang/String;&quot;);
+orig_entry = m-&gt;entry_point_from_quick_compiled_code;
+ 
+// 陷阱：直接写会破坏 ART 的并发假设，正式实现要走 suspend + 内存屏障
+m-&gt;entry_point_from_quick_compiled_code = (void*)my_trampoline;
+m-&gt;access_flags |= kAccNative;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>学习建议：先用 Frida 的 <code>Java.use().implementation</code> 跑通“改行为”，再去看 LSPlant 的源码理解“为什么这么写”。顺序反了容易被细节淹没。</div></aside>
+<h2>12.4 本章自测</h2>
+<ul><li>Java 方法调用的两步是什么？</li><li>为什么要改 kAccNative 标志？</li><li>JIT 内联为什么会让你 hook 失效？怎么解决？</li><li>检测方如何在不读内存的情况下发现方法被 hook？</li></ul>
+<h2>12.5 深入：ArtMethod 布局的版本差异</h2>
+<p><code>ArtMethod</code> 的字段顺序在不同 Android 版本里改过多次。写死偏移的代码，换一个版本就会读到垃圾数据。这也是为什么成熟的框架都会做“运行时探测 + 多套布局”。</p>
+<div class="tbl"><table>
+<thead><tr><th>版本区间</th><th>主要变化</th><th>影响</th></tr></thead><tbody>
+<tr><td>5.x – 7.x</td><td>declaring_class_ 在头部</td><td>早期实现依赖它</td></tr>
+<tr><td>8.x – 11</td><td>引入 data_ 指针</td><td>布局重排</td></tr>
+<tr><td>12 – 13</td><td>方法索引与指针分离</td><td>缓存策略要改</td></tr>
+<tr><td>14+</td><td>GC 与声明类处理调整</td><td>引用不能跨 GC</td></tr>
+</tbody></table></div>
+<h2>12.6 三种拿 ArtMethod 的方式对比</h2>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
+<tr><td>反射 + 内部字段</td><td>无权限要求</td><td>字段名/布局随版本变</td></tr>
+<tr><td>JVMTI</td><td>最接近真实</td><td>需要 attach，有痕迹</td></tr>
+<tr><td>内存扫描</td><td>版本无关（靠特征）</td><td>慢，且容易误判</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>工程建议：优先 JVMTI（准确），用反射做兜底（无权限场景），内存扫描只作为最后的验证手段。三条路都实现，才能在各类设备上稳定工作。</div></aside>
+<h2>12.7 调用原方法的三种写法</h2>
+<ol><li><strong>备份副本</strong>：复制一份 ArtMethod，把 entrypoint 指回原实现，调用这份副本。</li><li><strong>蹦床</strong>：在跳板里保存现场、恢复原入口、调用、再切回。</li><li><strong>原入口直调</strong>：需要处理 kAccNative 与调用约定，最容易出错。</li></ol>
+<p>第一种最稳，也是主流框架的做法；第二种性能最好但实现复杂；第三种只在特定场景下用。</p>
+<h2>12.8 原理推演：为什么“改一个指针”就够了</h2>
+<p>因为 ART 的方法调用是“间接”的：字节码里只有索引，真正的入口在运行时从 <code>ArtMethod</code> 里读。这种设计本来是为了支持 JIT（让同一个方法可以在解释执行与编译执行之间切换），但它同时也让“替换入口”变成一次简单的指针写。</p>
+<div class="tbl"><table>
+<thead><tr><th>执行模式</th><th>入口来源</th><th>能否被替换</th></tr></thead><tbody>
+<tr><td>解释执行</td><td>interpreter 入口</td><td>能</td></tr>
+<tr><td>JIT 编译</td><td>quick code 入口</td><td>能（但要 deopt）</td></tr>
+<tr><td>AOT 编译</td><td>oat 里的 code</td><td>能（要处理 already-compiled</td></tr>
+</tbody></table></div>
+<h2>12.9 数据细节：kAccNative 这个标志位</h2>
+<div class="code">
+<div class="code-title">标志位的影响</div>
+<pre><code>kAccNative = 0x0100
+// 置位后：ART 认为这个方法的实现是 native 函数
+//          调用时不再走 interpreter/JIT，而是走 JNI 调用约定
+//          参数从“dex 寄存器”变成“JNI 参数”</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>这就是为什么“桩函数必须是 native 实现”——如果你用 Java 方法做桩，却把标志位改成了 native，ART 会按 JNI 约定去调用一个 Java 方法，直接崩。</p>
+<h2>12.10 工程权衡：三种桩实现的对比</h2>
+<div class="tbl"><table>
+<thead><tr><th>实现</th><th>性能</th><th>复杂度</th><th>适用</th></tr></thead><tbody>
+<tr><td>Java 方法（不改标志）</td><td>中</td><td>低</td><td>简单 hook</td></tr>
+<tr><td>native 桩 + 蹦床</td><td>高</td><td>高</td><td>框架级</td></tr>
+<tr><td>替换整个方法体</td><td>高</td><td>中</td><td>静态改动</td></tr>
+</tbody></table></div>
+</article>
+<div class="pager"><a href="11.html"><span class="dir">上一讲</span>11 Android 注入检测</a><a href="13-binder.html" style="text-align:right"><span class="dir">下一讲</span>13 Android IPC 相关内容</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A04 附录 D · 全书自测参考答案</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item active" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">A04</span><h1>附录 D · 全书自测参考答案</h1><p class="ch-en">先自己做，再对照</p></div>
+<p class="lead">答案给的是“要点”，不是“标准作文”——能覆盖这些要点，就算掌握。</p>
+<h2>D.1 第一部（01–16）</h2>
+<h3>01 APatch</h3>
+<ul><li>boot.img 五段：header / kernel / ramdisk / second-dtb / AVB footer。</li><li>改 kernel 更隐蔽，是因为载荷运行在 EL1，不受 SELinux 与 capability 的常规约束；ramdisk 的东西仍在用户态。</li><li>AVB 失败会拒绝启动或降级；两种处理：关掉校验（重刷 vbmeta 带 disable 标志）或重新签名。</li><li>单靠 APatch 拿不到 STRONG——STRONG 看的是硬件证明与 boot 状态，不是“有没有 root”。</li></ul>
+<h3>02 启动链</h3>
+<ul><li>八步：BootROM → abl → boot.img → kernel → init → zygote → system_server → App。Java 世界从 zygote 开始。</li><li>GREEN 可满足 STRONG；YELLOW 通常不行；ORANGE 只能 BASIC；RED 拒绝启动。</li><li>fork 之后、降权之前仍是 root 身份，能读 /data/adb，此时还没有 App 的身份约束。</li><li>若在 init 阶段就被注入，App 在 attachApplication 时会看到“多出的线程 / 匿名映射 / 异常 ClassLoader”。</li></ul>
+<h3>03 硬件证明</h3>
+<ul><li>Normal World / Secure World；TEE 有独立内存与页表，普通世界无权访问。</li><li>verifiedBootState、deviceLocked、osVersion、osPatchLevel、verifiedBootKey（+ verifiedBootHash）。</li><li>解锁但未 root：通常拿得到 BASIC 与 DEVICE，拿不到 STRONG。</li><li>除证书内容外，还应查：时延分布、离线行为、多应用一致性、verifiedBootHash 与本地 vbmeta 是否一致。</li></ul>
+<h3>04 root 检测</h3>
+<ul><li>应用层最易绕；硬件层最难绕。各自短板见 4.2。</li><li>因为差分测的是“关系”，不依赖具体特征，改名换工具都无效。</li><li>先在 SDK 初始化完成后采基线，之后只比较增量，并设 p99 阈值。</li><li>建议保留：结构层、内核层、硬件层（三层互相独立，难以同时伪造）。</li></ul>
+<h3>05 App 启动</h3>
+<ul><li>预加载 framework 类、资源、以及 zygote socket；所以一次注入全部继承。</li><li>attachApplication 在前（注册 ApplicationThread），bindApplication 在后（创建 Application）。</li><li>因为 dexElements 是类查找路径，插入新 dex 就能让新类被优先找到。</li><li>会失败——Java.use 走默认加载器，找不到由其他 ClassLoader 加载的类。</li></ul>
+<h3>06 linker</h3>
+<ul><li>dlopen → mmap 各 PT_LOAD → 解析 DT_NEEDED → 重定位 → init_array → JNI_OnLoad。</li><li>RELATIVE 是“基址 + 加数”，GLOB_DAT 是“查符号表得到的地址”。</li><li>匿名可执行段意味着“代码没有对应文件”，正常 so 不会这样；正当场景：JIT 缓存、部分图形库。</li><li>TLS 重定位、BTI/CFI 标记、卸载清理。</li></ul>
+<h3>07 ptrace</h3>
+<ul><li>最容易失败的是“算 dlopen 地址”和“恢复现场”——前者错就跳飞，后者错就崩。</li><li>detach 只清零 TracerPid，注入留下的映射、线程、solist 项都还在。</li><li>0 = 任意进程可 attach；1 = 只能 attach 后代或经 PR_SET_PTRACER 授权；2 = 仅管理员。</li><li>会失败：64 位系统上 32 位注入器无法正确操作 64 位进程的寄存器与地址空间。</li></ul>
+<h3>08 zygisk</h3>
+<ul><li>因为所有 App 都是 zygote 的 fork 产物，已加载的代码与已改的指针会被继承。</li><li>pre 能读 /data/adb 但不知自己是谁；post 知道自己是谁但读不到模块目录。</li><li>dev/inode 与原厂不一致、mountinfo 多出 bind 记录。</li><li>选“能覆盖目标场景的最晚时机”——越早越干净但越脆弱。</li></ul>
+<h3>09 hook</h3>
+<ul><li>因为 so 内部调用直接跳到函数地址，不经过 GOT/PLT。</li><li>指令边界、并发安全、PC 相对寻址、指令缓存刷新。</li><li>BTI 是间接跳转目标校验；桩函数不带 BTI 标记，通过 BR/BLR 到达时会触发异常。</li><li>同时查 CRC 与页权限时，可改用硬件断点（不改字节、不改权限）。</li></ul>
+<h3>10 Frida</h3>
+<ul><li>Device 管连接、Session 管进程、Script 管代码。</li><li>已注入的 agent 会失联（消息无法中转），但目标进程内的 hook 仍在运行。</li><li>因为 send 是“唯一能证明脚本真的执行了”的信号，print 可能被缓冲或丢弃。</li><li>卡在注入层：权限（SELinux）/ ptrace / 目标进程状态。</li></ul>
+<h3>11 注入检测</h3>
+<ul><li>最难伪造的是“行为时序”——它由真实执行路径决定，改不了。</li><li>因为字符串可以被加密、拆分、或干脆不出现；未命中不能证明清白。</li><li>例：① 无网络的 App 却有 8 个线程；② maps 匿名可执行段是基线 2 倍；③ ClassLoader 的来源路径指向私有目录。</li><li>自污染 = 检测代码自己改变了被测量的量；解法是先初始化再采基线。</li></ul>
+<h3>12 Java Hook</h3>
+<ul><li>resolve 出 ArtMethod → 读 entrypoint → 跳转。</li><li>因为桩是 native 实现，ART 必须按 JNI 约定调用它。</li><li>因为调用者里已经是内联后的指令，不会再看 entrypoint；解法是 deopt。</li><li>查 Method.getModifiers() 是否多了 native，以及 dex 来源是否异常。</li></ul>
+<h3>13 IPC</h3>
+<ul><li>App → libbinder → binder 驱动 → system_server。</li><li>因为还有包管理视图、进程视图、服务注册表三本账。</li><li>文件视图 / 包管理 / 进程 / 服务表。</li><li>调用会失败并抛异常（服务不存在或权限拒绝）。</li></ul>
+<h3>14 dex</h3>
+<ul><li>header / string_ids+type_ids / proto_ids+field_ids / method_ids / class_defs / data。</li><li>因为业务 dex 往往在“某个类被加载”后才解密出来。</li><li>在“回填完成、方法即将执行”的那一刻。</li><li>header 的 size/offset、checksum、map_list、class_def 顺序。</li></ul>
+<h3>15 自动化</h3>
+<ul><li>u2 走控件树，scrcpy 走画面流，两者并列而非串联。</li><li>因为 sleep 无法区分“慢”和“坏了”；应改成条件等待 + 超时。</li><li>页面签名 = 本页必然存在的若干元素组成的集合，全部命中才算到页。</li><li>先统计失败集中在哪一步、哪类设备，再看是元素定位问题还是时序问题。</li></ul>
+<h3>16 脚本与算法</h3>
+<ul><li>见 16.1 的两个脚本。</li><li>定边界 → 找汇聚点 → 判类型 → 复现 → 落脚本。</li><li>因为很多“分析失败”其实是 hook 没挂上，分析的是原逻辑。</li><li>例：“这是 MD5”——构造已知输入比对输出，对不上就说明结论错。</li></ul>
+<h2>D.2 第二部（K01–K08）</h2>
+<h3>K01 进程与调度</h3>
+<ul><li>共享 mm/files/sighand 与否；线程就是带 CLONE_VM|CLONE_FILES|CLONE_THREAD 的 task。</li><li>因为复制的是表与指针（COW），不是物理内存。</li><li>uid 家族、gid 家族、capabilities、SELinux SID；提权改 uid 与 cap。</li><li>因为 MDSCR_EL1 是每核寄存器，迁移会打乱状态。</li></ul>
+<h3>K02 内存</h3>
+<ul><li>VMA 是“一段虚拟区间”的描述，页表是“逐页翻译”的实现。</li><li>因为 CPU 会缓存翻译结果，不刷就还在用旧的。</li><li>代价是写时复制会触发缺页，产生额外开销。</li><li>rmap、RSS 计数、GUP 路径。</li></ul>
+<h3>K03 异常</h3>
+<ul><li>同步异常由指令触发，异步中断由外部事件触发。</li><li>改 pt_regs-&gt;pc。</li><li>MDSCR_EL1.SS 与 SPSR_EL1.SS。</li><li>因为单步改变时序，可能让超时判断、握手流程走不同分支。</li></ul>
+<h3>K04 VFS</h3>
+<ul><li>fd 是索引，file 是打开实例，inode 是文件本体。</li><li>因为内核不能分配“可能很大”的缓冲，只能分段生成。</li><li>dev/inode 与原厂不一致、mountinfo 多出 bind。</li><li>能——inode 号相同但内容被换，需要靠内容哈希或类型策略发现。</li></ul>
+<h3>K05 追踪</h3>
+<ul><li>ftrace 是函数级追踪，kprobe 是任意位置插桩（可读写寄存器）。</li><li>因为它在崩溃时把日志写进持久存储，重启后还能读。</li><li>能告诉你“哪里热”，不能告诉你“为什么热”。</li><li>换 tracepoint，或提高 printk 级别，或改用 pstore。</li></ul>
+<h3>K06 BTF</h3>
+<ul><li>BTF 只保留类型结构，DWARF 还含行号/宏等调试信息。</li><li>因为 CO-RE 需要在运行时按 BTF 求值“偏移表达式”。</li><li>编译期要有头文件；BTF 要有 /sys/kernel/btf；扫描要验证。</li><li>用 System.map + 特征扫描，或做运行时探测。</li></ul>
+<h3>K07 符号</h3>
+<ul><li>运行地址 = 链接地址 + slide。</li><li>因为 KASLR 只平移整个镜像，不改变镜像内部的相对距离。</li><li>KMI 是符号白名单 + ABI 签名；MODVERSIONS 是装载期的 CRC 校验。</li><li>先读 /proc/kallsyms 与 BTF 是否存在，再判断走哪条定位路径。</li></ul>
+<h3>K08 SELinux</h3>
+<ul><li>DAC 看 uid，root 可绕；MAC 看域与类型，root 绕不过。</li><li>scontext=主体域，tcontext=客体类型，tclass=客体类别。</li><li>说明系统在 permissive 模式，只是记录不拦截；切回 enforcing 就会失败。</li><li>因为判定依据是“域”，不是 uid。</li><li>若要“不被发现”选换路径；只要“跑通”可以改策略。</li></ul>
+<h2>D.3 第三部（F01–F11）</h2>
+<ul><li>五层：host 工具 / server / 注入器 / agent / 脚本。</li><li>spawn 会暂停在入口等脚本；attach 只能介入已在运行的进程。</li><li>解决“反调试在启动最初几百毫秒内完成”的问题。</li><li>理论上可以，实际上很难——agent 的映射与线程总会留下统计特征。</li><li>因为 Java.perform 是异步排队的。</li><li>保证 JavaVM 可用与 ClassLoader 可用；不保证目标类已加载。</li><li>传输 / server 存活 / 注入 / 脚本逻辑。</li><li>因为每条消息都要经 server 中转。</li><li>DAC 与 MAC 两套；frida 需要 ptrace/setcontext/file 等权限。</li><li>策略文件变化、/sys/fs/selinux 状态、avc 日志消失。</li><li>换路径（内核态完成，见 M06）。</li><li>线程注册表、模块注册表、信号接管、退出监控、子进程门控。</li><li>因为它们是“无论写什么脚本都会发生”的副作用。</li><li>单点 inline hook + 自有线程 + 不做信号接管。</li><li>失去拦截目标 fork 出的子进程的能力。</li><li>翻译后再执行（接近原生），不是逐条解释。</li><li>因为 B 指令只有 ±128MB 范围。</li><li>匿名可执行页、跳转密集、速度骤降、线程被暂停。</li><li>短时定点用；长期监控不用。</li><li>线程名、线程数、start_routine、栈分布。</li><li>因为它是“创建时传入的真实地址”，不能随便编。</li><li>创建后立刻改；验证方式是高频轮询看有没有捕获到默认名。</li><li>PT_LOAD 映射、重定位、init_array、TLS（额外）；还有卸载。</li><li>因为它需要“初始化 TLS 模块”这一步，最小实现常省略。</li><li>间接调用目标缺 BTI 标记，触发异常。</li><li>能 mmap 各段、能处理 RELATIVE、能调用一个导出函数、能卸载。</li><li>start_routine 指向匿名映射。</li><li>TLS 里的线程链表（libc decoy）。</li><li>备份、改、校验。</li><li>因为栈地址能反映“这个线程从哪来”。</li><li>maps 过滤 / linker 账本 / CFI shadow / 匿名映射 / Instruction.parse / 线程名 / FD / 信号。</li><li>maps 过滤、linker 账本、Instruction.parse 可读性（互相牵制）。</li><li>因为它提供了“同机型同版本”的对照基准。</li><li>代码段被映射成 --x（只执行不可读）时读取失败；解决是保证映射可读。</li><li>源码、构建脚本、验证脚本、基线数据、已知限制清单。</li></ul>
+<h2>D.4 第四部（M01–M07）</h2>
+<ul><li>因为它绕开了签名、vermagic、MODVERSIONS 三道关。</li><li>卸载期的残留崩溃（地址已释放但 timer 还在跑）。</li><li>把“申请与释放”成对登记，避免遗漏。</li><li>因为释放顺序要与申请顺序相反，否则会用到已释放的资源。</li><li>map_files / statx 能揭示“内容与身份不符”。</li><li>读不触发崩溃、不改变状态、不留“被改过”的痕迹。</li><li>表项地址与 kallsyms 期望值不一致。</li><li>先 dump 实际表结构，再写读取代码。</li><li>必须复制页，否则改动会被所有映射它的进程看到。</li><li>因为 CPU 缓存了旧翻译。</li><li>要重算 PC 相对寻址的偏移。</li><li>rmap 不维护→回收崩溃；RSS 不维护→统计被差分抓；GUP 不维护→数据不一致。</li><li>MDSCR_EL1.SS、SPSR_EL1.SS、KDE（通常已置位）、CPU 亲和性。</li><li>异常上下文不能睡眠，重活会卡死系统。</li><li>会让时序敏感代码走不同分支。</li><li>先用 kprobe 粗定位，再对那一小段开单步。</li><li>因为不改字节、不改权限，CRC 与反汇编比对都通过。</li><li>优先给“调用频率高、价值大”的位置。</li><li>inherit 对已存在线程无效。</li><li>perf event 泄漏，最终耗尽资源。</li><li>因为 avc_denied 是“拒绝路径上唯一能翻成放行”的拦截点。</li><li>前者是进程上下文，后者是客体（文件/socket）上下文。</li><li>改判定的痕迹是“策略应拒却允许”；换域是“操作发生在有权限处”。</li><li>先用缓冲区不足的方式探测返回长度，再分配。</li><li>看 dmesg 的 avc 日志，逐字段对照 allow 规则。</li><li>因为 UID 不同才有独立沙箱与独立存储。</li><li>CE 需解锁后可用，DE 开机即可用。</li><li>因为半改状态最难恢复。</li><li>并发登录、强杀隔离、无残留、可回滚。</li></ul>
+<h2>D.5 第五部（L01–L10）</h2>
+<ul><li>pre 读配置进内存，post 按包名/UID 决定用不用。</li><li>因为 post 阶段已降权，读不到 /data/adb。</li><li>沙箱内 App 却访问过 /data/adb、framework dex 的匿名映射、dexElements 多出条目。</li><li>会跳过注册，表现为“模块对该进程不生效”。</li><li>定位 ArtMethod、生成桩类、写蹦床、替换 entrypoint、备份原方法。</li><li>因为要处理 kAccNative、参数类型、调用约定。</li><li>还在（如果桩正确保留了 synchronized 语义）；处理不当会丢锁。</li><li>方法变 native、dex 来源异常、调用耗时异常。</li><li>按 priority 排序；顺序错会导致语义错。</li><li>因为内联后调用者不再看 entrypoint。</li><li>性能骤降、时序改变。</li><li>因为“突然变慢”本身就是异常。</li><li>先父后子，保证核心类不被覆盖。</li><li>SharedMemory（隐蔽）、file-backed（简单）、内存 dex（兼容差）。</li><li>因为不在同一条委派链上。</li><li>还有对象持有模块类的引用。</li><li>编译期常量最难（要改构建）、IR 改写最深。</li><li>因为运行时抹字符串说明它曾经存在过。</li><li>用枚举值承载语义，名字延迟绑定。</li><li>一体两面：混淆让逆向难，泛化让检测难。</li><li>Binder / FD / linker / module counter。</li><li>因为其他线程可能正在遍历，写错就踩空。</li><li>能发现“只改了一半”的不一致。</li><li>因为死亡通知也体现了“这个代理存在过”。</li><li>因为动态类不在 dex 里，反射枚举看不到。</li><li>因为备份与本体温差明显，容易被扫出来。</li><li>因为 ART 可能返回包装对象以支持通用 API。</li><li>因为厂商定制会让 “版本号” 与 “实际行为” 不一致。</li><li>因为对象会移动，裸指针失效。</li><li>把版本相关代码集中，上层只依赖适配层。</li><li>选 3~4 个有代表性的（最老/主流/最新）。</li><li>因为 GC 可能移动或卸载它们。</li><li>时延分布最难（由真实执行路径决定）。</li><li>因为它测的是统计性质，不依赖具体特征。</li><li>因为不同版本的性能差异远大于 hook 带来的开销。</li><li>让结构真的变合理——没有捷径。</li><li>基本 Hook、冷启动、full GC（最易被忽略）。</li><li>因为不写限制，下一个人会反复踩同一个坑。</li><li>可信链、运行链、检测链。</li><li>开放题：建议选“三绿 + 注入检测”的组合，因为它同时覆盖硬件层与结构层。</li></ul>
+<aside class="note"><span class="note-tag">要点</span><div>这份答案的用法：先自己答，再对照“要点是否覆盖”。不要背原文——技术细节会随版本变化，能自己推导出来才算真的掌握。</div></aside>
+</article>
+<div class="pager"><a href="a03.html"><span class="dir">上一讲</span>A03 附录 C · 学习路线与实验环境</a><a href="a05.html" style="text-align:right"><span class="dir">下一讲</span>A05 附录 E · 常见问题与排错清单</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 Android hook 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item active" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">09</span><h1>Android hook 原理</h1><p class="ch-en">frida hook、GOT hook、CFI 与 CRC</p></div>
+<p class="lead">三种 Hook，三种痕迹。选哪一种，取决于你要骗过谁。</p>
+<h2>9.1 三种实现位置</h2>
+<figure>
+<img src="../assets/f09_hook_compare.png" alt="图 9-1" width="1080">
+<figcaption><b>图 9-1</b><span>GOT / Inline / Java 三种 Hook 的步骤与痕迹对照</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>类型</th><th>改什么</th><th>拦得住什么</th><th>典型痕迹</th></tr></thead><tbody>
+<tr><td>GOT / PLT</td><td>数据段的函数指针</td><td>跨 so 的调用</td><td>GOT 所在页变可写</td></tr>
+<tr><td>Inline</td><td>函数开头的指令</td><td>包括 so 内部调用</td><td>代码段字节变化</td></tr>
+<tr><td>Java</td><td>ArtMethod 的 entrypoint</td><td>Java 方法调用</td><td>方法变成 native</td></tr>
+</tbody></table></div>
+<h2>9.2 GOT Hook：最省事也最脆弱</h2>
+<p>ELF 的延迟绑定机制让外部函数调用先经过 GOT 表。把表项改成自己的函数地址，就完成了一次 hook——一条指令都不改，代码段 CRC 完全不受影响。缺点也很明确：它只对“跨 so 的调用”有效，如果目标 so 内部直接调用自己的函数，GOT 里根本没有这一项。</p>
+<div class="code">
+<div class="code-title">GOT hook 的关键三步</div>
+<pre><code>// 1. 找到目标 so 的基址与 GOT 段
+auto base = get_module_base(&quot;libtarget.so&quot;);
+auto got  = find_section(base, &quot;.got&quot;);
+ 
+// 2. 改页权限，让 GOT 可写
+mprotect(page_align(got), page_size, PROT_READ | PROT_WRITE);
+ 
+// 3. 替换表项（保存原值以便调用原函数）
+orig = *(void**)slot;  *(void**)slot = (void*)my_hook;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>9.3 Inline Hook：能力最强，最难写对</h2>
+<p>Inline hook 直接改函数开头的几个字节，写入一条跳转。难点全在细节：要处理指令边界（不能把一条指令劈成两半）、要保证多核并发安全（改的瞬间别的核可能正在执行）、要处理 PC 相对寻址（被搬走的指令可能依赖原地址）、还要在 ARM64 上考虑 BTI 与 PAC。</p>
+<ol><li><strong>指令边界</strong>：ARM64 是定长 4 字节，比 x86 友好，但仍要确认被覆盖的指令不是跳转目标。</li><li><strong>并发</strong>：先用原子写改到“半跳转”状态是危险的，通行做法是暂停其他核或使用 breakpoint 中转。</li><li><strong>近跳转范围</strong>：<code>B</code> 指令只有 ±128MB，超出范围要用 <code>LDR + BR</code> 组合。</li><li><strong>指令缓存</strong>：改完必须 <code>__builtin___clear_cache</code>，否则 CPU 可能还在执行旧指令。</li></ol>
+<h2>9.4 CFI 与 CRC：检测方的两道闸</h2>
+<p>CFI（Control Flow Integrity）要求间接调用的目标必须是“合法入口”。在 ARM64 上体现为 BTI：间接跳转目标的第一条指令必须是 <code>BTI</code> 或 <code>PACIASP</code>，否则触发异常。所以你的 hook 桩函数也必须带这个标记，否则一调就崩。</p>
+<p>CRC 则是更朴素的思路：定期算关键函数的字节哈希，和预期值比对。Inline hook 会直接改变字节，所以是 CRC 的天敌；GOT hook 不改代码段，但会把 GOT 所在页变成可写，于是“页权限变化”又成了新的信号。</p>
+<blockquote>每堵上一扇门，就会打开一扇窗——检测与对抗的历史，就是这句话的注脚。</blockquote>
+<aside class="note"><span class="note-tag">要点</span><div>实践建议：优先选“改动最小”的方案。能 GOT 就不 inline，能数据就不代码，能用户态就不内核态。改动面越小，需要处理的边界情况越少，被发现的概率也越低。</div></aside>
+<h2>9.5 本章自测</h2>
+<ul><li>为什么 GOT hook 拦不住 so 内部的直接调用？</li><li>Inline hook 需要处理的四个细节分别是什么？</li><li>BTI 是什么？为什么 hook 桩函数不加 BTI 会崩溃？</li><li>如果检测方同时查 CRC 和页权限，你会怎么绕？</li></ul>
+<h2>9.6 深入：ARM64 上一条跳转要占多少字节</h2>
+<p>这是 inline hook 最实际的问题。你只有有限的字节可改，还要保证原子性与并发安全。</p>
+<div class="tbl"><table>
+<thead><tr><th>方案</th><th>字节数</th><th>跳转范围</th><th>备注</th></tr></thead><tbody>
+<tr><td>B imm26</td><td>4</td><td>±128MB</td><td>最省，但范围小</td></tr>
+<tr><td>LDR + BR</td><td>16</td><td>全地址空间</td><td>要占 4 条指令</td></tr>
+<tr><td>ADRP + ADD + BR</td><td>12</td><td>±4GB</td><td>折中</td></tr>
+<tr><td>BRK 中转</td><td>4</td><td>任意</td><td>靠信号处理跳转，慢但安全</td></tr>
+</tbody></table></div>
+<p>现实中常用组合：函数开头写 <code>B</code> 到附近的 trampoline（如果靠得够近），trampoline 里再放 <code>LDR + BR</code> 到真正的 hook。</p>
+<h2>9.7 并发安全的三种做法</h2>
+<ol><li><strong>停核</strong>：改之前把其他 CPU 停住（<code>stop_machine</code> 在用户态不可用，但可以靠信号让线程进入安全点）。</li><li><strong>原子写</strong>：把 4 字节对齐的 <code>B</code> 指令用一次原子写替换。前提是“旧指令与新指令都是单条 4 字节”。</li><li><strong>中转页</strong>：先让入口指向一个“中转页”，等所有线程都过了这个点，再改真正的内容。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>最常见的崩溃原因：改到一半被抢占，另一个线程执行了“半条指令”。ARM64 是定长指令集，这个问题比 x86 轻，但<strong>跨页</strong>与<strong>跨 cache line</strong> 的情况仍要小心。</div></aside>
+<h2>9.8 一个检测与反检测的对照表</h2>
+<div class="tbl"><table>
+<thead><tr><th>检测手段</th><th>能发现</th><th>绕过思路</th></tr></thead><tbody>
+<tr><td>代码段 CRC</td><td>inline hook</td><td>改数据段（GOT）、或用硬件断点</td></tr>
+<tr><td>页权限检查</td><td>GOT 被改成可写</td><td>改完立刻恢复权限</td></tr>
+<tr><td>反汇编比对</td><td>指令被替换</td><td>让替换后的指令语义等价（难）</td></tr>
+<tr><td>执行耗时</td><td>蹦床开销</td><td>减少 hook 数量、优化跳板</td></tr>
+</tbody></table></div>
+<h2>9.9 原理推演：为什么“改代码”比“改数据”更容易被发现</h2>
+<p>因为“代码”有更多的不变量可以被校验：字节内容（CRC）、指令语义（反汇编）、页权限（是否可写）、以及执行行为（分支预测、耗时）。而“数据”的不变量少得多。</p>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>可校验的不变量</th><th>数量</th></tr></thead><tbody>
+<tr><td>代码段</td><td>CRC、反汇编、页权限、语义</td><td>多</td></tr>
+<tr><td>数据段</td><td>初值、结构自洽性</td><td>少</td></tr>
+</tbody></table></div>
+<p>所以工程上的优先级永远是：<strong>改数据 &gt; 改代码 &gt; 改内核结构</strong>。每上升一级，需要维护的不变量数量就翻倍。</p>
+<h2>9.10 数据细节：BTI 的三条指令</h2>
+<div class="code">
+<div class="code-title">BTI 的三种变体</div>
+<pre><code>BTI      // 允许任意间接跳转目标
+BTI c    // 只允许 call 类型
+BTI j    // 只允许 jump 类型
+// 另外 PACIASP 也隐含 BTI 语义</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>实践含义：如果你的蹦床入口用 <code>BTI</code>（无参数）就最安全——它接受所有类型的间接跳转。但如果加固方把调用点限定为 <code>BTI c</code>，而你的蹦床是 <code>BTI j</code>，就会触发异常。</p>
+<h2>9.11 工程权衡：hook 数量与稳定性</h2>
+<div class="tbl"><table>
+<thead><tr><th>hook 数量</th><th>稳定性</th><th>性能</th><th>可维护性</th></tr></thead><tbody>
+<tr><td>1~3 个</td><td>高</td><td>好</td><td>好</td></tr>
+<tr><td>10+ 个</td><td>中</td><td>中</td><td>中</td></tr>
+<tr><td>50+ 个</td><td>低</td><td>差</td><td>差</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>经验值：一个模块的 hook 数量控制在 10 个以内，超过就要考虑“是不是用错了方法”——很多时候你想 hook 50 个点，实际上只需要 hook 1 个汇聚点。</div></aside>
+</article>
+<div class="pager"><a href="08-fork.html"><span class="dir">上一讲</span>08 Android zygisk 原理</a><a href="10-frida.html" style="text-align:right"><span class="dir">下一讲</span>10 Android frida 源码讲解</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

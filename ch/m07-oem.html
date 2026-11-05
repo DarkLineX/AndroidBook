@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M07 Android Chrome 多进程多开</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item active" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">M07</span><h1>Android Chrome 多进程多开</h1><p class="ch-en">OEM Custom Profile、AMS/zygote、独立 UID/CE/DE、Chrome child process、CDP、每-user VPN、KPM 与事务回滚</p></div>
+<p class="lead">一个 App、多套身份：难点不在启动，而在“隔离得干净、回滚得掉”。</p>
+<h2>7.1 五层要处理的东西</h2>
+<figure>
+<img src="../assets/m07_chrome.png" alt="图 M7-1" width="1080">
+<figcaption><b>图 M7-1</b><span>多开要处理的五个层次与三个易翻车点</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>层</th><th>要处理什么</th><th>难点</th></tr></thead><tbody>
+<tr><td>Profile 层</td><td>独立 user 数据目录</td><td>OEM Custom Profile 的兼容</td></tr>
+<tr><td>AMS / zygote</td><td>独立进程、独立 UID</td><td>进程复用与回收</td></tr>
+<tr><td>存储层</td><td>CE / DE 加密存储</td><td>多用户各自独立</td></tr>
+<tr><td>Chrome child</td><td>渲染/GPU/网络进程身份继承</td><td>子进程逃逸隔离</td></tr>
+<tr><td>调试通道</td><td>CDP 端口按实例隔离</td><td>端口冲突与暴露</td></tr>
+</tbody></table></div>
+<h2>7.2 三个容易翻车的点</h2>
+<ol><li><strong>VPN 按 user</strong>：每个 user 一个 VPN 实例，否则两个实例的网络身份会串味。</li><li><strong>KPM 与事务</strong>：内核侧改动必须可回滚，失败要原子撤销——半改状态是最难恢复的。</li><li><strong>数据归属</strong>：多开实例的缓存、凭据目录不能共享，否则等于没隔离。</li></ol>
+<h2>7.3 验收清单</h2>
+<div class="code">
+<div class="code-title">四条硬指标</div>
+<pre><code>1. 两实例同时登录，互不影响会话
+2. 强杀一个实例，另一个继续正常工作
+3. 卸载实例后，/data 下无残留目录
+4. 回滚后，原 App 行为与改动前完全一致</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>这一章的方法论可以迁移到任何“多实例隔离”场景：先把“身份、存储、网络、调试”四条线分开，再考虑性能与体验。</div></aside>
+<h2>7.11 本章自测</h2>
+<ul><li>多开为什么必须给每个实例独立 UID？</li><li>CE 与 DE 存储的区别是什么？</li><li>KPM 改动为什么要“事务化”？</li><li>四条验收指标分别验证什么？</li></ul>
+<h2>7.4 深入：为什么要“每 user 一个 VPN”</h2>
+<p>Android 的 VPN 是“按 user 生效”的：<code>VPNService</code> 建立的 tun 接口属于某个 user。如果两个多开实例共用同一个 VPN，它们的流量会一起走同一条隧道，网络身份就串了。</p>
+<div class="tbl"><table>
+<thead><tr><th>方案</th><th>隔离度</th><th>复杂度</th></tr></thead><tbody>
+<tr><td>共用 VPN</td><td>无</td><td>低</td></tr>
+<tr><td>每 user 一个</td><td>高</td><td>中</td></tr>
+<tr><td>按 App 分流</td><td>最高</td><td>高</td></tr>
+</tbody></table></div>
+<h2>7.5 实战：验证隔离是否真的生效</h2>
+<div class="code">
+<div class="code-title">四条验证</div>
+<pre><code># 1. 两个实例的网络出口 IP 是否不同
+# 2. 强杀一个，另一个是否存活
+# 3. 数据目录是否独立
+# 4. 卸载后是否无残留</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.6 原理推演：多开的本质是“多套身份”</h2>
+<p>Android 的隔离建立在“UID + 用户 + 存储目录”这三者上。多开就是“让同一个 App 在不同身份下运行”，所以每一套身份都必须有独立的 UID、独立的存储、独立的进程。</p>
+<div class="tbl"><table>
+<thead><tr><th>维度</th><th>单实例</th><th>多开</th></tr></thead><tbody>
+<tr><td>UID</td><td>一个</td><td>每实例一个</td></tr>
+<tr><td>data 目录</td><td>一个</td><td>每实例一个</td></tr>
+<tr><td>进程</td><td>一组</td><td>每实例一组</td></tr>
+<tr><td>VPN</td><td>一个</td><td>每 user/实例一个</td></tr>
+</tbody></table></div>
+<p>只要有一个维度没分开，就会“串味”——表现为“两个实例共享登录态”或“互相能看到对方的数据”。</p>
+<h2>7.7 数据细节：CE 与 DE 存储</h2>
+<div class="tbl"><table>
+<thead><tr><th>存储</th><th>全称</th><th>可用时机</th></tr></thead><tbody>
+<tr><td>CE</td><td>Credential Encrypted</td><td>解锁后</td></tr>
+<tr><td>DE</td><td>Device Encrypted</td><td>开机即可用</td></tr>
+</tbody></table></div>
+<p>多开实例如果要“开机自启”，就不能只依赖 CE 目录——那时用户还没解锁。这是很多“多开在重启后失效”问题的原因。</p>
+<h2>7.8 深入：OEM Custom Profile 是什么</h2>
+<p>部分厂商提供了“应用多开 / 应用分身”的系统能力，本质是“为同一个包创建多个用户档案（profile）”。理解它的实现，比自己从零做多开省力得多——但也受限于它的能力边界。</p>
+<div class="tbl"><table>
+<thead><tr><th>方案</th><th>实现层</th><th>能力边界</th></tr></thead><tbody>
+<tr><td>厂商分身</td><td>系统级 profile</td><td>受厂商限制</td></tr>
+<tr><td>自建多开</td><td>AMS + UID + 存储</td><td>完全可控</td></tr>
+<tr><td>虚拟空间</td><td>应用内虚拟化</td><td>隔离弱</td></tr>
+</tbody></table></div>
+<p>选择依据：如果只是“两个账号”，厂商分身够用；如果需要“完全独立的环境 + 自定义行为”，就得自建。</p>
+<h2>7.9 深入：Chrome 的 child process 为什么会逃逸隔离</h2>
+<p>因为 Chrome 的渲染/GPU/网络进程是“由主进程 fork 出来的”，它们继承主进程的 UID 与部分环境。如果隔离逻辑只作用在“主进程启动时”，子进程就可能“继承到不该有的状态”。</p>
+<div class="code">
+<div class="code-title">验证子进程身份</div>
+<pre><code>ps -A -o PID,PPID,UID,NAME | grep -i chrome
+# 看所有 child 的 UID 是否与主进程一致且符合预期</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.10 实战：CDP 端口隔离</h2>
+<p>每个实例如果都开 CDP（Chrome DevTools Protocol），端口必须不同，且不能对外暴露。常见错误是“所有实例都用 9222”，结果第二个实例启动失败或连到了第一个。</p>
+<div class="code">
+<div class="code-title">按实例分配端口</div>
+<pre><code>port = base_port + instance_index
+--remote-debugging-port=&lt;port&gt;
+# 并绑定到 127.0.0.1，不要 0.0.0.0</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="m06-inode.html"><span class="dir">上一讲</span>M06 SELinux 与 FD 安全扩展</a><a href="l01-zygisk.html" style="text-align:right"><span class="dir">下一讲</span>L01 LSPosed 总体设计与进程进入</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

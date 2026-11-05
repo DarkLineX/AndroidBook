@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M01 KPM 模块设计、装载与生命周期</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item active" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">M01</span><h1>KPM 模块设计、装载与生命周期</h1><p class="ch-en">KPM ELF、编译重定位、符号与 offset、安装/卸载顺序、退出回收</p></div>
+<p class="lead">KPM 不是普通 .ko：它自己带 loader，自己解决符号，也自己负责收尾。</p>
+<h2>1.1 五个阶段</h2>
+<figure>
+<img src="../assets/m01_kpm.png" alt="图 M1-1" width="1080">
+<figcaption><b>图 M1-1</b><span>从编译到卸载的五个阶段，以及四类风险</span></figcaption>
+</figure>
+<ol><li><strong>编译输出 .kpm</strong>：ELF 格式，保留符号表与重定位信息。</li><li><strong>用户态 loader 读取</strong>：解析段，向内核申请内存（<code>vmalloc</code> / <code>module_alloc</code>）。</li><li><strong>重定位与符号绑定</strong>：解析内核符号地址，填入 GOT 或直接改写指令。</li><li><strong>执行入口</strong>：调用 init 函数，注册 hook 与观测点。</li><li><strong>卸载</strong>：还原 hook、释放内存、摘除链表节点。</li></ol>
+<h2>1.2 四类风险</h2>
+<div class="tbl"><table>
+<thead><tr><th>风险</th><th>表现</th><th>对策</th></tr></thead><tbody>
+<tr><td>顺序错</td><td>先注册后初始化 → 崩</td><td>严格按 init 顺序</td></tr>
+<tr><td>并发</td><td>hook 生效瞬间有线程在跑原指令</td><td>暂停/屏障/中转</td></tr>
+<tr><td>回收不全</td><td>残留 timer / workqueue 踩空</td><td>逐项登记，逐项注销</td></tr>
+<tr><td>符号缺失</td><td>换内核版本后找不到符号</td><td>能力探测 + 回退</td></tr>
+</tbody></table></div>
+<h2>1.3 生命周期管理清单</h2>
+<p>建议在模块里维护一张“资源表”：每申请一样东西就登记一行（内存、hook 点、timer、workqueue、链表节点、perf event），卸载时逐行注销。这样不会漏。</p>
+<div class="code">
+<div class="code-title">资源登记表的思路</div>
+<pre><code>struct res { int type; void* ptr; void (*free)(void*); };
+static struct res table[64]; static int n_res;
+ 
+// 申请时：
+table[n_res++] = (struct res){RES_MEM, p, kfree_wrap};
+ 
+// 卸载时：
+for (int i = n_res - 1; i &gt;= 0; i--) table[i].free(table[i].ptr);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>KPM 与标准 .ko 最大的差别在于“谁负责校验”。标准模块要过签名与 vermagic 检查，KPM 一般绕开这条路径——这意味着所有的正确性责任，都落在你的 loader 与模块代码上。</div></aside>
+<h2>1.4 本章自测</h2>
+<ul><li>KPM 为什么通常不走标准模块加载路径？</li><li>四类风险里，哪一类最难调试？</li><li>资源登记表解决了什么问题？</li><li>卸载顺序为什么要“倒序”？</li></ul>
+<h2>1.5 深入：为什么 KPM 要自己带 loader</h2>
+<p>标准内核模块加载要过三道关：模块签名、<code>vermagic</code> 匹配、<code>MODVERSIONS</code> 符号 CRC 校验。任何一关不过，<code>init_module</code> 就返回失败。KPM 自己带 loader，等于绕开这三道关——代价是所有的正确性检查都要自己做。</p>
+<div class="tbl"><table>
+<thead><tr><th>检查</th><th>标准模块</th><th>KPM</th></tr></thead><tbody>
+<tr><td>签名</td><td>必须</td><td>跳过</td></tr>
+<tr><td>vermagic</td><td>必须匹配</td><td>自己处理</td></tr>
+<tr><td>符号 CRC</td><td>必须匹配</td><td>自己解析</td></tr>
+<tr><td>内存分配</td><td>内核代劳</td><td>自己申请</td></tr>
+</tbody></table></div>
+<h2>1.6 实战：加载失败怎么定位</h2>
+<div class="code">
+<div class="code-title">按顺序排查</div>
+<pre><code>dmesg | tail -40              # 内核有没有报错
+cat /proc/kallsyms | grep &lt;sym&gt;   # 符号在不在
+cat /proc/modules             # 模块列表（KPM 通常不在这里）
+# 检查 loader 的返回值与 errno</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>最常见的原因是“符号找不到”。新内核把某些符号取消了导出，或者改了名字。写代码时一定要做“符号存在性检查”，而不是假设它一定在。</div></aside>
+<h2>1.7 原理推演：为什么“模块”比“改内核”更容易维护</h2>
+<p>因为模块可以被卸载。改内核是“一次性、不可逆”的；模块是“可加载、可卸载、可替换”的。这让“试错”的成本从“刷机”降到“重新加载”。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>可逆性</th><th>迭代成本</th></tr></thead><tbody>
+<tr><td>改内核镜像</td><td>不可逆</td><td>高（要刷机）</td></tr>
+<tr><td>内核模块</td><td>可卸载</td><td>低</td></tr>
+<tr><td>KPM</td><td>可卸载</td><td>低（但要自己管）</td></tr>
+</tbody></table></div>
+<p>代价是：模块必须自己处理“卸载时的清理”。清理不干净，就会在“卸载之后”崩溃——而这类崩溃最难定位。</p>
+<h2>1.8 数据细节：一次加载的内存布局</h2>
+<div class="code">
+<div class="code-title">典型布局</div>
+<pre><code>module_alloc 区:  [代码][只读数据][可写数据]
+                  ↑ 需要可执行
+vmalloc 区:       [大块缓冲]
+kmalloc 区:       [小对象]</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>注意“代码”必须落在可执行区。有些内核配了 <code>CONFIG_STRICT_MODULE_RWX</code>，会让模块的代码段变成只读——这时“运行时改自己的代码”就会失败，需要额外的处理（比如先改 PTE 权限）。</p>
+<h2>1.9 深入：一次加载失败的错误码对照</h2>
+<div class="tbl"><table>
+<thead><tr><th>错误</th><th>含义</th><th>处理</th></tr></thead><tbody>
+<tr><td>-ENOENT</td><td>符号找不到</td><td>换符号或做探测</td></tr>
+<tr><td>-ENOMEM</td><td>内存不足</td><td>减小模块体积</td></tr>
+<tr><td>-EINVAL</td><td>参数 / 偏移不对</td><td>校验 ELF 解析</td></tr>
+<tr><td>-EPERM</td><td>权限不足</td><td>检查 SELinux / 能力</td></tr>
+</tbody></table></div>
+<p>把错误码打出来，是最省力的排查方式。很多“加载失败”其实只是 <code>-ENOENT</code>——某个符号在新内核里没了。</p>
+<h2>1.10 深入：为什么“卸载”比“加载”难</h2>
+<p>因为加载是“从无到有”，卸载是“从有到无”——后者要处理“还有谁在引用我”。定时器、workqueue、hook 点、链表节点、内存，任何一样没清干净，都会在之后某个时刻崩。</p>
+<div class="code">
+<div class="code-title">卸载的自检清单</div>
+<pre><code>1. 所有 hook 点已还原（逐字节比对）
+2. 所有 timer / work 已 cancel 并 flush
+3. 所有链表节点已摘除
+4. 所有内存已释放
+5. 引用计数归零</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>1.11 实战：写一个“资源登记”宏</h2>
+<div class="code">
+<div class="code-title">把登记变成习惯</div>
+<pre><code>#define REG(type, ptr, fn)  register_res(type, ptr, fn)
+#define UNREG_ALL()         unregister_all()
+ 
+p = module_alloc(size);  REG(RES_MEM, p, vfree_wrap);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="f11-maps.html"><span class="dir">上一讲</span>F11 当前工程隐藏与兼容处理总表</a><a href="m02-maps.html" style="text-align:right"><span class="dir">下一讲</span>M02 内核观察面与基础检测处理</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

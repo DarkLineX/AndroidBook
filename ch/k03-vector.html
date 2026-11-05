@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K03 ARM64 异常、中断与信号</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item active" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">K03</span><h1>ARM64 异常、中断与信号</h1><p class="ch-en">vector、pt_regs、syscall、IRQ、signal、debug trap</p></div>
+<p class="lead">所有 hook 与 trace，本质都是“在异常入口插一脚”。</p>
+<figure>
+<img src="../assets/k03_exception.png" alt="图 K3-1" width="1080">
+<figcaption><b>图 K3-1</b><span>控制流被打断的五种方式</span></figcaption>
+</figure>
+<h2>3.1 五种打断方式</h2>
+<div class="tbl"><table>
+<thead><tr><th>类型</th><th>同步/异步</th><th>典型来源</th></tr></thead><tbody>
+<tr><td>异常</td><td>同步</td><td>page fault、未定义指令、断点</td></tr>
+<tr><td>中断 IRQ</td><td>异步</td><td>外设、定时器</td></tr>
+<tr><td>系统调用 svc</td><td>同步</td><td>EL0 主动陷入 EL1</td></tr>
+<tr><td>信号</td><td>异步投递</td><td>内核替用户态“排队”一个处理函数</td></tr>
+<tr><td>调试异常</td><td>同步</td><td>断点、单步、watchpoint</td></tr>
+</tbody></table></div>
+<h2>3.2 四个必须记住的寄存器</h2>
+<div class="code">
+<div class="code-title">ARM64 异常现场的关键寄存器</div>
+<pre><code>ELR_EL1   // 异常返回地址（也是 hook 改返回去向的地方）
+SPSR_EL1  // 保存的 PSTATE，其中 SS 位 = 单步使能
+FAR_EL1   // Fault Address Register，出错地址
+ESR_EL1   // 异常原因（EC 字段说明是哪类异常）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><code>pt_regs</code> 是异常发生时压到内核栈上的一份完整现场（x0–x30、sp、pc、pstate）。<strong>hook 想改寄存器，改的就是这个结构</strong>；想改返回地址，改 <code>pt_regs-&gt;pc</code>。</p>
+<h2>3.3 单步是怎么实现的</h2>
+<p>把 <code>MDSCR_EL1.SS</code> 置 1，并把 <code>SPSR_EL1.SS</code> 置 1，异常返回后 CPU 每执行完一条指令就再陷入一次调试异常。这就是 M04 单步 trace 的硬件基础——不需要改任何代码，靠 CPU 自己停下来。</p>
+<aside class="note"><span class="note-tag">要点</span><div>代价：单步会让执行慢几十倍，对时序敏感的代码（加密、握手、超时判断）可能因此走不同分支。所以单步只适合“短时间、定点”的观测，不适合长期驻留。</div></aside>
+<h2>3.4 本章自测</h2>
+<ul><li>同步异常与异步中断的区别是什么？</li><li>改 hook 的返回地址，改哪个寄存器或结构？</li><li>单步的开关涉及哪两个寄存器位？</li><li>为什么单步可能改变程序行为？</li></ul>
+<h2>3.5 深入：一次系统调用的完整旅程</h2>
+<p>用户态执行 <code>svc #0</code>，CPU 从 EL0 陷入 EL1，走 <code>vectors</code> 里对应的入口，保存 <code>pt_regs</code>，然后根据 <code>x8</code> 里的系统调用号查表，跳到具体实现。返回时恢复现场，<code>eret</code> 回到 EL0。</p>
+<div class="tbl"><table>
+<thead><tr><th>步骤</th><th>发生什么</th><th>可 hook 的点</th></tr></thead><tbody>
+<tr><td>svc 指令</td><td>陷入 EL1</td><td>替换 syscall 表</td></tr>
+<tr><td>保存现场</td><td>pt_regs 入栈</td><td>改寄存器</td></tr>
+<tr><td>查表</td><td>按 x8 找实现</td><td>替换表项</td></tr>
+<tr><td>执行</td><td>真正干活</td><td>函数入口 kprobe</td></tr>
+<tr><td>返回</td><td>eret 回 EL0</td><td>改返回值</td></tr>
+</tbody></table></div>
+<h2>3.6 实战：用 kprobe 抓一次 openat</h2>
+<div class="code">
+<div class="code-title">抓参数</div>
+<pre><code>echo &#x27;p:myopen do_sys_open dfd=%x0 filename=+0(%x1):string flags=%x2&#x27; \
+  &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/myopen/enable
+cat /sys/kernel/tracing/trace_pipe</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>这里的 <code>+0(%x1):string</code> 是 kprobe 的语法：从 x1 指向的地址读字符串。不写偏移会读到指针本身，看到一堆乱码——这是新手最常犯的错。</div></aside>
+<h2>3.7 原理推演：为什么“异常”是 hook 的天然入口</h2>
+<p>因为异常是“CPU 主动交给内核控制权”的时刻。此时内核必然在做“保存现场 → 处理 → 恢复”这三件事，你只要在这条路径上插一脚，就能拿到完整的寄存器与内存访问权。</p>
+<div class="tbl"><table>
+<thead><tr><th>异常类型</th><th>能否 hook</th><th>代价</th></tr></thead><tbody>
+<tr><td>page fault</td><td>能</td><td>中（高频）</td></tr>
+<tr><td>未定义指令</td><td>能</td><td>低</td></tr>
+<tr><td>断点 BRK</td><td>能</td><td>低</td></tr>
+<tr><td>单步</td><td>能</td><td>高（每条指令都陷入）</td></tr>
+</tbody></table></div>
+<p>这就是为什么“硬件断点”比“改代码”更优雅：它利用的是 CPU 自带的异常机制，不需要改任何字节。</p>
+<h2>3.8 数据细节：ESR_EL1 的 EC 字段</h2>
+<div class="code">
+<div class="code-title">常见 EC 值（ESR_EL1[31:26]）</div>
+<pre><code>0x00  未知原因
+0x15  SVC32（AArch32 系统调用）
+0x16  HVC32
+0x18  MSR/MRS 或系统指令
+0x20  指令 abort（低 EL，取指失败）
+0x21  指令 abort（同一 EL）
+0x22  PC 对齐错误
+0x24  数据 abort（低 EL）
+0x25  数据 abort（同一 EL）
+0x26  SP 对齐错误
+0x30  硬件断点（低 EL）
+0x31  硬件断点（同一 EL）
+0x32  软件单步（低 EL）
+0x33  软件单步（同一 EL）
+0x34  观察点 watchpoint（低 EL）
+0x35  观察点（同一 EL）
+0x38  BKPT（AArch32 断点指令）
+0x3C  BRK（AArch64 断点指令）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>处理异常时，先看 EC 就知道“这是什么类型的异常”，再决定走哪条处理路径。写 hook 时也一样：先判断 EC，再决定要不要介入。</p>
+<aside class="note"><span class="note-tag">要点</span><div>三个最容易记错的地方：① <strong>软件单步是 0x32/0x33</strong>，不是 0x38；② <strong>0x38 是 AArch32 的 BKPT</strong>，AArch64 的断点指令 BRK 是 <strong>0x3C</strong>；③ <strong>数据 abort 同一 EL 是 0x25</strong>，0x21 是指令 abort 同一 EL。另外 EC 只说明“异常类别”，同一 EL 还是低 EL 要结合 SPSR 判断，所以表里同一个原因常有两个值。</div></aside>
+<h2>3.9 深入：异常向量表的结构</h2>
+<p>ARM64 有 16 个异常入口，按“来源 EL × 类型”排布：当前 EL 用 SP0、当前 EL 用 SPx、低 EL 用 AArch64、低 EL 用 AArch32，每种再分同步/IRQ/FIQ/SError。这就是 <code>vectors</code> 表。</p>
+<div class="tbl"><table>
+<thead><tr><th>偏移</th><th>来源</th><th>类型</th></tr></thead><tbody>
+<tr><td>0x000</td><td>当前 EL, SP0</td><td>同步</td></tr>
+<tr><td>0x080</td><td>当前 EL, SP0</td><td>IRQ</td></tr>
+<tr><td>0x200</td><td>低 EL, AArch64</td><td>同步</td></tr>
+<tr><td>0x280</td><td>低 EL, AArch64</td><td>IRQ</td></tr>
+</tbody></table></div>
+<p>hook 异常处理时，改的就是这张表里的某一项。但注意：表在只读段里，且被 KASLR 影响——要先找到它的运行地址。</p>
+<h2>3.10 深入：为什么“信号”是异步的</h2>
+<p>因为信号的投递时机不确定：内核可能在任意“返回用户态”的时刻检查挂起的信号。所以信号处理函数可能在任意两条指令之间被调用——这也是为什么信号处理函数里只能调用“异步信号安全”的函数。</p>
+<div class="code">
+<div class="code-title">典型的坑</div>
+<pre><code>void handler(int sig) {
+    printf(&quot;got %d\n&quot;, sig);   // 不安全！printf 不是 async-signal-safe
+    // 正确做法：write() 或设置一个 volatile 标志
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.11 实战：用信号做“反调试”</h2>
+<ol><li>注册一个 SIGTRAP 处理函数。</li><li>如果调试器在单步，SIGTRAP 会被调试器先收到，你的处理函数不会被调用。</li><li>于是“处理函数没被调用”就成了“正在被调试”的证据。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这是非常经典的反调试手法，也很容易被反向利用：hook 掉信号注册，让处理函数“总是被调用”。</div></aside>
+</article>
+<div class="pager"><a href="k02-vma.html"><span class="dir">上一讲</span>K02 Linux 内存管理</a><a href="k04-file.html" style="text-align:right"><span class="dir">下一讲</span>K04 VFS、文件系统与 procfs</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

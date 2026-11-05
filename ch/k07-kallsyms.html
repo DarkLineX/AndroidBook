@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K07 内核符号、KASLR 与运行地址</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item active" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">K07</span><h1>内核符号、KASLR 与运行地址</h1><p class="ch-en">System.map、kallsyms、export、KMI、MODVERSIONS</p></div>
+<p class="lead">地址每次开机都变，但“相对关系”不变——这是所有定位方法的根基。</p>
+<figure>
+<img src="../assets/k07_kaslr.png" alt="图 K7-1" width="1080">
+<figcaption><b>图 K7-1</b><span>四种地址说法与符号来源的限制</span></figcaption>
+</figure>
+<h2>7.1 四种“地址说法”</h2>
+<div class="tbl"><table>
+<thead><tr><th>说法</th><th>含义</th><th>是否随开机变</th></tr></thead><tbody>
+<tr><td>链接地址</td><td>vmlinux 里的静态地址</td><td>不变</td></tr>
+<tr><td>slide</td><td>KASLR 随机偏移</td><td>每次开机变</td></tr>
+<tr><td>运行地址</td><td>链接地址 + slide</td><td>变</td></tr>
+<tr><td>相对偏移</td><td>函数间、字段间的距离</td><td>不变</td></tr>
+</tbody></table></div>
+<h2>7.2 符号从哪读</h2>
+<div class="code">
+<div class="code-title">四种符号来源与限制</div>
+<pre><code>/proc/kallsyms        # 运行期符号表（可能被 kptr_restrict 清零）
+System.map            # 编译期符号，需版本匹配
+EXPORT_SYMBOL         # 只有导出符号对模块可见
+kallsyms_lookup_name  # 新内核不再导出，需要自己找</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.3 KMI 与 MODVERSIONS：GKI 的两道门槛</h2>
+<p>先分清两个东西，它们经常被混为一谈：</p>
+<div class="tbl"><table>
+<thead><tr><th>概念</th><th>是什么</th><th>在哪一关生效</th></tr></thead><tbody>
+<tr><td>KMI</td><td>允许 vendor 模块引用的<strong>符号白名单</strong>，加上每个符号的 ABI 签名</td><td>构建期 / 检查期：引用了白名单外的符号，就不算合规模块</td></tr>
+<tr><td>MODVERSIONS</td><td>在模块里记录每个引用符号的 <strong>CRC</strong></td><td>装载期：CRC 不匹配，<code>init_module</code> 直接失败</td></tr>
+</tbody></table></div>
+<p>所以“符号找不到”与“符号版本不匹配”是两类完全不同的失败：前者是名字不在（或没导出），后者是名字在、但 ABI 变了。排查时先看 <code>dmesg</code> 报的是哪一种。</p>
+<p>GKI（通用内核镜像）的意义就在于此：把“内核与 vendor 模块之间的接口”冻结成 KMI，这样同一份 vendor 模块能在多个内核版本上跑。而 KPM 类方案倾向于自己实现 loader，绕开这两道关——代价是所有正确性检查都要自己做。</p>
+<aside class="note"><span class="note-tag">要点</span><div>实用结论：做跨版本工具时，把“版本探测 + 能力探测 + 回退路径”做成三层。任何一层失败都要能优雅降级，而不是直接崩。</div></aside>
+<h2>7.4 本章自测</h2>
+<ul><li>链接地址与运行地址的关系是什么？</li><li>为什么“相对偏移”不受 KASLR 影响？</li><li>GKI 的 MODVERSIONS 检查拦住了什么？</li><li>拿到一个陌生内核，你第一步会做什么探测？</li></ul>
+<h2>7.5 深入：KASLR 的随机化粒度</h2>
+<p>KASLR 不是每一条指令都随机，而是把整个内核镜像在虚拟地址空间里挪一个偏移。所以“函数之间的相对距离”是固定的——这就是为什么相对偏移是稳定的定位基础。</p>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>随机化</th><th>影响</th></tr></thead><tbody>
+<tr><td>内核镜像基址</td><td>有（slide）</td><td>绝对地址变</td></tr>
+<tr><td>模块加载区</td><td>有</td><td>模块地址变</td></tr>
+<tr><td>直接映射区</td><td>有</td><td>物理内存视图变</td></tr>
+<tr><td>函数相对距离</td><td>无</td><td>偏移稳定</td></tr>
+</tbody></table></div>
+<h2>7.6 实战：从 kallsyms 反推 slide</h2>
+<div class="code">
+<div class="code-title">三种做法</div>
+<pre><code># 1. 已知符号 + 已知编译期地址：
+slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
+ 
+# 2. 用 /proc/kallsyms 里两个符号的差，与 System.map 比对
+ 
+# 3. 读异常向量基址 VBAR_EL1（ARM64 没有 x86 的 IDT）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>注意 <code>kptr_restrict</code>：设为 2 时，非特权用户读 <code>/proc/kallsyms</code> 会得到全 0。这时只能靠特征扫描或 BTF/符号表文件。</div></aside>
+<h2>7.7 原理推演：为什么“地址随机化”不能防住所有攻击</h2>
+<p>KASLR 让“绝对地址”不可预测，但它不改变“相对布局”。所以只要攻击者能泄露<strong>一个</strong>内核地址，就能算出 slide，进而算出所有符号的地址。这就是“信息泄露”在利用链里的价值。</p>
+<div class="tbl"><table>
+<thead><tr><th>泄露源</th><th>能算出</th><th>常见程度</th></tr></thead><tbody>
+<tr><td>/proc/kallsyms</td><td>全部符号</td><td>受限</td></tr>
+<tr><td>dmesg 里的地址</td><td>部分</td><td>较常见</td></tr>
+<tr><td>一个函数的返回值</td><td>slide</td><td>视漏洞</td></tr>
+<tr><td>侧信道</td><td>slide</td><td>难</td></tr>
+</tbody></table></div>
+<p>防御方因此会“抹掉”日志里的地址（<code>kptr_restrict</code>、<code>%pK</code>），而攻击方会想尽办法找一个泄露点。</p>
+<h2>7.8 数据细节：kallsyms 的三种权限状态</h2>
+<div class="tbl"><table>
+<thead><tr><th>kptr_restrict</th><th>非特权用户看到</th><th>特权用户看到</th></tr></thead><tbody>
+<tr><td>0</td><td>真实地址</td><td>真实地址</td></tr>
+<tr><td>1</td><td>0（除非 CAP_SYSLOG）</td><td>真实地址</td></tr>
+<tr><td>2</td><td>0</td><td>0</td></tr>
+</tbody></table></div>
+<p>所以在 <code>kptr_restrict=2</code> 的设备上，<code>/proc/kallsyms</code> 只能用来“看符号名”，不能用来“拿地址”。这时只能靠 System.map、BTF、或特征扫描。</p>
+<h2>7.9 深入：符号的三种绑定属性</h2>
+<div class="tbl"><table>
+<thead><tr><th>绑定</th><th>含义</th><th>对模块的意义</th></tr></thead><tbody>
+<tr><td>STB_LOCAL</td><td>文件内可见</td><td>模块用不到</td></tr>
+<tr><td>STB_GLOBAL</td><td>全局可见</td><td>可被导出</td></tr>
+<tr><td>STB_WEAK</td><td>弱符号</td><td>可被覆盖</td></tr>
+</tbody></table></div>
+<p><code>EXPORT_SYMBOL</code> 导出的就是“全局符号”。而 <code>EXPORT_SYMBOL_GPL</code> 多了一个“只给 GPL 模块用”的限制——这在写模块时要特别注意。</p>
+<h2>7.10 深入：为什么“符号版本”会变</h2>
+<p>因为内核结构体会变。比如 <code>task_struct</code> 加了一个字段，那么“访问 cred 的偏移”就变了。<code>MODVERSIONS</code> 通过“对符号的 CRC 校验”来发现这种不匹配。</p>
+<div class="code">
+<div class="code-title">看模块的版本信息</div>
+<pre><code>modinfo your_module.ko | grep vermagic
+# vermagic 里包含内核版本与 SMP/PREEMPT 等配置</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.11 实战：一次“符号找不到”的排查</h2>
+<ol><li>确认符号名拼写（大小写、下划线）。</li><li>确认是否被导出（<code>grep EXPORT_SYMBOL</code> 源码）。</li><li>确认内核版本（新版可能删掉了）。</li><li>退路：用特征扫描找地址，或改用一个稳定导出的等价符号。</li></ol>
+</article>
+<div class="pager"><a href="k06-image.html"><span class="dir">上一讲</span>K06 BTF、vmlinux 与内核类型</a><a href="k08-domain.html" style="text-align:right"><span class="dir">下一讲</span>K08 SELinux 安全模型</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

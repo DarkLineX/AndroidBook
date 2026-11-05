@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 Android ptrace 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item active" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">07</span><h1>Android ptrace 原理</h1><p class="ch-en">ptrace 加载 so、特征与检测</p></div>
+<p class="lead">注入的“祖师爷”手法：让别人的进程替你执行你的代码。</p>
+<h2>7.1 ptrace 能做什么</h2>
+<p><code>ptrace</code> 是内核提供的一套调试接口：一个进程（tracer）可以附加到另一个进程（tracee）上，读它的寄存器、读写它的内存、单步执行、拦截信号。合法的调试器、崩溃收集、以及各种注入器，都建立在它上面。</p>
+<figure>
+<img src="../assets/f07_ptrace.png" alt="图 7-1" width="1080">
+<figcaption><b>图 7-1</b><span>ptrace 注入的七步时序</span></figcaption>
+</figure>
+<h2>7.2 注入的七步</h2>
+<ol><li><code>PTRACE_ATTACH</code>：目标被停下，状态变成 T (stopped)，<code>TracerPid</code> 变成注入器的 pid。</li><li><code>PTRACE_GETREGS</code>：读出 PC、SP 等寄存器，记下现场。</li><li>在目标里找到 <code>dlopen</code> / <code>mmap</code> / <code>__system_property_get</code> 等函数的地址（可借助 <code>/proc/pid/maps</code> 算偏移）。</li><li><code>PTRACE_POKEDATA</code> 往目标栈或空闲区写入 shellcode 与参数字符串。</li><li><code>PTRACE_SETREGS</code> 把 PC 指向 shellcode，继续执行。</li><li>shellcode 调用 <code>dlopen</code> 加载目标 so，然后触发一个断点（<code>BRK</code> 或非法指令）。</li><li><code>PTRACE_DETACH</code> 恢复现场并断开，目标继续跑，so 已经在自己进程里了。</li></ol>
+<h2>7.3 会留下什么痕迹</h2>
+<div class="tbl"><table>
+<thead><tr><th>痕迹</th><th>在哪看</th><th>说明</th></tr></thead><tbody>
+<tr><td>TracerPid ≠ 0</td><td>/proc/&lt;pid&gt;/status</td><td>最直接，注入期间必然存在</td></tr>
+<tr><td>State = T</td><td>/proc/&lt;pid&gt;/stat</td><td>被停下的进程</td></tr>
+<tr><td>匿名可执行段</td><td>/proc/&lt;pid&gt;/maps</td><td>shellcode 与加载的 so</td></tr>
+<tr><td>线程数突变</td><td>/proc/&lt;pid&gt;/task</td><td>agent 自己的线程</td></tr>
+<tr><td>solist 无名项</td><td>遍历 link_map</td><td>dlopen 的副作用</td></tr>
+<tr><td>seccomp 拦截</td><td>dmesg / 返回值</td><td>部分系统禁止 ptrace</td></tr>
+</tbody></table></div>
+<h2>7.4 Yama 与 SELinux：两道门一起关</h2>
+<p>很多人把“ptrace 失败”归因于某一个机制，实际上它是两道门叠加的结果，而且<strong>两道门都没被放宽</strong>。</p>
+<div class="tbl"><table>
+<thead><tr><th>机制</th><th>默认状态</th><th>允许什么</th></tr></thead><tbody>
+<tr><td>Yama（ptrace_scope）</td><td>Android 上仍是 <strong>1</strong>（未放宽到 0）</td><td>只能 attach 自己的后代；或对方主动 <code>PR_SET_PTRACER</code> 授权</td></tr>
+<tr><td>SELinux</td><td>强制访问控制，按域判定</td><td>即使同为 uid，跨域 ptrace 也会被拒（<code>avc: denied { ptrace }</code>）</td></tr>
+</tbody></table></div>
+<p>所以正确的因果是：<strong>跨进程注入之所以需要 root，不是“因为要跨 uid”，而是“因为需要一个被允许 ptrace 的域”</strong>——root 只是获得那个域的手段。同一 App 内部的“自我调试”之所以可行，也不是因为 Yama 放宽了，而是因为它满足“自己/后代”这一条，且同域内的 SELinux 规则通常允许。</p>
+<aside class="note"><span class="note-tag">要点</span><div>排查顺序建议：先看 <code>dmesg | grep avc</code> 有没有 ptrace 拒绝（说明卡在 SELinux），再看 <code>/proc/sys/kernel/yama/ptrace_scope</code> 的值（说明卡在 Yama）。两者都通过却仍失败，才去怀疑 uid / capability。</div></aside>
+<div class="code">
+<div class="code-title">检测与反检测的两个方向</div>
+<pre><code># 检测：轮询自己的 TracerPid
+while (1) {
+    FILE* f = fopen(&quot;/proc/self/status&quot;, &quot;r&quot;);
+    // 解析 TracerPid 行，非 0 即报警
+    fclose(f);
+    usleep(200000);
+}
+ 
+# 反检测：注入后立刻 detach，让 TracerPid 归零</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>顺序很重要：<strong>先能看见，再能判断，最后才谈隐藏</strong>。很多新手一上来就想“怎么绕过检测”，结果连自己的痕迹长什么样都不知道，改了半天全是无效功。</div></aside>
+<h2>7.5 本章自测</h2>
+<ul><li>ptrace 注入的七个步骤，哪一步最容易失败？为什么？</li><li>为什么“注入后 detach”不能消除所有痕迹？</li><li>Yama 的 level 0/1/2 分别意味着什么？</li><li>如果目标是 64 位进程，但注入器是 32 位，会发生什么？</li></ul>
+<h2>7.6 深入：为什么要“注入 + 自卸载”</h2>
+<p>长期挂着一个 <code>TracerPid</code> 是最糟的形态。所以成熟的注入器都会做“注入后立刻 detach，让 so 自己跑”。这样目标进程恢复常态，<code>/proc/self/status</code> 干净了——但代价是失去了对目标的直接控制。</p>
+<div class="tbl"><table>
+<thead><tr><th>形态</th><th>TracerPid</th><th>控制力</th><th>稳定性</th></tr></thead><tbody>
+<tr><td>全程 attach</td><td>始终非 0</td><td>最强</td><td>最差（目标被停）</td></tr>
+<tr><td>注入后 detach</td><td>归零</td><td>中（靠 so 自己）</td><td>好</td></tr>
+<tr><td>门控注入</td><td>短暂非 0</td><td>强（早期介入）</td><td>中</td></tr>
+</tbody></table></div>
+<h2>7.7 实战：手写一个最小注入器要做的事</h2>
+<ol><li>找到目标 pid（<code>ps -A</code> 或遍历 <code>/proc</code>）。</li><li><code>PTRACE_ATTACH</code> + <code>waitpid</code> 等它停下。</li><li><code>PTRACE_GETREGS</code>，记下 pc / sp / 寄存器现场。</li><li>读 <code>/proc/pid/maps</code>，算 <code>libc.so</code> 基址，加 <code>dlsym</code> 偏移得到 <code>dlopen</code> 地址。</li><li>把 so 路径字符串与一小段 shellcode 写入目标栈（<code>PTRACE_POKEDATA</code>）。</li><li><code>PTRACE_SETREGS</code> 把 pc 指向 shellcode，<code>PTRACE_CONT</code>。</li><li>等断点（<code>BRK #0</code>）触发，读返回值确认加载成功。</li><li>恢复全部寄存器，<code>PTRACE_DETACH</code>。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>难点不在“写对”，而在“出错时能恢复”。每一步失败都要能回到上一个安全状态，否则目标进程会永久停在 T 状态，只能重启。</div></aside>
+<h2>7.8 64 位 / 32 位混合的坑</h2>
+<p>在 64 位系统上跑 32 位 App 是常见的。此时注入器必须也是 32 位，或者使用能够处理混合位宽的接口。表现为“注入成功但 so 加载失败”或“一 attach 就崩”，排查时先确认位宽。</p>
+<div class="code">
+<div class="code-title">确认位宽</div>
+<pre><code>file /system/bin/app_process64
+cat /proc/&lt;pid&gt;/exe
+# 或者直接看 maps 里是不是 /system/lib64 还是 /system/lib</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.9 原理推演：ptrace 的“双向可见性”</h2>
+<p>ptrace 有一个容易被忽略的性质：它不只是“tracer 能看到 tracee”，<strong>tracee 也能看到 tracer 的存在</strong>（通过 <code>TracerPid</code>、通过信号行为、通过 <code>wait</code> 语义）。</p>
+<div class="tbl"><table>
+<thead><tr><th>观测方</th><th>能看到什么</th><th>怎么用</th></tr></thead><tbody>
+<tr><td>tracer</td><td>寄存器、内存、信号</td><td>注入、调试</td></tr>
+<tr><td>tracee</td><td>TracerPid、被暂停、信号被拦截</td><td>反调试</td></tr>
+</tbody></table></div>
+<p>这种双向性是设计使然（调试器需要被调试者配合），但它也意味着“隐蔽注入”在原理上就有上限：你不可能让 tracee 完全不知道自己被跟踪，只能缩短“被跟踪”的时间窗口。</p>
+<h2>7.10 数据细节：一次注入的 syscall 序列</h2>
+<div class="code">
+<div class="code-title">典型的 ptrace 调用序列</div>
+<pre><code>ptrace(PTRACE_ATTACH, pid, 0, 0)
+waitpid(pid, &amp;status, 0)          # 等 SIGSTOP
+ptrace(PTRACE_GETREGS, pid, 0, &amp;regs)
+open(&quot;/proc/pid/maps&quot;); read()   # 算地址
+ptrace(PTRACE_POKEDATA, pid, addr, data)   # 写 shellcode
+ptrace(PTRACE_SETREGS, pid, 0, &amp;regs)      # 改 PC
+ptrace(PTRACE_CONT, pid, 0, 0)
+waitpid(pid, &amp;status, 0)          # 等断点
+ptrace(PTRACE_DETACH, pid, 0, 0)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>这条序列里的每一步都可以被观测（比如通过 seccomp 或 LSM 的审计）。所以“留痕最少”的注入器，会尽量把这串调用压缩到最短时间，甚至用一次 <code>PTRACE_SEIZE</code> + <code>PTRACE_INTERRUPT</code> 完成。</p>
+</article>
+<div class="pager"><a href="06-open.html"><span class="dir">上一讲</span>06 Android linker 启动过程</a><a href="08-fork.html" style="text-align:right"><span class="dir">下一讲</span>08 Android zygisk 原理</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

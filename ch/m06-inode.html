@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M06 SELinux 与 FD 安全扩展</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item active" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">M06</span><h1>SELinux 与 FD 安全扩展</h1><p class="ch-en">task_ext、avc_denied、inode/file/socket SID、f_security、FD__USE、xattr/SO_PEERSEC 长度 ABI</p></div>
+<p class="lead">avc_denied 是第一现场；f_security 与 SID 是第二现场。</p>
+<h2>6.1 一次访问判定的关键对象</h2>
+<figure>
+<img src="../assets/m06_selinux.png" alt="图 M6-1" width="1080">
+<figcaption><b>图 M6-1</b><span>五个关键对象与两条实现路线</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>作用</th></tr></thead><tbody>
+<tr><td>task_ext / task SID</td><td>进程的安全上下文（domain）</td></tr>
+<tr><td>inode / file / socket SID</td><td>对象侧的安全标识</td></tr>
+<tr><td>avc_denied</td><td>拒绝时的告警入口，也是拦截点</td></tr>
+<tr><td>f_security</td><td>file 结构上挂的安全 blob</td></tr>
+<tr><td>FD__USE / xattr</td><td>fd 使用与属性查询的检查</td></tr>
+</tbody></table></div>
+<h2>6.2 两条实现路线</h2>
+<ol><li><strong>改判定结果</strong>：在 <code>avc_denied</code> 里放行，或在钩子里直接返回允许。见效快，但“策略本应拒绝却允许了”本身是异常。</li><li><strong>换身份干活</strong>：让操作发生在有权限的域里（内核线程、特定 context）。更干净，但实现更复杂。</li></ol>
+<div class="code">
+<div class="code-title">观察现场</div>
+<pre><code>dmesg | grep avc
+cat /proc/self/fdinfo/&lt;fd&gt;
+getfattr -n security.selinux /path/to/file</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>6.3 ABI 陷阱</h2>
+<p><code>SO_PEERSEC</code> 与 xattr 的“长度语义”在不同版本有差异：有的返回实际长度，有的返回缓冲区所需长度，有的在缓冲区不足时返回截断值。取值前先查长度再分配，是最稳的写法。</p>
+<aside class="note"><span class="note-tag">要点</span><div>工程提醒：SELinux 相关代码最容易在“版本升级”时崩。把“取长度 → 分配 → 再取”写成固定套路，能省掉大量排查时间。</div></aside>
+<h2>6.11 本章自测</h2>
+<ul><li>task SID 与 inode SID 分别代表什么？</li><li>两条实现路线各自的痕迹是什么？</li><li>SO_PEERSEC 的长度语义为什么容易出错？</li><li>如果策略拒绝了你需要放行的操作，你怎么定位是哪条规则？</li></ul>
+<h2>6.4 深入：一次 avc 判定的路径</h2>
+<p>访问发生时，SELinux 取“主体 SID”（task 的）与“客体 SID”（inode/file 的），查访问向量缓存（AVC）；未命中就查策略库，得出允许/拒绝，并把结果缓存起来。拒绝时调用 <code>avc_denied</code>，同时打印 audit 日志。</p>
+<div class="code">
+<div class="code-title">这条路径上的 hook 点</div>
+<pre><code>avc_has_perm()        // 判定入口
+avc_denied()          // 拒绝时的回调
+security_file_permission()  // LSM 钩子
+security_inode_permission()</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>6.5 实战：拿到一个 fd 的 SID</h2>
+<div class="code">
+<div class="code-title">getpeercon / fgetxattr 思路</div>
+<pre><code>char buf[256]; socklen_t len = sizeof(buf);
+getsockopt(fd, SOL_SOCKET, SO_PEERSEC, buf, &amp;len);
+ 
+# 或：
+getxattr(path, &quot;security.selinux&quot;, buf, sizeof(buf));</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>6.6 原理推演：为什么“改判定”比“改策略”危险</h2>
+<p>改策略是“静态的、可审计的”；改判定是“动态的、隐藏的”。前者会留下文件与版本痕迹，后者只在运行时生效——但也意味着“一旦被发现在改判定”，就非常可疑。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>痕迹</th><th>可审计性</th></tr></thead><tbody>
+<tr><td>改 policy 文件</td><td>文件变化</td><td>高</td></tr>
+<tr><td>hook avc_denied</td><td>运行时行为</td><td>低</td></tr>
+<tr><td>换域执行</td><td>上下文变化</td><td>中</td></tr>
+</tbody></table></div>
+<p>所以“最干净”的其实是第三条：不改判定，只是“让操作发生在有权限的地方”。</p>
+<h2>6.7 数据细节：avc 日志的字段</h2>
+<div class="code">
+<div class="code-title">一条 avc denied</div>
+<pre><code>avc: denied { ptrace } for
+  pid=1234 comm=&quot;app_process&quot;
+  scontext=u:r:untrusted_app:s0
+  tcontext=u:r:zygote:s0
+  tclass=process permissive=0</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>四个关键字段：<code>scontext</code>（谁）、<code>tcontext</code>（对谁）、<code>tclass</code>（什么类型）、<code>perm</code>（什么操作）。写 allow 规则就是把这四个填进去。</p>
+<h2>6.8 深入：SID 是怎么算出来的</h2>
+<p>SID 是一个 32 位整数，由“安全上下文”在策略编译时分配。所以同一个上下文，在不同设备上的 SID 数值可能不同——不要把它当作跨设备的稳定标识。</p>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>SID 来源</th><th>稳定性</th></tr></thead><tbody>
+<tr><td>task</td><td>进程的 security 上下文</td><td>同设备稳定</td></tr>
+<tr><td>inode</td><td>文件的 security.selinux 属性</td><td>随文件</td></tr>
+<tr><td>socket</td><td>创建时的上下文</td><td>随连接</td></tr>
+</tbody></table></div>
+<p>实用推论：跨设备比较 SID 没有意义；同设备内比较 SID 才有意义。写检测规则时要注意这一点。</p>
+<h2>6.9 深入：f_security 的位置与作用</h2>
+<p><code>struct file</code> 里有一个 <code>f_security</code> 指针，指向“这个打开实例的安全信息”。它通常存的是“打开时的 SID”以及一些策略相关的缓存。改它，等于改“这次打开被如何看待”。</p>
+<div class="code">
+<div class="code-title">概念上的访问</div>
+<pre><code>struct file* f = ...;
+void* sec = f-&gt;f_security;
+// 具体结构由具体 LSM 决定</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>注意：不同 LSM（SELinux / AppArmor / 厂商自定义）的 <code>f_security</code> 布局不同。直接强转是危险的，必须先确认当前的 LSM 组合。</p>
+<h2>6.10 实战：验证一次权限改动是否生效</h2>
+<div class="code">
+<div class="code-title">三步</div>
+<pre><code>1. 改动前：执行目标操作，应失败
+2. 应用改动：hook 或换域
+3. 改动后：执行同一操作，应成功
+# 同时观察 dmesg，确认没有新的 avc denied</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>如果第 3 步成功但 dmesg 里仍有 denied，说明你的改动“绕过了检查”而不是“通过了检查”——这两种在检测方眼里是完全不同的信号。</div></aside>
+</article>
+<div class="pager"><a href="m05-inherit.html"><span class="dir">上一讲</span>M05 硬件断点 Hook 与 Perf 生命周期</a><a href="m07-oem.html" style="text-align:right"><span class="dir">下一讲</span>M07 Android Chrome 多进程多开</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

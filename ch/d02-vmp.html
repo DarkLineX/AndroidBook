@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D02 DexProtect 的加固结构与脱壳路径</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item active" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">D02</span><h1>DexProtect 的加固结构与脱壳路径</h1><p class="ch-en">抽取、混淆、反调试、VMP 的层次</p></div>
+<p class="lead">先判断“这是哪一档的壳”，再决定用哪一档的方法。</p>
+<h2>2.1 四档加固</h2>
+<div class="tbl"><table>
+<thead><tr><th>档位</th><th>做了什么</th><th>脱壳难度</th><th>对策</th></tr></thead><tbody>
+<tr><td>一代</td><td>整体加密 + 启动解密</td><td>低</td><td>内存 dump</td></tr>
+<tr><td>二代</td><td>方法抽取，运行时回填</td><td>中</td><td>定点 dump + 修复</td></tr>
+<tr><td>三代</td><td>指令级混淆 + 反调试</td><td>高</td><td>单步 / trace 还原</td></tr>
+<tr><td>四代</td><td>VMP，指令翻译成自定义字节码</td><td>很高</td><td>找 handler 表，重建语义</td></tr>
+</tbody></table></div>
+<h2>2.2 判断档位的三个信号</h2>
+<ol><li><strong>dex 里 code_item 是否为空</strong>：空 = 抽取型（二代起）。</li><li><strong>是否有大量 dispatcher 函数</strong>：一个巨大的 switch/循环 = VMP 特征。</li><li><strong>是否有自定义解释器</strong>：读字节码、按表分派 = 四代。</li></ol>
+<h2>2.3 脱壳的通用流程</h2>
+<div class="code">
+<div class="code-title">标准五步</div>
+<pre><code>1. 定位 ClassLoader 与 DexFile 对象
+2. 在“目标类加载完成”时触发 dump
+3. 按 header.file_size 整段抓取，避免截断
+4. 修复：checksum、map、class_def 顺序
+5. 验证：jadx 能打开 + 关键方法有指令</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>抽取型壳的关键是“回填时机”：dump 太早拿到空方法，dump 太晚可能已被再次加密。正确做法是挂在“方法首次执行”的事件上，抓那一次。</div></aside>
+<h2>2.4 本章自测</h2>
+<ul><li>四档加固的核心差异是什么？</li><li>怎么用三个信号快速判断档位？</li><li>抽取型壳应该在哪一刻 dump？</li><li>VMP 的突破口在哪？</li></ul>
+<h2>2.5 深入：抽取型壳的回填时机</h2>
+<p>壳通常把 <code>code_item</code> 的指令区清空，在方法<strong>第一次被调用</strong>时解密并回填。所以最佳的 dump 点就是“回填完成、方法即将执行”的那一瞬间。</p>
+<div class="code">
+<div class="code-title">在回填点抓取（思路）</div>
+<pre><code>// hook 方法入口
+onEnter: {
+  // 此时指令已经回填
+  dump_dex_containing(this.method);
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>2.6 实战：dump 出来是空的，怎么办</h2>
+<ol><li>确认 dump 的时机（是不是太早）。</li><li>确认 dump 的地址（是不是 dump 了壳的 dex 而不是业务的）。</li><li>确认大小（是不是只抓了 header 那么长）。</li><li>换一个触发点（比如某个具体按钮点击后）。</li></ol>
+<h2>2.7 原理推演：为什么“抽取”比“加密”难对付</h2>
+<p>加密是“整块锁起来，一次解开”；抽取是“按方法拆散，用的时候才拼回来”。后者让“dump 一次拿全”失效——你必须等到每个方法都被调用过。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>dump 难度</th><th>原因</th></tr></thead><tbody>
+<tr><td>整体加密</td><td>低</td><td>一次解密全都有</td></tr>
+<tr><td>方法抽取</td><td>高</td><td>要等回填</td></tr>
+<tr><td>指令级 VMP</td><td>很高</td><td>根本没有原始指令</td></tr>
+</tbody></table></div>
+<p>所以“跑一遍所有功能再 dump”是应对抽取型壳的基本功——你要让每个方法都执行一次。</p>
+<h2>2.8 数据细节：判断是否抽取型的三个方法</h2>
+<div class="code">
+<div class="code-title">快速判断</div>
+<pre><code>1. dexdump -d 看 code_item 的 insns 是否为空
+2. 看方法数量是否异常少（只剩桩）
+3. 看是否有大量 native 方法</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>2.9 深入：VMP 的第一道坎是“找 handler 表”</h2>
+<p>因为 dispatcher 的核心是“按字节码取 handler 地址”。找到这张表，就等于拿到了“指令集定义”。表的形式可能是数组、可能是 switch、也可能是加密后动态解开的。</p>
+<div class="tbl"><table>
+<thead><tr><th>形式</th><th>特征</th><th>找法</th></tr></thead><tbody>
+<tr><td>函数指针数组</td><td>一段连续的可执行地址</td><td>扫 data 段里的代码地址</td></tr>
+<tr><td>switch 跳转表</td><td>编译器生成的偏移表</td><td>看反汇编的 br 指令</td></tr>
+<tr><td>加密表</td><td>运行时才解开</td><td>在解密后下断点</td></tr>
+</tbody></table></div>
+<p>找到表之后，工作就变成“逐个 handler 分析语义”——这正是“转 IR”要解决的问题。</p>
+<h2>2.10 深入：为什么“转 IR”是正确方向</h2>
+<p>因为 VMP 的 handler 本质上就是“一条指令的实现”。把它翻译成 IR，你就回到了熟悉的领域：可以用常量折叠、可以用数据流分析、可以重建控制流。</p>
+<div class="code">
+<div class="code-title">翻译的思路</div>
+<pre><code>handler_0x01:            IR:  t1 = t0 + t2
+handler_0x02:            IR:  t3 = load(t1)
+handler_0x03:            IR:  if (t3) goto L1</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>这条路很慢，但它是“可复用”的：一旦你有了“字节码 → IR”的翻译器，后续所有同类样本都能自动处理。这正是二期要建立的能力。</div></aside>
+<h2>2.11 实战：先做“能跑”再做“能读”</h2>
+<ol><li>先用模拟执行跑通一段字节码，确认你对 VM 模型的理解是对的。</li><li>再把它翻译成 IR，与手工推导的结果比对。</li><li>最后才做优化与美化。</li></ol>
+</article>
+<div class="pager"><a href="d01.html"><span class="dir">上一讲</span>D01 DexProtect 的检测逻辑拆解</a><a href="d03.html" style="text-align:right"><span class="dir">下一讲</span>D03 Promon 类方案的对抗思路</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M03 ARM64 指令 Hook 与 Text Shadow</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item active" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">M03</span><h1>ARM64 指令 Hook 与 Text Shadow</h1><p class="ch-en">trampoline 重定位、BTI、PTE 双 PFN、fault/GUP、fork/mprotect、rmap/RSS</p></div>
+<p class="lead">代码页只读又共享，怎么办？——给它一张“影子页”。</p>
+<h2>3.1 朴素做法的三个问题</h2>
+<figure>
+<img src="../assets/m03_text_shadow.png" alt="图 M3-1" width="1080">
+<figcaption><b>图 M3-1</b><span>朴素做法的问题与双 PFN 的五步方案</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>问题</th><th>原因</th><th>后果</th></tr></thead><tbody>
+<tr><td>直接改代码页</td><td>PTE 只读且共享</td><td>必须临时改权限，窗口期暴露</td></tr>
+<tr><td>改完不还原</td><td>其他进程看到被改代码</td><td>立刻被抓</td></tr>
+<tr><td>多核并发</td><td>改的瞬间别的核在跑</td><td>指令撕裂 / 崩溃</td></tr>
+</tbody></table></div>
+<h2>3.2 双 PFN 方案的五个步骤</h2>
+<ol><li><strong>复制原页</strong>：分配新物理页，把原内容拷过去。</li><li><strong>改副本</strong>：在副本上写入跳转指令（或替换整段逻辑）。</li><li><strong>换 PTE 的 PFN</strong>：只对目标进程的页表替换，其他进程不受影响。</li><li><strong>处理 fault</strong>：写 fault 时给私有副本，保持 COW 语义。</li><li><strong>fork / mprotect</strong>：子进程继承与权限变更时，同步维护影子页。</li></ol>
+<div class="code">
+<div class="code-title">核心动作（示意）</div>
+<pre><code>newp = alloc_page(GFP_KERNEL);
+memcpy(page_address(newp), page_address(oldp), PAGE_SIZE);
+patch_jump(page_address(newp));
+set_pte_at(mm, addr, ptep, mk_pte(newp, prot));
+flush_tlb_range(vma, start, end);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.3 trampoline 与 BTI</h2>
+<p>被覆盖的指令不能丢——要搬到 trampoline 里执行，再跳回来。搬的时候要处理 PC 相对寻址：如果原来那条指令用的是 <code>ADR</code>/<code>ADRP</code>，搬到新地址后算出来的目标就错了，必须重算。</p>
+<p>ARM64 的 BTI 要求间接跳转目标的第一条指令必须是 <code>BTI</code> 或 <code>PACIASP</code>。所以 trampoline 的入口和目标函数的新入口都必须带上这个标记，否则一调就异常。</p>
+<h2>3.4 还要维护的三本账</h2>
+<div class="tbl"><table>
+<thead><tr><th>账本</th><th>不维护的后果</th></tr></thead><tbody>
+<tr><td>rmap</td><td>反向映射查不到，回收/迁移时崩</td></tr>
+<tr><td>RSS / PSS</td><td>内存统计对不上，被差分检测抓</td></tr>
+<tr><td>GUP 路径</td><td>get_user_pages 拿到错的页，数据不一致</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这一章是全书技术密度最高的一节。建议动手顺序：先做“单进程单页”的最小验证，再补 fork、mprotect、GUP。每加一项，都跑一遍回归。</div></aside>
+<h2>3.5 本章自测</h2>
+<ul><li>为什么必须“复制页”而不是“改原页”？</li><li>换 PFN 之后为什么一定要 flush TLB？</li><li>trampoline 里的 PC 相对指令要怎么处理？</li><li>rmap、RSS、GUP 三者各自不维护会怎样？</li></ul>
+<h2>3.6 深入：fork 时影子页怎么继承</h2>
+<p>子进程复制父进程的页表，所以默认会“继承”影子页——这通常是你想要的。但如果子进程不该被 hook（比如它是个检查进程），就要在 fork 时把它换回原页。</p>
+<div class="code">
+<div class="code-title">在 fork 路径上做判断（示意）</div>
+<pre><code>// 伪代码：hook copy_process 或 task_fork
+if (should_not_inherit(child)) {
+    restore_original_pfn(child-&gt;mm, addr);
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.7 实战：怎么验证“只改了目标进程”</h2>
+<ol><li>选两个都加载了同一个库的进程。</li><li>在 A 进程上应用 hook。</li><li>分别读 A、B 两个进程的同一虚拟地址对应的物理页（pagemap）。</li><li>PFN 不同 = 只改了 A；PFN 相同 = 改漏了（改了共享页）。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这个验证非常重要。如果没有做双 PFN，而是直接改了共享页，那么 B 进程会立刻执行到跳转指令，要么崩溃，要么行为异常——两种都很容易被发现。</div></aside>
+<h2>3.8 原理推演：为什么“只换 PTE”能骗过所有人</h2>
+<p>因为“进程看到什么内存”完全由它自己的页表决定。同一份代码页，A 进程的 PTE 指向页 X，B 进程指向页 Y，两者互不干扰。CPU 不会去问“别人看到的是什么”。</p>
+<div class="tbl"><table>
+<thead><tr><th>观察者</th><th>看到什么</th><th>能否发现</th></tr></thead><tbody>
+<tr><td>目标进程</td><td>影子页（已改）</td><td>否</td></tr>
+<tr><td>其他进程</td><td>原页</td><td>否</td></tr>
+<tr><td>内核（直接读物理页）</td><td>原页</td><td>能（如果它知道去读）</td></tr>
+</tbody></table></div>
+<p>最后一行是关键：如果检测方有内核能力，它可以直接读原始物理页，与“进程看到的”对比。这就是为什么“内核级对抗”是最高一档。</p>
+<h2>3.9 数据细节：一次 fault 的处理顺序</h2>
+<div class="code">
+<div class="code-title">写 fault 的关键步骤</div>
+<pre><code>1. 判断 fault 类型（读/写/执行）
+2. 找到 VMA
+3. 如果是 COW：分配新页、复制、改 PTE
+4. 如果是文件页：从 page cache 取
+5. 刷 TLB</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>Text Shadow 要在第 3 步“插一脚”：如果是目标进程、且地址在我们的 hook 范围，就给它影子页而不是普通 COW 页。</p>
+</article>
+<div class="pager"><a href="m02-maps.html"><span class="dir">上一讲</span>M02 内核观察面与基础检测处理</a><a href="m04-cpu.html" style="text-align:right"><span class="dir">下一讲</span>M04 ARM64 内核单步 Trace</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

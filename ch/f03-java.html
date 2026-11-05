@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F03 Frida Java.perform 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item active" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F03</span><h1>Frida Java.perform 原理</h1><p class="ch-en">Java VM attach、ActivityThread、LoadedApk、ClassLoader、pending VM ops</p></div>
+<p class="lead">Java.perform 做的不是“执行你的代码”，而是“等到能执行你的代码”。</p>
+<h2>3.1 五步流程</h2>
+<figure>
+<img src="../assets/f_f03.png" alt="图 F3-1" width="1080">
+<figcaption><b>图 F3-1</b><span>从判断 ART 可用到执行回调的五个步骤</span></figcaption>
+</figure>
+<ol><li>判断 ART 是否可用（枚举 <code>libart.so</code>、找 <code>JavaVM</code> 相关符号）。</li><li><code>AttachCurrentThread</code> 把当前线程挂到 JavaVM 上，拿到 <code>JNIEnv</code>。</li><li>找关键类：<code>ActivityThread</code>、<code>LoadedApk</code>、ClassLoader。</li><li>把回调排进 pending VM ops，等 ClassLoader 就绪。</li><li>执行你的代码——此时 <code>Java.use</code> / <code>Java.choose</code> 才有效。</li></ol>
+<h2>3.2 为什么要在 perform 里用 Java.use</h2>
+<p><code>Java.use</code> 需要一个“能解析类的环境”。如果 ART 还没起来，或者当前线程没 attach，它拿不到 <code>JNIEnv</code>，就会失败。perform 保证了这两个前提。</p>
+<div class="code">
+<div class="code-title">最可靠的“环境就绪”探针</div>
+<pre><code>Java.perform(() =&gt; {
+  const AT = Java.use(&#x27;android.app.ActivityThread&#x27;);
+  const app = AT.currentApplication();
+  send(app ? app.getPackageName() : &#x27;no-app-yet&#x27;);
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.3 三种“hook 不生效”的典型原因</h2>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>原因</th><th>对策</th></tr></thead><tbody>
+<tr><td>perform 没进</td><td>ART 未就绪 / 注入太早</td><td>等 Application 创建后再执行</td></tr>
+<tr><td>Java.use 报错找不到类</td><td>类还没被加载</td><td>挂 ClassLoader 的加载方法</td></tr>
+<tr><td>hook 挂上但没回调</td><td>调用的不是同一个 ClassLoader</td><td>多 ClassLoader 逐个尝试</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>多 ClassLoader 场景（插件化 App）是新手最容易踩的坑：<code>Java.use</code> 走的是“默认加载器”，而目标类可能由插件自己的加载器负责。这时要用 <code>Java.enumerateClassLoaders</code> 逐个试。</div></aside>
+<h2>3.4 本章自测</h2>
+<ul><li>Java.perform 保证了哪两个前提？</li><li>AttachCurrentThread 的作用是什么？</li><li>三种 hook 不生效的原因分别怎么排查？</li><li>多 ClassLoader 场景下，Java.use 为什么可能失败？</li></ul>
+<h2>3.5 深入：pending VM ops 是什么</h2>
+<p>它是一张“待执行”的队列。<code>Java.perform</code> 的回调不是立刻执行，而是被放进这个队列，由 VM 在合适的时机（通常是线程 attach 后、且 ClassLoader 可用时）取出来执行。</p>
+<div class="code">
+<div class="code-title">观察排队行为</div>
+<pre><code>console.log(&#x27;A&#x27;);
+Java.perform(() =&gt; console.log(&#x27;B&#x27;));
+console.log(&#x27;C&#x27;);
+# 输出顺序通常是 A C B —— B 被排队了</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.6 实战：多 ClassLoader 的逐个尝试</h2>
+<div class="code">
+<div class="code-title">遍历所有 ClassLoader 找目标类</div>
+<pre><code>Java.perform(() =&gt; {
+  Java.enumerateClassLoaders({
+    onMatch(loader) {
+      try {
+        const C = loader.loadClass(&#x27;com.plugin.Target&#x27;);
+        console.log(&#x27;found in&#x27;, loader);
+      } catch (e) {}
+    }, onComplete() {}
+  });
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>注意：<code>loader.loadClass</code> 拿到的是 Class 对象，不是 <code>Java.use</code> 的包装。要 hook 它，需要 <code>Java.use</code> 配合 <code>classLoader</code> 参数，或者直接用底层 API。</div></aside>
+<h2>3.7 原理推演：为什么“ART 就绪”是个模糊概念</h2>
+<p>“就绪”至少有三个层次：<strong>JavaVM 存在</strong>（能 attach）、<strong>ClassLoader 可用</strong>（能加载类）、<strong>目标类已加载</strong>（能 hook）。<code>Java.perform</code> 只保证前两个，第三个要你自己等。</p>
+<div class="tbl"><table>
+<thead><tr><th>层次</th><th>Java.perform 保证</th><th>失败表现</th></tr></thead><tbody>
+<tr><td>JavaVM 存在</td><td>是</td><td>perform 不执行</td></tr>
+<tr><td>ClassLoader 可用</td><td>是</td><td>Java.use 抛异常</td></tr>
+<tr><td>目标类已加载</td><td>否</td><td>hook 挂不上或挂错</td></tr>
+</tbody></table></div>
+<p>所以“perform 里 hook 不生效”的最常见原因，不是 perform 有问题，而是“目标类还没加载”。</p>
+<h2>3.8 数据细节：三种等目标类的方法</h2>
+<div class="code">
+<div class="code-title">从粗到细</div>
+<pre><code>// 1. 等时间（最差）
+setTimeout(main, 3000);
+ 
+// 2. 等 Application 创建（较好）
+//    hook ActivityThread.handleBindApplication
+ 
+// 3. 等类加载（最好）
+//    hook ClassLoader.loadClass，命中目标名再动手</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.9 深入：Java.perform 的“嵌套”问题</h2>
+<p>在 <code>Java.perform</code> 里再套一个 <code>Java.perform</code> 是合法的，但会多一层排队。更常见的问题是“在 hook 回调里调 <code>Java.perform</code>”——那是在目标线程上排队，可能导致死锁。</p>
+<div class="tbl"><table>
+<thead><tr><th>场景</th><th>是否安全</th><th>说明</th></tr></thead><tbody>
+<tr><td>顶层嵌套 perform</td><td>安全</td><td>只是多一次排队</td></tr>
+<tr><td>hook 回调里 perform</td><td>危险</td><td>可能在错误线程排队</td></tr>
+<tr><td>JS 线程里 perform</td><td>安全</td><td>正常用法</td></tr>
+</tbody></table></div>
+<p>判断方法：看当前代码跑在哪个线程上。如果是“目标线程”（hook 回调），就不要做重活，把数据 send 出去。</p>
+<h2>3.10 深入：`Java.choose` 为什么不推荐在启动时用</h2>
+<p><code>Java.choose</code> 会遍历堆上的所有实例——这是一个非常重的操作，而且在启动早期堆还没稳定，可能崩溃或超时。</p>
+<div class="code">
+<div class="code-title">更好的替代</div>
+<pre><code>// 差：启动时全堆扫描
+Java.choose(&#x27;com.x.Target&#x27;, { onMatch: i =&gt; {...}, onComplete: () =&gt; {} });
+ 
+// 好：hook 构造函数，把实例存起来
+const T = Java.use(&#x27;com.x.Target&#x27;);
+T.$init.overload().implementation = function () {
+  const r = this.$init();
+  send(&#x27;instance created&#x27;);
+  return r;
+};</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>3.11 实战：一个可复用的“环境探针”脚本</h2>
+<div class="code">
+<div class="code-title">三件事一次确认</div>
+<pre><code>Java.perform(() =&gt; {
+  const AT = Java.use(&#x27;android.app.ActivityThread&#x27;);
+  const app = AT.currentApplication();
+  send({
+    alive: true,
+    pkg: app ? app.getPackageName() : null,
+    loaders: Java.enumerateClassLoadersSync().length,
+  });
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="f02-gumjs.html"><span class="dir">上一讲</span>F02 Frida 第一个脚本运行时机</a><a href="f04-webservice.html" style="text-align:right"><span class="dir">下一讲</span>F04 Frida server IPC 逻辑</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

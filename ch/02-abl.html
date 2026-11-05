@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 Android 手机启动过程</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item active" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">02</span><h1>Android 手机启动过程</h1><p class="ch-en">从 abl 开始</p></div>
+<p class="lead">把“按下电源键”到“看到桌面”拆成八步，每步都标上可信边界。</p>
+<h2>2.1 八个阶段，一条链</h2>
+<p>启动过程看起来很长，但结构非常规整：每一级都负责验证下一级，然后把控制权交出去。这种“链式信任”是所有安全启动方案的基础，也是所有攻击者要逐段攻破的目标。</p>
+<figure>
+<img src="../assets/f01_boot_chain.png" alt="图 2-1" width="1080">
+<figcaption><b>图 2-1</b><span>启动链全景：上排硬件与内核，下排用户态</span></figcaption>
+</figure>
+<h2>2.2 阶段一：BootROM 与 abl</h2>
+<p>上电后 CPU 从固化在 SoC 内的 BootROM 开始执行。这段代码物理上不可改，它做的最重要的一件事是：<strong>验证下一级引导程序的签名</strong>。验证通过后，才把控制权交给 SBL / XBL，最终到 abl（Android Bootloader）。</p>
+<p>abl 是你能“看见”的第一层，也是 <code>fastboot</code> 模式所在的地方。它负责：读分区表、加载 boot.img、校验 AVB（如果开启）、把 boot 状态通过 <code>androidboot.verifiedbootstate=</code> 传进内核命令行，然后跳进内核。<strong>注意方向</strong>：abl 是“值的产生者”，它写的是 cmdline；<code>ro.boot.*</code> 这组只读属性是 init 起来后从 cmdline 解析出来的——abl 自己不读属性。</p>
+<div class="tbl"><table>
+<thead><tr><th>AVB 状态</th><th>含义</th><th>对三绿的影响</th></tr></thead><tbody>
+<tr><td>GREEN</td><td>已锁且验证通过</td><td>可满足 STRONG</td></tr>
+<tr><td>YELLOW</td><td>已锁但使用自定义密钥</td><td>通常无法满足 STRONG</td></tr>
+<tr><td>ORANGE</td><td>已解锁</td><td>只能拿到 BASIC</td></tr>
+<tr><td>RED</td><td>验证失败</td><td>启动被拒或降级</td></tr>
+</tbody></table></div>
+<h2>2.3 阶段二：kernel 到 init</h2>
+<p>内核被解压、建立页表、初始化子系统，然后挂载 rootfs 并执行 <code>/init</code>。这个 init 是 PID 1，它读一堆 <code>.rc</code> 文件（<code>init.rc</code>、<code>init.&lt;hardware&gt;.rc</code>、<code>vendor</code> 下的 rc），按触发器启动服务、设置属性、并把 SELinux 从 permissive 切到 enforcing。</p>
+<p>这一层有三个高价值位置：<strong>rc 文件</strong>（决定启动什么）、<strong>sepolicy</strong>（决定能干什么）、<strong>属性系统</strong>（决定上层看到什么）。Magisk 的改动全部落在这三处。</p>
+<h2>2.4 阶段三：zygote 与 system_server</h2>
+<p>init 拉起 zygote：它预加载 framework 的常用类与资源，然后进入循环，等 system_server 通过 socket 请求 fork 新进程。system_server 自己也是 zygote fork 出来的，它承载 AMS、PMS、WMS 等核心服务，从这一刻起，Android 的“系统”才算真正活过来。</p>
+<figure>
+<img src="../assets/f05_app_launch.png" alt="图 2-2" width="1080">
+<figcaption><b>图 2-2</b><span>从 zygote fork 到 Activity 可见的完整时序</span></figcaption>
+</figure>
+<h2>2.5 阶段四：App 进程</h2>
+<p>点击图标时，Launcher 通过 Binder 请求 AMS 启动 Activity；AMS 决定进程不存在，于是通过 socket 让 zygote fork 一个子进程。子进程继承 zygote 里预加载的一切，然后跑 <code>RuntimeInit</code> → <code>ActivityThread.main()</code> → 建立主线程 Looper → <code>attachApplication</code> 把自己的 Binder 代理交给 AMS → AMS 回调 <code>bindApplication</code> → 创建 Application → 启动 Activity。</p>
+<h2>2.6 三个“必须记住”的观察点</h2>
+<ol><li><strong>zygote 是所有 Java 进程的父亲</strong>。任何“覆盖全部 App”的方案（Zygisk、LSPosed、Frida 门控）都从这里下手。</li><li><strong>降权发生在 fork 之后</strong>。所以中间存在一个“已是新进程、但还没有 App 身份”的窗口期，这就是 pre-specialize 阶段的价值。</li><li><strong>sepolicy 与 mount 视图是按 namespace 分的</strong>。同一份文件，在不同进程眼里可以是不同内容——隐藏与检测的战场就在这里。</li></ol>
+<div class="code">
+<div class="code-title">查看启动状态的常用命令</div>
+<pre><code>getprop ro.boot.verifiedbootstate   # GREEN / YELLOW / ORANGE
+getprop ro.boot.flash.locked        # 1 = 已锁
+getprop ro.build.fingerprint        # 设备指纹
+ps -A -o PID,PPID,NAME | head -40   # 看进程树
+getprop | grep -i &#x27;init.svc&#x27;        # 看服务状态</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>常见的误解：以为“解锁 bootloader”就等于“有 root”。实际上是两件事——解锁只是允许你刷入修改过的镜像，真正决定权限的，是你刷进去的东西做了什么。</div></aside>
+<h2>2.7 本章自测</h2>
+<ul><li>八个阶段按顺序背出来，并指出哪一步开始有 Java 世界。</li><li>AVB 的四种状态分别对应什么检测结果？</li><li>为什么说“fork 之后、降权之前”是一个有价值的窗口？</li><li>如果目标 App 在 <code>init</code> 阶段就被注入，它在 <code>attachApplication</code> 时能观察到什么异常？</li></ul>
+<h2>2.8 深入：为什么“启动早期”是检测的黄金窗口</h2>
+<p>启动早期（init 到 zygote 之间）有三个特点：<strong>观察者少</strong>（还没有第三方代码在跑）、<strong>时序确定</strong>（每一步都可预期）、<strong>权限高</strong>（还没降权）。检测方喜欢在这里布置检查，因为它拿到的数据最“干净”；注入方也喜欢在这里动手，因为一旦过了这个窗口，很多状态就已经定型了。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>观察者</th><th>可被检测的状态</th></tr></thead><tbody>
+<tr><td>abl</td><td>bootloader 自己</td><td>AVB 结果、锁状态</td></tr>
+<tr><td>kernel</td><td>内核日志</td><td>cmdline、模块列表</td></tr>
+<tr><td>init</td><td>init 自己 + rc 定义的检查</td><td>属性、服务、sepolicy</td></tr>
+<tr><td>zygote 之前</td><td>极少</td><td>几乎无</td></tr>
+<tr><td>zygote 之后</td><td>AMS / PMS 等</td><td>进程、包、服务表</td></tr>
+</tbody></table></div>
+<h2>2.9 属性系统：一个被低估的观测面</h2>
+<p><code>getprop</code> 返回的键值对，是“系统自述”。它同时被 init、zygote、App 读取，所以一旦某个属性被改动，影响面很广，痕迹也很明显。</p>
+<div class="code">
+<div class="code-title">几条值得记住的属性</div>
+<pre><code>ro.boot.verifiedbootstate   # GREEN / YELLOW / ORANGE
+ro.boot.flash.locked        # 1 = 已锁
+ro.debuggable               # 1 = 可调试（userdebug）
+ro.build.type               # user / userdebug / eng
+ro.product.model            # 机型（三绿交叉校验会用到）
+init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>隐蔽的坑：有些属性是“只读”的（<code>ro.</code>），但只读只是“init 之后不可改”，不代表“运行时读不到真实值”。不少隐藏方案改了 <code>getprop</code> 的输出，却忘了直接读 property area 的路径。</div></aside>
+<h2>2.10 一次真实的排查记录</h2>
+<p>现象：某 App 在测试机上一切正常，在另一台同型号设备上启动即闪退。</p>
+<ol><li>对比两台设备的 <code>getprop ro.build.fingerprint</code>——一致。</li><li>对比 <code>ro.boot.verifiedbootstate</code>——一台 GREEN，一台 ORANGE。</li><li>确认第二台设备解锁过 bootloader 且未重新上锁。</li><li>结论：App 的启动校验里包含 boot 状态检查，解锁设备被判定为“不可信环境”。</li><li>处理：在测试流程里明确区分“已锁 / 已解锁”两类设备，避免把环境差异误判为代码问题。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>方法论：<strong>同型号不同表现，先比环境再比代码</strong>。环境差异（boot 状态、系统版本、SELinux 模式）造成的问题，往往比代码 bug 更常见。</div></aside>
+<h2>2.11 原理推演：为什么“链式信任”必然有断点</h2>
+<p>链式信任的结构是：A 验证 B、B 验证 C、C 验证 D……听起来天衣无缝。但它有一个结构性的弱点：<strong>链条的起点必须被无条件信任</strong>，而链条的每一环都必须是“能够验证下一环”的代码。</p>
+<p>于是攻击面自然分成两类：攻破根（物理手段、eFuse 读出）与攻破某一环的“验证逻辑”——后者现实得多，因为验证逻辑也是代码，也可能有 bug，也可能被“绕过而不是破解”。</p>
+<div class="tbl"><table>
+<thead><tr><th>环节</th><th>验证什么</th><th>常见绕过方式</th></tr></thead><tbody>
+<tr><td>BootROM → XBL</td><td>签名</td><td>几乎无法绕过（物理）</td></tr>
+<tr><td>abl → boot</td><td>AVB 摘要</td><td>关掉 verity、重签 vbmeta</td></tr>
+<tr><td>kernel → 用户态</td><td>dm-verity</td><td>改 fstab 或改 dm 表</td></tr>
+<tr><td>App 层</td><td>签名 / 完整性</td><td>改返回结果、重打包</td></tr>
+</tbody></table></div>
+<h2>2.12 数据细节：启动各阶段的时间预算</h2>
+<p>知道各阶段耗时，对“注入窗口”的把握很有帮助。下面是典型中高端机型的量级（仅供建立直觉）：</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>量级</th><th>说明</th></tr></thead><tbody>
+<tr><td>BootROM → abl</td><td>数百毫秒</td><td>含验签</td></tr>
+<tr><td>abl → kernel</td><td>约 1 秒</td><td>含 AVB 校验与解压</td></tr>
+<tr><td>kernel 初始化</td><td>1~3 秒</td><td>与驱动数量强相关</td></tr>
+<tr><td>init → zygote</td><td>1~2 秒</td><td>含 sepolicy 加载</td></tr>
+<tr><td>zygote 预加载</td><td>数百毫秒</td><td>framework 类预加载</td></tr>
+<tr><td>首次桌面</td><td>数秒</td><td>含 system_server 启动</td></tr>
+</tbody></table></div>
+<p>这张表的实用价值：如果检测逻辑要在“zygote 之后立即”执行，那它只有几百毫秒的窗口；如果注入方要在“specialize 之前”介入，窗口更短。谁能在这个量级上稳定工作，谁就赢了一半。</p>
+<h2>2.13 工程权衡：为什么不要在 rc 里加东西</h2>
+<p>在 <code>init.rc</code> 里加一个 service 是最直观的“开机自启”方式，但它有三个明显缺点：<strong>rc 文件本身可被校验</strong>、**service 会出现在 <code>init.svc.*</code> 属性里<strong>、</strong>崩溃会被 init 记录并重启**。</p>
+<p>更隐蔽的做法是“挂到已有 service 上”——不新增节点，而是修改既有服务的启动参数或环境变量。这样属性面、进程面都不变，只有真正比对 rc 内容的人才能发现。</p>
+</article>
+<div class="pager"><a href="01-patch.html"><span class="dir">上一讲</span>01 APatch 的 root 原理</a><a href="03-tee.html" style="text-align:right"><span class="dir">下一讲</span>03 Android 硬件证明</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

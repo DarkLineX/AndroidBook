@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 Android root 检测</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item active" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">04</span><h1>Android root 检测</h1><p class="ch-en">把前面所有内容串起来</p></div>
+<p class="lead">检测不是“找一个特征”，而是“建立一套互证的证据链”。</p>
+<h2>4.1 分层的意义</h2>
+<p>把检测按层排开，好处是：每一层的能力与代价不同，可以按需组合；而且当某一层被绕过时，你能立刻知道“剩下几层还在不在”。</p>
+<figure>
+<img src="../assets/f04_matrix.png" alt="图 4-1" width="1080">
+<figcaption><b>图 4-1</b><span>六层检测矩阵与三条工程铁律</span></figcaption>
+</figure>
+<h2>4.2 六层逐一拆解</h2>
+<h3>4.2.1 应用层</h3>
+<p>最直白的一层：看有没有 <code>su</code> 可执行文件、有没有已知 root 管理应用的包名、开发者选项是否开启、<code>adb</code> 是否可连。优点是实现简单，缺点是全都可以被隐藏，只能作为“辅助信号”。</p>
+<h3>4.2.2 Java / ART 层</h3>
+<p>这一层看的是“运行时结构是否合理”：ClassLoader 的数量与来源、某个方法是否突然从 Java 实现变成 native、调用栈里是否出现不该出现的帧。L02 讲的 Java Hook 会在这个层面留下最强痕迹。</p>
+<h3>4.2.3 Native 层</h3>
+<p>读 <code>/proc/self/maps</code>，检查每一段是否有合法的 back-file；遍历 linker 的 <code>solist</code>，看有没有空 soname 的模块；对关键函数做 CRC 或反汇编比对。这是 F11 那张总表的正面战场。</p>
+<h3>4.2.4 系统服务层</h3>
+<p>通过 Binder 查询 PackageManager、ActivityManager 的结果，与本地观察做对比。比如“PackageManager 说某应用没安装，但 <code>/data/app</code> 下有目录”。</p>
+<h3>4.2.5 内核层</h3>
+<p>读 task 的 cred 与 capability 集合，检查 mount 视图与 namespace，扫描内核符号与已加载模块。这一层普通 App 读不到，需要内核态能力——所以它通常出现在“壳”或专门的检测 SDK 里。</p>
+<h3>4.2.6 硬件层</h3>
+<p>第 03 章的三绿。它最不容易伪造，但也最容易被“绕过而不是破解”——所以必须和上面几层交叉验证。</p>
+<h2>4.3 三条铁律</h2>
+<ol><li><strong>单点不可信</strong>。任何一个信号都能被单独伪造，所以要问的是“这些信号之间是否矛盾”。</li><li><strong>差分优于特征</strong>。特征会被改名、改路径；但数量、时序、布局、内存高水位，这些“关系”很难改。</li><li><strong>先排除自污染</strong>。检测代码自己也会加载 so、开 fd、建线程。先跑一遍空检测拿基线，再下结论。</li></ol>
+<h2>4.4 一个可落地的检测骨架</h2>
+<div class="code">
+<div class="code-title">检测框架的伪代码结构</div>
+<pre><code>signals = []
+ 
+def check_maps():
+    for line in open(&#x27;/proc/self/maps&#x27;):
+        # 每段必须能回溯到真实文件，或属于合法匿名区
+        if is_anon_exec(line) and not in_expected_range(line):
+            signals.append((&#x27;anon_exec&#x27;, line))
+ 
+def check_threads():
+    base = load_baseline()      # 干净环境采的基线
+    now  = count_threads()
+    if now - base &gt; THRESHOLD:
+        signals.append((&#x27;thread_delta&#x27;, now, base))
+ 
+def verdict(signals):
+    # 单点不算数：至少两类不同层级的信号同时命中
+    return len({s[0].split(&#x27;_&#x27;)[0] for s in signals}) &gt;= 2</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>误报是检测的头号敌人。上线前一定要在“干净的、装了各种正常 App 的设备”上跑一遍，把所有误报的规则改掉或降权。一个 5% 误报的规则，比没有规则更糟。</div></aside>
+<h2>4.5 本章自测</h2>
+<ul><li>六层检测各自最擅长发现什么？各自最容易被什么绕过？</li><li>为什么“差分”比“特征”更难对付？</li><li>设计一条规则：如何在不误伤正常 App 的前提下，发现“线程数异常增长”？</li><li>如果只能保留三层检测，你保留哪三层？理由是什么？</li></ul>
+<h2>4.6 深入：规则怎么定阈值</h2>
+<p>检测规则最难的不是“写判断”，而是“定阈值”。阈值太低误报，太高漏报。经验做法是先采样、再看分布、最后取分位点。</p>
+<div class="code">
+<div class="code-title">用分位数定阈值，而不是拍脑袋</div>
+<pre><code>samples = [measure() for _ in range(200)]   # 在干净设备上采
+samples.sort()
+p50 = samples[len(samples)//2]
+p99 = samples[int(len(samples)*0.99)]
+ 
+# 阈值取 p99 * 1.5：只抓真正离谱的离群点
+THRESHOLD = p99 * 1.5</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>4.7 一个真实的误报案例</h2>
+<p>某检测 SDK 用“进程中是否存在匿名可执行映射”判断注入。上线后大量正常用户被误判——原因是 Android 的 JIT 编译缓存、以及部分厂商的图形库，本身就会产生匿名可执行映射。</p>
+<ol><li><strong>第一步</strong>：把误报设备的 maps 全量打出来。</li><li><strong>第二步</strong>：发现误报项集中在 <code>[anon:jit-code-cache]</code> 与实际存在的厂商库。</li><li><strong>第三步</strong>：规则从“存在匿名可执行段”改为“存在匿名可执行段，且其大小/权限组合不在白名单内”。</li><li><strong>第四步</strong>：把白名单做成可下发的配置，避免每遇到一个新机型就发版。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>教训：<strong>任何“存在性”判断都会误报</strong>。正确的写法是“存在 + 不符合预期特征”。白名单要能下发，否则适配成本会拖垮整个项目。</div></aside>
+<h2>4.8 检测的响应策略</h2>
+<p>检测到异常之后做什么，比检测本身更需要设计。常见的错误是“直接退出”，这会立刻告诉对手“你被发现了”，对方可以据此反复试错，快速摸清你的规则。</p>
+<div class="tbl"><table>
+<thead><tr><th>策略</th><th>做法</th><th>优点</th><th>缺点</th></tr></thead><tbody>
+<tr><td>直接退出</td><td>立即 kill</td><td>简单</td><td>暴露规则</td></tr>
+<tr><td>静默降级</td><td>功能受限但不提示</td><td>隐蔽</td><td>体验差</td></tr>
+<tr><td>延迟响应</td><td>继续运行但埋点上报</td><td>可收集情报</td><td>有被利用风险</td></tr>
+<tr><td>蜜罐</td><td>给假结果，观察后续行为</td><td>情报价值最高</td><td>实现复杂</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>工程建议：把“判定”和“响应”解耦。判定层只产出分数，响应层根据分数与业务场景决定动作。这样同一套检测可以服务于“严格模式”和“宽松模式”。</div></aside>
+<h2>4.9 原理推演：为什么“交叉验证”是唯一可靠的思路</h2>
+<p>设单个信号被伪造的概率是 p。如果检测只看一个信号，攻击者只需付出“伪造一个信号”的成本。如果检测要求 n 个独立信号同时自洽，攻击者就要付出“伪造 n 个互相自洽的信号”的成本——而“互相自洽”这件事，成本往往是指数级上升的。</p>
+<div class="tbl"><table>
+<thead><tr><th>信号数</th><th>攻击者成本</th><th>误报风险</th></tr></thead><tbody>
+<tr><td>1</td><td>低</td><td>低</td></tr>
+<tr><td>2~3</td><td>中</td><td>中</td></tr>
+<tr><td>4+</td><td>高</td><td>需要精细调参</td></tr>
+</tbody></table></div>
+<p>这就是为什么成熟方案都是“多个弱信号加权”，而不是“一个强信号定生死”。弱信号单独看都能被绕过，但组合起来极难同时满足。</p>
+<h2>4.10 数据细节：一个真实的加权评分表</h2>
+<div class="tbl"><table>
+<thead><tr><th>信号</th><th>权重</th><th>判定条件</th></tr></thead><tbody>
+<tr><td>maps 匿名可执行段</td><td>30</td><td>存在且不在白名单</td></tr>
+<tr><td>线程数与基线差</td><td>20</td><td>差值 &gt; p99</td></tr>
+<tr><td>ClassLoader 数量</td><td>15</td><td>超过基线 +1</td></tr>
+<tr><td>FD 数量</td><td>10</td><td>超过基线 20%</td></tr>
+<tr><td>TracerPid</td><td>25</td><td>非 0</td></tr>
+<tr><td>证明链不一致</td><td>50</td><td>任一交叉校验失败</td></tr>
+</tbody></table></div>
+<p>注意最后一项权重特别高：因为它最难伪造。而“TracerPid”权重中等，因为它只在注入期间存在，长时间观测反而抓不到。</p>
+<h2>4.11 工程权衡：什么时候该放弃检测</h2>
+<p>有一类场景必须放弃“运行时检测”，改为“服务端风控”：当对手拥有完全的内核控制权时，任何本地检测都只是“提高成本”，而不是“阻止”。这时候正确的做法是把判定搬到服务端，用行为数据（请求频率、参数分布、设备聚类）来做。</p>
+<aside class="note"><span class="note-tag">要点</span><div>判断标准：如果攻击者能在同一台设备上反复试验而不被你发现，那本地检测就已经失效了。</div></aside>
+</article>
+<div class="pager"><a href="03-tee.html"><span class="dir">上一讲</span>03 Android 硬件证明</a><a href="05-zygote.html" style="text-align:right"><span class="dir">下一讲</span>05 Android App 启动过程</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

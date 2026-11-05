@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>13 Android IPC 相关内容</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item active" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">13</span><h1>Android IPC 相关内容</h1><p class="ch-en">常见服务与 Binder</p></div>
+<p class="lead">Android 的所有“系统状态”，都是某个 Binder 服务说了算。</p>
+<h2>13.1 一次跨进程调用的路径</h2>
+<figure>
+<img src="../assets/f13_binder.png" alt="图 13-1" width="1080">
+<figcaption><b>图 13-1</b><span>App → libbinder → 驱动 → system_server 的调用路径</span></figcaption>
+</figure>
+<p>App 调 <code>getService(&quot;package&quot;)</code> 拿到一个代理对象，调用它的方法时：参数被写进 Parcel，通过 <code>ioctl(BINDER_WRITE_READ)</code> 交给驱动；驱动按 handle 找到目标进程的 Binder 节点，把事务投递到目标线程池；目标执行完后把结果写回 Parcel，驱动拷回调用方并唤醒它。</p>
+<h2>13.2 五个最常打交道的服务</h2>
+<div class="tbl"><table>
+<thead><tr><th>服务</th><th>用途</th><th>检测/利用价值</th></tr></thead><tbody>
+<tr><td>package</td><td>包信息、签名、安装列表</td><td>root 应用是否可见</td></tr>
+<tr><td>activity</td><td>任务栈、前台进程</td><td>是否被调试、是否被注入</td></tr>
+<tr><td>mount / storaged</td><td>挂载视图与存储</td><td>mount 覆盖痕迹</td></tr>
+<tr><td>keystore</td><td>密钥与证明</td><td>三绿相关</td></tr>
+<tr><td>servicemanager</td><td>服务枚举</td><td>隐藏的服务是否注册</td></tr>
+</tbody></table></div>
+<h2>13.3 为什么“服务层”是隐藏的必争之地</h2>
+<p>很多隐藏方案只改了文件视图，忘了服务层。结果本地 <code>ls</code> 看不到某个应用，但通过 <code>PackageManager</code> 一查还在；或者本地的 <code>/proc</code> 干净，但 <code>ActivityManager</code> 的运行进程列表里多了一个。</p>
+<p>所以完整的隐藏必须做到“四本账一致”：<strong>文件视图、包管理视图、进程视图、服务注册表</strong>。任何一本对不上，就是线索。</p>
+<div class="code">
+<div class="code-title">用命令行快速核对四本账</div>
+<pre><code>pm list packages | grep -i root
+dumpsys activity processes | head -30
+service list | wc -l
+ls /data/app | wc -l</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>工程习惯：写隐藏逻辑时，先把“四本账”各自的查询接口列出来，逐项对着改，不要凭感觉“应该差不多了”。</div></aside>
+<h2>13.4 本章自测</h2>
+<ul><li>一次 Binder 调用经过哪四个角色？</li><li>为什么“只改文件视图”的隐藏是不完整的？</li><li>四本账分别是什么？各自怎么查？</li><li>如果某个服务被隐藏了注册，App 调用时会看到什么？</li></ul>
+<h2>13.5 深入：Binder 一次传输的数据上限</h2>
+<p>一次 Binder 事务的 Parcel 有大小限制（约 1MB 减去页开销）。超过就会抛 <code>TransactionTooLargeException</code>。这解释了很多“传大图/大列表就崩”的现象，也解释了为什么系统要用 ashmem / 文件描述符传大数据。</p>
+<div class="tbl"><table>
+<thead><tr><th>限制</th><th>数值</th><th>后果</th></tr></thead><tbody>
+<tr><td>单次事务缓冲区</td><td>约 1MB</td><td>超限抛异常</td></tr>
+<tr><td>共享内存传递</td><td>fd 传递</td><td>大数据走这条路</td></tr>
+<tr><td>线程池上限</td><td>15 个 binder 线程</td><td>并发高时排队</td></tr>
+</tbody></table></div>
+<h2>13.6 实战：抓一次 Binder 调用</h2>
+<ol><li>用 <code>service list</code> 找到目标服务。</li><li><code>dumpsys &lt;service&gt;</code> 看它的接口与状态。</li><li>需要更细的调用时，用 <code>frida-trace -i ioctl</code> 抓 <code>BINDER_WRITE_READ</code>。</li><li>解析 Parcel 里的 interface token 与 code，判断调的是哪个方法。</li></ol>
+<div class="code">
+<div class="code-title">快速看服务表</div>
+<pre><code>service list | head -40
+dumpsys package com.example.app | head -60
+dumpsys activity processes | grep -i example</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>Binder 层是“隐藏”的最后一道关。很多方案把文件藏了、进程藏了，却在 <code>service list</code> / <code>dumpsys</code> 里露出来。验收时一定要把这几个命令跑一遍。</div></aside>
+<h2>13.7 原理推演：为什么 Binder 是“一次拷贝”</h2>
+<p>传统的 socket / pipe 是“两次拷贝”（用户 → 内核 → 用户）。Binder 用 mmap 把内核缓冲区映射到接收方进程，于是发送方写一次，接收方直接读——这就是“一次拷贝”。</p>
+<div class="tbl"><table>
+<thead><tr><th>机制</th><th>拷贝次数</th><th>适用</th></tr></thead><tbody>
+<tr><td>socket</td><td>2</td><td>通用</td></tr>
+<tr><td>Binder</td><td>1</td><td>Android IPC</td></tr>
+<tr><td>共享内存</td><td>0（需自己同步）</td><td>大数据</td></tr>
+</tbody></table></div>
+<p>这也解释了 Binder 的 1MB 限制：那个 mmap 区域大小有限。想传更大的数据，就得用 fd 传递共享内存。</p>
+<h2>13.8 数据细节：一次事务的 Parcel 布局</h2>
+<div class="code">
+<div class="code-title">请求 Parcel 的头部</div>
+<pre><code>u4  strict_mode_policy
+u4  work_source_uid
+// 然后是 interface token（字符串）
+// 然后是 code（方法号）
+// 然后是参数（由双方约定）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>抓 Binder 调用时，看到 <code>interface token</code> 就能知道“调的是哪个接口”，看到 <code>code</code> 就知道“哪个方法”。这两个字段是逆向 Binder 通信的钥匙。</p>
+</article>
+<div class="pager"><a href="12-java.html"><span class="dir">上一讲</span>12 Android Java Hook 原理</a><a href="14-dex.html" style="text-align:right"><span class="dir">下一讲</span>14 Android dex 详解</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

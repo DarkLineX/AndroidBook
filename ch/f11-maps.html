@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F11 当前工程隐藏与兼容处理总表</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item active" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F11</span><h1>当前工程隐藏与兼容处理总表</h1><p class="ch-en">maps 过滤、linker 账本、CFI shadow、Gum ELF 匿名映射、Instruction.parse 可读性</p></div>
+<p class="lead">这一章是全书的“检查表”：改哪里、为什么、改完怎么验。</p>
+<figure>
+<img src="../assets/f_f11.png" alt="图 F11-1" width="1080">
+<figcaption><b>图 F11-1</b><span>八个层面的暴露点与处理方式</span></figcaption>
+</figure>
+<h2>11.1 八项总表</h2>
+<div class="tbl"><table>
+<thead><tr><th>层面</th><th>暴露点</th><th>处理方式</th></tr></thead><tbody>
+<tr><td>maps</td><td>注入 so 的路径 / 匿名段</td><td>过滤或伪装成系统库</td></tr>
+<tr><td>linker 账本</td><td>solist 多出无名项</td><td>自建 linker 或做平链表</td></tr>
+<tr><td>CFI shadow</td><td>间接调用目标不在影子表</td><td>注册桩函数地址</td></tr>
+<tr><td>Gum ELF 匿名映射</td><td>agent 区段无 back-file</td><td>合并进合法 so 的 padding</td></tr>
+<tr><td>Instruction.parse</td><td>代码段不可读导致解析失败</td><td>保证映射 r-x 且可读</td></tr>
+<tr><td>线程名</td><td>gum-js-loop 等特征</td><td>统一改名（F08）</td></tr>
+<tr><td>FD 与 socket</td><td>额外 socket / pipe</td><td>复用或延迟创建</td></tr>
+<tr><td>信号处理</td><td>sigaction 被替换</td><td>链式调用原处理函数</td></tr>
+</tbody></table></div>
+<h2>11.2 验收方法：三组对照</h2>
+<ol><li><strong>未注入组</strong>：干净设备，采基线（线程数、FD 数、maps 条目、ClassLoader 数）。</li><li><strong>注入组</strong>：加载 agent，跑同一套检测脚本，记录所有报警项。</li><li><strong>隐藏后组</strong>：应用隐藏改动，再跑一遍，只看“还剩哪几项”。</li></ol>
+<p>三组数据放在一张表里，差异项就是你的“工作清单”。改完一项划掉一项，不要凭感觉判断“应该看不出来了”。</p>
+<h2>11.3 兼容性的现实</h2>
+<p>不同 Android 版本、不同厂商 ROM、不同 ART 实现，会让同一份代码表现不同。所以“隐藏”不是一个状态，而是一条持续维护的曲线——每次系统升级都可能带来新的暴露点。</p>
+<aside class="note"><span class="note-tag">要点</span><div>工程交付建议：随代码一起交付“验证脚本 + 基线数据 + 已知限制清单”。少了这三样，下一个人接手时要重走一遍你走过的所有坑。</div></aside>
+<h2>11.4 本章自测</h2>
+<ul><li>八个层面里，哪三项最难处理？为什么？</li><li>三组对照法的价值是什么？</li><li>为什么 Instruction.parse 会失败？怎么修？</li><li>如果要交付给别人，你会附上哪三份材料？</li></ul>
+<h2>11.5 深入：为什么 `Instruction.parse` 会失败</h2>
+<p>它需要<strong>读</strong>目标地址的内存。如果该页只有执行权限（r-x 中 x 是执行，r 是读，一般可读），通常没问题；但如果某段被映射成 <code>--x</code>（只执行不读），读取就会失败。部分加固方案正是利用了这一点。</p>
+<div class="tbl"><table>
+<thead><tr><th>映射权限</th><th>能否 read</th><th>能否 execute</th><th>Instruction.parse</th></tr></thead><tbody>
+<tr><td>r-x</td><td>能</td><td>能</td><td>成功</td></tr>
+<tr><td>--x</td><td>不能</td><td>能</td><td>失败</td></tr>
+<tr><td>rwx</td><td>能</td><td>能</td><td>成功（但可疑）</td></tr>
+</tbody></table></div>
+<h2>11.6 实战：一张自查表怎么用</h2>
+<ol><li>把八项做成检查脚本，每次构建后自动跑。</li><li>记录“改前 / 改后”的差异，形成趋势。</li><li>新增一个隐藏点时，同步新增一项检查。</li><li>版本升级后，先跑一遍，看哪几项退化。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这张表最大的价值不是“一次性通过”，而是“可持续维护”。隐藏是一个持续的过程，不是一个可以打勾的状态。</div></aside>
+<h2>11.7 原理推演：为什么“隐藏”是收敛而不是清零</h2>
+<p>因为每一次隐藏都会引入新的不自然：改了 maps，dev/inode 可能对不上；改了线程名，线程数还是多的；做了自建 linker，映射的权限组合又可能不常见。所以隐藏是一个“把异常摊平到正常范围”的过程。</p>
+<div class="tbl"><table>
+<thead><tr><th>改动</th><th>消除了什么</th><th>又引入了什么</th></tr></thead><tbody>
+<tr><td>maps 过滤</td><td>可疑路径</td><td>dev/inode 不一致</td></tr>
+<tr><td>线程改名</td><td>可疑名字</td><td>线程数仍异常</td></tr>
+<tr><td>自建 linker</td><td>solist 记录</td><td>权限组合异常</td></tr>
+</tbody></table></div>
+<p>理解这一点，“完美隐藏”就不再是目标——目标是“没有单项特别突出”。</p>
+<h2>11.8 数据细节：一份验收表长什么样</h2>
+<div class="tbl"><table>
+<thead><tr><th>项</th><th>干净</th><th>注入</th><th>隐藏后</th><th>结论</th></tr></thead><tbody>
+<tr><td>maps 条目</td><td>120</td><td>129</td><td>121</td><td>接近</td></tr>
+<tr><td>线程数</td><td>18</td><td>25</td><td>24</td><td>仍偏高</td></tr>
+<tr><td>FD 数</td><td>42</td><td>51</td><td>44</td><td>接近</td></tr>
+<tr><td>匿名可执行段</td><td>3</td><td>6</td><td>3</td><td>已处理</td></tr>
+</tbody></table></div>
+<p>看最后一列：线程数仍偏高，说明“线程清理”这一项还没做完。这就是“用数据驱动隐藏”的样子。</p>
+</article>
+<div class="pager"><a href="f10-bionic.html"><span class="dir">上一讲</span>F10 Frida 线程结构体处理</a><a href="m01-kpm.html" style="text-align:right"><span class="dir">下一讲</span>M01 KPM 模块设计、装载与生命周期</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

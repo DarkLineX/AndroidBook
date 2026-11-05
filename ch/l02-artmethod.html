@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L02 LSPlant Java Hook 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item active" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">L02</span><h1>LSPlant Java Hook 原理</h1><p class="ch-en">ArtMethod、动态桩类、trampoline、backup、entrypoint、原方法调用</p></div>
+<p class="lead">一个 ArtMethod 背后，是一整套“桩类 + 蹦床 + 备份”的设计。</p>
+<h2>2.1 五个环节</h2>
+<figure>
+<img src="../assets/l_l02.png" alt="图 L2-1" width="1080">
+<figcaption><b>图 L2-1</b><span>从定位 ArtMethod 到备份原方法的完整链路</span></figcaption>
+</figure>
+<ol><li><strong>定位 ArtMethod</strong>：反射或 JVMTI 拿到指针。</li><li><strong>生成桩类</strong>：动态 dex / 类，承载你的回调逻辑。</li><li><strong>写蹦床</strong>：汇编级跳板，保存现场、调用回调、恢复现场。</li><li><strong>替换 entrypoint</strong>：改 ArtMethod 的入口指针。</li><li><strong>备份原方法</strong>：保留一个可调用的原实现（backup）。</li></ol>
+<h2>2.2 为什么不能“直接跳回旧入口”</h2>
+<p>因为 ART 的调用约定不是简单的函数调用：参数可能在寄存器与栈之间按特定规则分布，还有 <code>kAccNative</code> 标志、以及 quick 调用与 interpreter 调用的差异。所以备份方法要经过专门处理，才能被安全调用。</p>
+<div class="tbl"><table>
+<thead><tr><th>细节</th><th>不处理的后果</th></tr></thead><tbody>
+<tr><td>kAccNative 标志</td><td>ART 走错调用路径，崩溃</td></tr>
+<tr><td>参数类型</td><td>基本类型与对象类型传递方式不同</td></tr>
+<tr><td>synchronized 方法</td><td>锁语义丢失，出现竞态</td></tr>
+<tr><td>@CriticalNative</td><td>跳过了部分检查，处理更特殊</td></tr>
+</tbody></table></div>
+<h2>2.3 检测视角</h2>
+<div class="code">
+<div class="code-title">不用读内存也能查的三件事</div>
+<pre><code>1. Method.getModifiers() 里是否多了 native
+2. 该类的 dex 是否来自可疑的 dexElements
+3. 方法调用耗时分布是否异常（蹦床有开销）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>学习建议：先用 Frida 的 <code>implementation</code> 跑通“改行为”，再读 LSPlant 源码理解“为什么这么写”。顺序反了容易被细节淹没。</div></aside>
+<h2>2.4 本章自测</h2>
+<ul><li>五个环节里，哪一步最容易出错？</li><li>为什么备份方法不能简单指向旧 entrypoint？</li><li>synchronized 方法被 hook 后，锁语义还在吗？</li><li>哪三件事不用读内存就能发现 Java Hook？</li></ul>
+<h2>2.11 深入：蹦床（trampoline）到底做什么</h2>
+<p>蹦床是一小段汇编：保存会被破坏的寄存器、准备参数、调用你的 Java 回调（或 native 实现）、恢复寄存器、然后跳回原方法或返回。它的正确性完全依赖“对 ART 调用约定的精确理解”。</p>
+<div class="code">
+<div class="code-title">蹦床的概念结构</div>
+<pre><code>trampoline:
+    stp x29, x30, [sp, #-16]!
+    // 保存参数寄存器 x0-x7
+    bl  my_hook_handler
+    // 恢复寄存器
+    ldp x29, x30, [sp], #16
+    b   original_entry_or_return</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>2.5 实战：hook 之后方法变慢很多，怎么办</h2>
+<ol><li>确认是不是每次调用都要走一遍 Java 回调（开销大）。</li><li>把热点逻辑移到 native 侧，减少跨语言调用。</li><li>只在必要时 hook（比如只在启动阶段）。</li><li>如果只是想“观察”，考虑用 trace 而不是 hook。</li></ol>
+<h2>2.6 原理推演：为什么需要“桩类”而不是“直接写汇编”</h2>
+<p>因为 hook 回调通常要访问 Java 对象（参数、this、返回值）。如果全部用汇编处理，就要手动处理 JNI 引用、GC、异常——成本极高。用桩类可以把这些交给 ART。</p>
+<div class="tbl"><table>
+<thead><tr><th>实现</th><th>处理 Java 对象</th><th>复杂度</th></tr></thead><tbody>
+<tr><td>纯汇编蹦床</td><td>手动</td><td>极高</td></tr>
+<tr><td>桩类 + 蹦床</td><td>ART 代劳</td><td>高</td></tr>
+<tr><td>纯 Java 替换</td><td>ART 代劳</td><td>低（但受限）</td></tr>
+</tbody></table></div>
+<p>所以主流框架都是“桩类 + 蹦床”的组合：蹦床负责“切换”，桩类负责“逻辑”。</p>
+<h2>2.7 数据细节：一次 hook 涉及的内存对象</h2>
+<div class="tbl"><table>
+<thead><tr><th>对象</th><th>位置</th><th>生命周期</th></tr></thead><tbody>
+<tr><td>原 ArtMethod</td><td>dex 的 class_def 区</td><td>与类同生命周期</td></tr>
+<tr><td>桩 ArtMethod</td><td>动态生成的类</td><td>与 ClassLoader 同</td></tr>
+<tr><td>蹦床代码</td><td>匿名可执行页</td><td>手动管理</td></tr>
+<tr><td>备份方法</td><td>动态类或匿名页</td><td>手动管理</td></tr>
+</tbody></table></div>
+<h2>2.8 深入：为什么“备份方法”要单独存在</h2>
+<p>因为你要“既能拦，又能调原逻辑”。如果只替换入口、不留备份，那原逻辑就永远执行不到了。备份方法的作用就是“让原逻辑还能被调用”。</p>
+<div class="tbl"><table>
+<thead><tr><th>实现</th><th>能否调原方法</th><th>代价</th></tr></thead><tbody>
+<tr><td>不备份</td><td>不能</td><td>低</td></tr>
+<tr><td>备份 ArtMethod</td><td>能</td><td>中</td></tr>
+<tr><td>蹦床里恢复原入口</td><td>能</td><td>高</td></tr>
+</tbody></table></div>
+<p>主流做法是第一种：复制一份 ArtMethod，把 entrypoint 指回原实现。这样调用备份就等于调用原方法。</p>
+<h2>2.9 深入：桩类为什么要“动态生成”</h2>
+<p>因为你要 hook 的方法签名是运行时才知道的。预先写死的类覆盖不了任意签名，所以必须在运行时“按目标方法的签名，生成一个匹配的类”。</p>
+<div class="code">
+<div class="code-title">概念流程</div>
+<pre><code>1. 读目标方法的签名（参数类型、返回类型）
+2. 构造一个同签名的类（dex 或 native）
+3. 让它的实现转调你的回调
+4. 把目标方法的 entrypoint 指向它</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>2.10 实战：怎么确认“原方法调用”是通的</h2>
+<div class="code">
+<div class="code-title">最小验证</div>
+<pre><code>// hook 一个纯函数（无副作用），比如 String.length
+// 在回调里调用原方法，比对返回值是否与不 hook 时一致</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="l01-zygisk.html"><span class="dir">上一讲</span>L01 LSPosed 总体设计与进程进入</a><a href="l03-hookitem.html" style="text-align:right"><span class="dir">下一讲</span>L03 多模块回调与去优化</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

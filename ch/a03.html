@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A03 附录 C · 学习路线与实验环境</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item active" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">A03</span><h1>附录 C · 学习路线与实验环境</h1><p class="ch-en">从零到能独立做项目的路径</p></div>
+<p class="lead">不要按章节顺序硬啃，按“能力阶梯”走。</p>
+<h2>C.1 四个阶段</h2>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>目标</th><th>对应章节</th><th>验收</th></tr></thead><tbody>
+<tr><td>筑基</td><td>看懂启动链与进程模型</td><td>01–08, K01–K05</td><td>能口述八步启动链</td></tr>
+<tr><td>上手</td><td>能写 hook、能分析算法</td><td>09–16, F01–F04</td><td>能复现一个 App 的签名算法</td></tr>
+<tr><td>深入</td><td>懂内核、懂模块化原理</td><td>K06–K07, M01–M07, F05–F11</td><td>能读懂一个 KPM 的源码</td></tr>
+<tr><td>工程</td><td>能交付可维护的方案</td><td>L01–L10, D01–D03</td><td>能通过八项验证矩阵</td></tr>
+</tbody></table></div>
+<h2>C.2 实验环境建议</h2>
+<ul><li><strong>一台可解锁的测试机</strong>：Pixel 系列最省事，AOSP 资料全。</li><li><strong>一套 AOSP 源码</strong>（可选但强烈建议）：能对着源码读，效率高一个数量级。</li><li><strong>固定版本的测试 App</strong>：自己写一个带签名校验、反调试的靶场 App，比拿别人的 App 练手干净。</li><li><strong>记录习惯</strong>：每次实验都记“假设 → 操作 → 观察 → 结论”，四周后你会感谢自己。</li></ul>
+<h2>C.3 三条学习原则</h2>
+<ol><li><strong>先建模型，再记细节</strong>。模型对了，细节可以查；模型错了，细节全是散的。</li><li><strong>每个结论配一个可证伪实验</strong>。不做实验的“理解”，多半是错觉。</li><li><strong>改完必须回归</strong>。任何一次“应该没问题”的改动，都要用同一套用例重跑。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>最后一句：这份材料里所有“技巧”都会过期，但“分层建模 + 差分验证 + 可证伪实验”这三件事不会。把这三件事练成习惯，比记住任何一条命令都值。</div></aside>
+<h2>C.4 一份 8 周的学习计划</h2>
+<div class="tbl"><table>
+<thead><tr><th>周</th><th>内容</th><th>产出</th></tr></thead><tbody>
+<tr><td>1</td><td>01–04 + 图 01/04</td><td>能画启动链与检测矩阵</td></tr>
+<tr><td>2</td><td>05–08</td><td>能说清 zygote 与注入</td></tr>
+<tr><td>3</td><td>09–12</td><td>能写三种 hook 的最小示例</td></tr>
+<tr><td>4</td><td>13–16 + K01–K03</td><td>能分析一个签名算法</td></tr>
+<tr><td>5</td><td>K04–K07</td><td>能取 offset、算地址</td></tr>
+<tr><td>6</td><td>F01–F06</td><td>能读懂 Frida 启动链</td></tr>
+<tr><td>7</td><td>F07–F11 + M01–M03</td><td>能说清 Text Shadow</td></tr>
+<tr><td>8</td><td>M04–M07 + L01–L10</td><td>能通过八项验证矩阵</td></tr>
+</tbody></table></div>
+<h2>C.5 常见卡点与对策</h2>
+<div class="tbl"><table>
+<thead><tr><th>卡点</th><th>表现</th><th>对策</th></tr></thead><tbody>
+<tr><td>环境搭不起来</td><td>frida 连不上</td><td>按 4.5 的分层排查</td></tr>
+<tr><td>hook 不生效</td><td>日志没输出</td><td>先确认目标类是否加载</td></tr>
+<tr><td>脱壳 dump 为空</td><td>jadx 打不开</td><td>换 dump 时机</td></tr>
+<tr><td>内核模块加载失败</td><td>dmesg 报错</td><td>查符号与 vermagic</td></tr>
+</tbody></table></div>
+<h2>C.6 推荐的源码阅读顺序</h2>
+<ol><li>AOSP 的 <code>init</code>（看 rc 解析与 service 启动）</li><li><code>frameworks/base/core/java/android/app/ActivityThread.java</code>（看 App 启动）</li><li><code>bionic/linker/linker.cpp</code>（看 so 加载）</li><li><code>art/runtime/art_method.h</code>（看 ArtMethod）</li><li>Frida 的 <code>frida-gum/gum/interceptor.c</code>（看 hook 实现）</li><li>Linux 的 <code>kernel/fork.c</code>（看 task 创建）</li></ol>
+<p>每读一个文件，都问自己三个问题：<strong>它的输入是什么、输出是什么、谁调用它</strong>。这三个问题能让你不被细节淹没。</p>
+<h2>C.7 一份“自测题”清单</h2>
+<ul><li>不看资料，画出从开机到 App 可见的完整链路。</li><li>解释为什么“改 ramdisk”与“改 kernel”在能力上差一个数量级。</li><li>写出一个能抓 <code>strcmp</code> 两个参数的 Frida 脚本。</li><li>解释 Text Shadow 为什么必须“双 PFN”。</li><li>说明“三绿”的三个判定分别校验什么。</li><li>给出一个“结构差分”检测的例子，并说明怎么测量。</li></ul>
+<h2>C.8 三本值得反复读的材料</h2>
+<ul><li><strong>AOSP 源码</strong>：所有“官方行为”的最终解释权。</li><li><strong>Linux 内核文档</strong>（Documentation/ 目录）：比任何二手资料都准确。</li><li><strong>各框架的源码</strong>：Frida、LSPosed、Magisk，读它们的 commit 历史比读文档更有收获。</li></ul>
+<h2>C.9 最后一段话</h2>
+<p>这本书里所有的“技巧”都会随版本过期。但有三件事不会：<strong>分层建模的能力</strong>、<strong>做可证伪实验的习惯</strong>、<strong>把结论写成可回归用例的工程素养</strong>。把这三件事练成肌肉记忆，你就再也不需要“记住某个具体命令”了——需要的时候，你会自己推出来。</p>
+<h2>C.10 一页纸的“开始动手”清单</h2>
+<ol><li>装好 adb、frida-tools，跑通 <code>frida-ps -U</code>。</li><li>写一个空脚本，能 <code>send(&#x27;alive&#x27;)</code>。</li><li>对自己写的靶场 App 做一次 hook，改一个方法的返回值。</li><li>用 <code>frida-trace</code> 抓一次 <code>open</code>，看输出。</li><li>把自己 App 的 dex 用 jadx 打开，找到 MainActivity。</li><li>对一个真实 App 做一次“抓输入输出”，记录步骤。</li><li>写一个三组对照的检测脚本，跑一遍。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这七步做完，你就“入门”了。剩下的都是在这条链上加深度——而深度是可以按需补的。</div></aside>
+</article>
+<div class="pager"><a href="a02.html"><span class="dir">上一讲</span>A02 附录 B · 术语表</a><a href="a04.html" style="text-align:right"><span class="dir">下一讲</span>A04 附录 D · 全书自测参考答案</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T02 训练营二：从一个陌生 App 里挖出一个算法</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item active" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">T02</span><h1>训练营二：从一个陌生 App 里挖出一个算法</h1><p class="ch-en">不靠反编译硬读，靠 hook 快速定位</p></div>
+<p class="lead">目标不是“读懂全部代码”，而是“用最少的信息换来可复现的结论”。</p>
+<h2>2.1 任务目标</h2>
+<p>选一个带请求签名的 App（或自己写一个），在不阅读混淆代码的前提下，通过 hook 拿到：<strong>签名的输入是什么、输出是什么、用的是哪一类算法</strong>，并用另一种语言复现。</p>
+<h2>2.2 五步法</h2>
+<ol><li><strong>定边界</strong>：hook 网络层（OkHttp 的 <code>Request.Builder.build</code> 或 <code>URL.openConnection</code>），拿到最终 URL 与 header，确认签名放在哪个字段。</li><li><strong>找汇聚点</strong>：hook <code>String.equals</code>，因为“校验”最终一定是一次比较。把两个参数打出来，你就同时拿到了“算出来的”和“期望的”。</li><li><strong>回溯调用栈</strong>：在 <code>equals</code> 的 hook 里打印 <code>Java.use(&#x27;android.util.Log&#x27;).getStackTraceString(...)</code>，顺着栈找到计算函数所在类。</li><li><strong>判类型</strong>：看输出长度（32/40/64 hex）、看是否有密钥参与（改一位看输出是否雪崩）、看有没有明显的常量表。</li><li><strong>复现验证</strong>：用 Python 重写，跑 5 组样本，全对才算成功。</li></ol>
+<div class="code">
+<div class="code-title">第二步的关键脚本</div>
+<pre><code>Java.perform(() =&gt; {
+  const S = Java.use(&#x27;java.lang.String&#x27;);
+  S.equals.implementation = function (o) {
+    const a = this.toString(), b = String(o);
+    if (a.length &gt;= 16 &amp;&amp; b.length &gt;= 16) {
+      send({a: a, b: b, len: a.length});
+    }
+    return this.equals(o);
+  };
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>2.3 判类型的速查表</h2>
+<div class="tbl"><table>
+<thead><tr><th>观察到的特征</th><th>结论</th><th>下一步</th></tr></thead><tbody>
+<tr><td>输出 32 位 hex，改一位全变</td><td>MD5 类</td><td>找 salt 拼在哪</td></tr>
+<tr><td>输出 64 位 hex</td><td>SHA256 类</td><td>确认是否有 HMAC</td></tr>
+<tr><td>输出含 <code>+/=</code></td><td>Base64</td><td>先解码再看内层</td></tr>
+<tr><td>有 256 字节常量表</td><td>AES / SM4</td><td>找 key 与 iv</td></tr>
+<tr><td>纯数字、长度固定</td><td>可能是自研编码</td><td>看循环与位运算</td></tr>
+</tbody></table></div>
+<h2>2.4 常见卡点与对策</h2>
+<div class="tbl"><table>
+<thead><tr><th>卡点</th><th>表现</th><th>对策</th></tr></thead><tbody>
+<tr><td>hook 没生效</td><td>没有任何输出</td><td>确认类已加载；换 ClassLoader</td></tr>
+<tr><td>equals 调用太多</td><td>日志刷屏</td><td>按长度/字符集过滤</td></tr>
+<tr><td>签名在 native 算</td><td>栈里看不到 Java 层</td><td>改 hook native 的 memcmp/strcmp</td></tr>
+<tr><td>有反调试</td><td>一 attach 就退出</td><td>先过反调试，再谈分析</td></tr>
+</tbody></table></div>
+<h2>2.5 交付物</h2>
+<ul><li>一份“输入 → 输出”的样本表（至少 5 组）。</li><li>复现脚本（含断言，能自动验证）。</li><li>一段说明：你是怎么从“不知道”到“确定”的，中间排除了哪些可能性。</li></ul>
+<h2>2.6 自测</h2>
+<ul><li>为什么“找汇聚点”比“反编译读代码”效率高？</li><li>如果签名在 native 层算，你的 hook 点应该换到哪？</li><li>“改一位看输出是否雪崩”能区分开哪两类算法？</li><li>复现脚本为什么必须带断言？</li></ul>
+</article>
+<div class="pager"><a href="t01.html"><span class="dir">上一讲</span>T01 训练营一：给自写靶场 App 加一道检测，再绕过它</a><a href="t03.html" style="text-align:right"><span class="dir">下一讲</span>T03 训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

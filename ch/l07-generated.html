@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L07 Android 16 ART / JVMTI 根因修复</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item active" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">L07</span><h1>Android 16 ART / JVMTI 根因修复</h1><p class="ch-en">generated class 枚举、dex method index、隔离 ArtMethod backup、反射 Method 包装</p></div>
+<p class="lead">新版本把“生成类”藏得更深，反射和枚举都要换路子。</p>
+<h2>7.1 四个根因</h2>
+<figure>
+<img src="../assets/l_l07.png" alt="图 L7-1" width="1080">
+<figcaption><b>图 L7-1</b><span>四个根因与四种修法</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>根因</th><th>表现</th><th>修法</th></tr></thead><tbody>
+<tr><td>generated class 枚举</td><td>动态类不在常规列表里</td><td>JVMTI GetLoadedClasses</td></tr>
+<tr><td>dex method index</td><td>索引语义变化，缓存失效</td><td>按签名重新解析</td></tr>
+<tr><td>ArtMethod 备份隔离</td><td>备份与本体温差明显</td><td>放进独立匿名页</td></tr>
+<tr><td>反射 Method 包装</td><td>拿到的是包装对象</td><td>先解包到真实 ArtMethod</td></tr>
+</tbody></table></div>
+<h2>7.2 方法论：先打出来，再决定改哪</h2>
+<p>遇到“新版本不工作”，第一步不是猜 API，而是用 JVMTI 把运行时的真实结构 dump 出来：有哪些类、每个方法的 ArtMethod 在哪、entrypoint 指向哪。看到真实数据，改动方向自然清楚。</p>
+<div class="code">
+<div class="code-title">JVMTI 枚举所有已加载类</div>
+<pre><code>jclass* classes; jint count;
+jvmti-&gt;GetLoadedClasses(&amp;count, &amp;classes);
+for (int i = 0; i &lt; count; i++) {
+    char* sig; jvmti-&gt;GetClassSignature(classes[i], &amp;sig, NULL);
+    LOGI(&quot;%s&quot;, sig);
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>兼容工程的通用套路：<strong>能力探测 → 多路径实现 → 运行时选择</strong>。不要写“if (version == 16)”这种硬分支，写“if (有这个符号就用这条路”。</div></aside>
+<h2>7.3 本章自测</h2>
+<ul><li>为什么动态生成的类用反射枚举不到？</li><li>备份 ArtMethod 为什么要“隔离”？</li><li>反射拿到的 Method 为什么可能是包装对象？</li><li>为什么建议用“能力探测”而不是“版本判断”？</li></ul>
+<h2>7.4 深入：为什么要“隔离 ArtMethod 备份”</h2>
+<p>如果备份的 ArtMethod 就放在本体旁边，那么“扫描一段内存，发现两个长得一模一样的方法结构”，就是一个非常明显的信号。隔离的做法是把它放到另一个匿名页，或者用不同的形态保存（比如只存 entrypoint）。</p>
+<div class="tbl"><table>
+<thead><tr><th>保存方式</th><th>可枚举性</th><th>安全性</th></tr></thead><tbody>
+<tr><td>完整副本（相邻）</td><td>高</td><td>低</td></tr>
+<tr><td>完整副本（独立页）</td><td>中</td><td>中</td></tr>
+<tr><td>只存 entrypoint</td><td>低</td><td>高</td></tr>
+</tbody></table></div>
+<h2>7.5 实战：能力探测代替版本判断</h2>
+<div class="code">
+<div class="code-title">好的写法与坏的写法</div>
+<pre><code># 坏：版本硬编码
+if (sdk == 34) { ... } else if (sdk == 36) { ... }
+ 
+# 好：能力探测
+if (has_symbol(&quot;art::mirror::ArtMethod::GetEntryPoint&quot;)) { ... }
+else if (offset_works(0x28)) { ... }</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.6 原理推演：为什么“生成类”是清单外的</h2>
+<p>因为它们是运行时“造”出来的，不在 APK 的 dex 里。反射 API 通常只枚举“已加载的、来自 dex 的类”，所以动态生成的类就漏掉了。</p>
+<div class="tbl"><table>
+<thead><tr><th>枚举方式</th><th>能看到动态类</th><th>原因</th></tr></thead><tbody>
+<tr><td>ClassLoader.loadClass</td><td>需知道名字</td><td>要主动查</td></tr>
+<tr><td>反射 getDeclaredClasses</td><td>部分</td><td>只看声明</td></tr>
+<tr><td>JVMTI GetLoadedClasses</td><td>全部</td><td>运行时真实列表</td></tr>
+</tbody></table></div>
+<p>所以“要完整枚举”就必须用 JVMTI——这也是它在逆向里价值高的原因。</p>
+<h2>7.7 数据细节：JVMTI 的常见能力</h2>
+<div class="tbl"><table>
+<thead><tr><th>能力</th><th>用途</th></tr></thead><tbody>
+<tr><td>GetLoadedClasses</td><td>枚举全部类</td></tr>
+<tr><td>GetClassMethods</td><td>枚举方法</td></tr>
+<tr><td>RetransformClasses</td><td>运行时改字节码</td></tr>
+<tr><td>SetBreakpoint</td><td>方法级断点</td></tr>
+</tbody></table></div>
+<h2>7.8 深入：为什么“反射枚举”拿不到全部类</h2>
+<p>因为反射枚举的入口通常是 <code>ClassLoader.loadClass</code> + 已知名字，或者 <code>PackageManager</code> 里的 dex 列表。前者需要你知道名字，后者只覆盖“来自 dex 的类”。动态生成的类两条路都不在。</p>
+<div class="tbl"><table>
+<thead><tr><th>枚举方式</th><th>覆盖范围</th><th>漏掉什么</th></tr></thead><tbody>
+<tr><td>loadClass（已知名）</td><td>你想到的</td><td>所有没想到的</td></tr>
+<tr><td>PackageManager</td><td>dex 里的类</td><td>动态生成的</td></tr>
+<tr><td>JVMTI GetLoadedClasses</td><td>全部已加载</td><td>几乎没有</td></tr>
+</tbody></table></div>
+<p>所以“要完整”就必须用 JVMTI。这是它不可替代的地方。</p>
+<h2>7.9 深入：方法索引为什么会失效</h2>
+<p>因为 <code>dex method index</code> 是“dex 内部的编号”，不同 dex、不同版本、不同加载顺序都可能不同。把它当作“稳定标识”来缓存，换个环境就错位。</p>
+<div class="code">
+<div class="code-title">正确做法：用签名做键</div>
+<pre><code>// 不稳定：
+cache[method_index] = ArtMethod*;
+ 
+// 稳定：
+cache[class_sig + &#x27;#&#x27; + method_name + method_sig] = ArtMethod*;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.10 实战：一次“新版本不工作”的排查记录</h2>
+<ol><li>确认是“完全没生效”还是“部分生效”——前者通常是加载失败，后者是布局变了。</li><li>用 JVMTI dump 出真实的 ArtMethod 布局，与代码里的假设比对。</li><li>发现某个字段偏移变了 8 字节。</li><li>改成“运行时探测偏移”，而不是“写死”。</li><li>回归：在三个版本上各跑一遍八项用例。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>这个流程可以复用到所有“版本升级后失效”的场景：<strong>先分清“没进去”还是“进去但错了”</strong>，再决定是改加载逻辑还是改偏移假设。</div></aside>
+</article>
+<div class="pager"><a href="l06-bridge.html"><span class="dir">上一讲</span>L06 Binder、FD 与 linker 账本收口</a><a href="l08-moving.html" style="text-align:right"><span class="dir">下一讲</span>L08 Android 14 / 16 分层适配</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 APatch 的 root 原理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item active" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">01</span><h1>APatch 的 root 原理</h1><p class="ch-en">从 boot.img patch 开始</p></div>
+<p class="lead">先搞清一件事：为什么“改一个镜像文件”就能换来 uid=0。</p>
+<h2>1.1 从“我是谁”开始：uid 到底存在哪</h2>
+<p>Android 的权限模型本质上很简单：内核里每个进程都挂着一个 <code>cred</code> 结构，里面写着 uid、gid、能力集。系统里所有“你能不能干这件事”的判断，最后都要回到这个结构上。所以“拿到 root”这句话翻译成内核语言，就是一句话：<strong>让某个进程的 cred 里，uid 变成 0</strong>。</p>
+<p>剩下的所有技术，都是围绕“怎么合法地改到那个字段”展开的。用户态方案要在内核的规则里找缝隙；内核态方案则干脆把自己变成规则的一部分。APatch 属于后者。</p>
+<h2>1.2 boot.img 是什么</h2>
+<p>boot.img 是一个容器，里面按顺序装着几样东西：boot header（描述各段位置与大小）、kernel（压缩过的内核镜像）、ramdisk（一个 cpio 归档，init 与一堆 .rc 文件都在里面）、部分机型还有 second 或 dtb，最后是 AVB footer（40 字节，记录原镜像大小与 vbmeta 的位置，本身不带摘要签名）。</p>
+<aside class="note"><span class="note-tag">要点</span><div>别把“vbmeta 摘要与签名”算到 footer 头上：footer 只是<strong>一个指针</strong>（magic <code>AVBf</code>、<code>original_image_size</code>、<code>vbmeta_offset</code>、<code>vbmeta_size</code>）。真正的哈希树与签名在 <code>vbmeta</code> 分区里，由它去描述 boot/system 等分区的摘要。</div></aside>
+<div class="tbl"><table>
+<thead><tr><th>组成</th><th>内容</th><th>被谁使用</th></tr></thead><tbody>
+<tr><td>boot header</td><td>magic、版本、各段偏移与大小、命令行</td><td>bootloader</td></tr>
+<tr><td>kernel</td><td>压缩的 Image（gzip / lz4 / zstd）</td><td>kernel 自身解压</td></tr>
+<tr><td>ramdisk</td><td>cpio.gz，init、init.rc、sepolicy 等</td><td>init</td></tr>
+<tr><td>second / dtb</td><td>第二阶段引导、硬件描述</td><td>bootloader / kernel</td></tr>
+<tr><td>AVB footer</td><td>指向 vbmeta 的偏移与大小（本身只有 40 字节，不含摘要）</td><td>bootloader 校验</td></tr>
+</tbody></table></div>
+<p>关键点在于：<strong>内核启动参数、init 的行为、以及一部分安全策略，都在这个文件里</strong>。改它，等于改了整个系统启动时的“出厂设置”。</p>
+<h2>1.3 传统 Magisk 的思路：动 ramdisk</h2>
+<p>Magisk 选择动 ramdisk：把 <code>magiskinit</code> 塞进去，让它抢在真正的 init 之前跑，做几件事——挂载模块目录、用 mount 覆盖替换系统文件、启动 <code>magiskd</code> 守护进程、并 patch SELinux 策略让 su 能工作。</p>
+<p>这条路的优点是成熟、生态完整；缺点是痕迹相对多：多出来的进程、mount 记录、被覆盖的文件在 <code>mountinfo</code> 里都能看到，于是隐藏就变成了一场“和检测方比拼谁更细心”的持久战。</p>
+<h2>1.4 APatch 的思路：动 kernel</h2>
+<p>APatch 把改动点下移了一层：不在 ramdisk 里做文章，而是往<strong>内核</strong>里塞进一段能被调用的代码。它引入了 KPM（Kernel Patch Module）这个概念——一种自带的、轻量的内核模块，由用户态的 loader 加载进内核并执行。</p>
+<figure>
+<img src="../assets/f02_apatch.png" alt="图 1-1" width="1080">
+<figcaption><b>图 1-1</b><span>boot.img 的组成与 APatch 的四步走</span></figcaption>
+</figure>
+<ol><li><strong>解包</strong>：把 boot.img 拆成 kernel 与 ramdisk，取出原始内核镜像。</li><li><strong>打桩</strong>：在内核里定位一个稳定的调用点，写入跳转，或者预留一个 hook 槽位。</li><li><strong>装模块</strong>：把编译好的 .kpm 通过自己的 loader 加载进内核内存，完成重定位与符号绑定。</li><li><strong>提权</strong>：模块代码运行在内核态（EL1），直接改写目标进程的 cred，uid 变 0。</li></ol>
+<h2>1.5 为什么“内核态”这件事这么关键</h2>
+<p>因为内核态不需要“请求许可”，它就是许可本身。用户态的一切伪装——改名、改路径、改返回值——都要经过内核这一层；而如果改动发生在内核里，那么所有来查询的人，看到的都是“内核说的事实”。</p>
+<blockquote>用户态 root 靠“骗”，内核态 root 靠“本来就是”。</blockquote>
+<h2>1.6 代价：AVB 与三绿</h2>
+<p>改 boot.img 会破坏 AVB 校验：bootloader 会算哈希、对 vbmeta 验签，对不上就拒绝启动或给出警告。所以 patch 完必须同时处理 vbmeta——要么关掉校验（在 fastboot 侧用 <code>fastboot --disable-verity --disable-verification flash vbmeta vbmeta.img</code> 重刷 vbmeta），要么重新签名（需要自己的密钥，且要改 bootloader 的信任根）。</p>
+<p>这就直接牵出了第 03 章的主题：一旦 boot 状态被标记为“已解锁 / 未验证”，Google 的 Play Integrity 就从 STRONG 掉到 BASIC。想让三绿同时亮，就必须在<strong>证明链</strong>上做文章，而不只是在内核里。</p>
+<div class="tbl"><table>
+<thead><tr><th>维度</th><th>Magisk</th><th>APatch</th></tr></thead><tbody>
+<tr><td>改动位置</td><td>ramdisk</td><td>kernel</td></tr>
+<tr><td>实现形态</td><td>magiskd 守护进程 + mount</td><td>KPM 内核模块</td></tr>
+<tr><td>SELinux</td><td>patch policy 文件</td><td>内核态直接放行</td></tr>
+<tr><td>主要痕迹</td><td>进程、mount、文件覆盖</td><td>内核内存、符号、模块链表</td></tr>
+<tr><td>对 AVB 的影响</td><td>需处理 vbmeta</td><td>需处理 vbmeta</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>学习路线建议：先把本章的“boot.img 五段结构”记牢，再读第 02 章的启动过程，最后读第四部 M01（KPM 生命周期）。三章连起来，才是完整的“从镜像到内核执行”的链路。</div></aside>
+<h2>1.7 本章自测</h2>
+<ul><li>不看资料，画出 boot.img 的五段结构，并说明每段被谁使用。</li><li>用一句话解释“为什么改 kernel 比改 ramdisk 更隐蔽”。</li><li>AVB 校验失败会发生什么？有哪两种处理方式？</li><li>如果目标设备的三绿要求 STRONG，单靠 APatch 能解决吗？为什么？</li></ul>
+<h2>1.8 深入：patch 到底改了哪几个字节</h2>
+<p>很多人第一次拆开 patched boot.img 时会失望：改了的地方往往只有几十个字节，甚至只是 header 里的几个标志位。因为真正的“载荷”不在 kernel 里，而是在 ramdisk 或另外的数据分区里；kernel 侧只留一个“接应点”。</p>
+<div class="tbl"><table>
+<thead><tr><th>改动位置</th><th>典型内容</th><th>作用</th></tr></thead><tbody>
+<tr><td>kernel 中的空槽</td><td>跳转到 loader 的短跳转</td><td>入口</td></tr>
+<tr><td>kernel 尾部 padding</td><td>打包的 KPM 镜像</td><td>载荷</td></tr>
+<tr><td>header cmdline</td><td>追加参数</td><td>传参</td></tr>
+<tr><td>ramdisk 中的 rc</td><td>新增 service 定义</td><td>拉起守护</td></tr>
+</tbody></table></div>
+<p>理解这一点，对“为什么不同机型 patch 方式不一样”就不再困惑了：不同内核版本里可用的“空槽”位置、padding 大小、以及对镜像压缩格式的支持都不一样。</p>
+<h2>1.9 实战步骤：一次完整的 patch 流程</h2>
+<ol><li><strong>取镜像</strong>：从官方固件包或设备分区里取出 <code>boot.img</code>（<code>dd if=/dev/block/by-name/boot</code>）。</li><li><strong>解包</strong>：用 <code>magiskboot unpack</code> 拆出 kernel 与 ramdisk，确认内核版本与压缩格式。</li><li><strong>打桩</strong>：定位可用的调用点或 padding，写入跳转与载荷，记录原始字节以便回滚。</li><li><strong>重打包</strong>：<code>magiskboot repack</code> 生成新镜像，记录新旧哈希。</li><li><strong>刷入并验证</strong>：<code>fastboot flash boot</code>，重启后确认 <code>uid=0</code> 可用，同时记录 AVB 状态。</li><li><strong>准备回滚</strong>：保留原始镜像与一键刷回脚本。</li></ol>
+<div class="code">
+<div class="code-title">最小命令序列（示意，路径按机型替换）</div>
+<pre><code>adb shell su -c &#x27;dd if=/dev/block/by-name/boot of=/sdcard/boot.img&#x27;
+adb pull /sdcard/boot.img
+magiskboot unpack boot.img
+magiskboot repack boot.img new-boot.img
+fastboot flash boot new-boot.img
+fastboot reboot</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>回滚比成功更重要。刷机前务必确认：原始镜像已备份、fastboot 可用、且知道如何进 recovery。在没备份的情况下动 boot 分区，是新手最常见的“把手机变砖”方式。</div></aside>
+<h2>1.10 常见坑</h2>
+<ul><li><strong>A/B 分区</strong>：现代设备有两套 boot 槽位，刷错槽位表现为“刷了没反应”。用 <code>fastboot getvar current-slot</code> 确认。</li><li><strong>vendor_boot</strong>：部分机型把 ramdisk 拆到 <code>vendor_boot</code> 里，只刷 boot 不够。</li><li><strong>动态分区</strong>：<code>super</code> 分区里的逻辑分区不能直接 dd，要用 <code>fastbootd</code> 或 <code>lpmake</code> 处理。</li><li><strong>加密与 verity</strong>：<code>dm-verity</code> 开启时，改过的系统分区会导致启动失败，需要同时处理 fstab。</li></ul>
+<h2>1.11 原理推演：从“能改镜像”到“能执行代码”</h2>
+<p>这里有一条容易被跳过的逻辑链，值得单独推一遍：改镜像只是“把字节写进去”，而“字节被执行”需要三个条件同时成立——<strong>它必须在可执行的内存里</strong>、<strong>必须有人把控制权交给它</strong>、<strong>它的执行必须不破坏系统既定假设</strong>。</p>
+<div class="tbl"><table>
+<thead><tr><th>条件</th><th>不满足的后果</th><th>怎么满足</th></tr></thead><tbody>
+<tr><td>在可执行内存里</td><td>写入的字节永远不会被取指</td><td>放进 kernel 的 text 段或由 loader 分配</td></tr>
+<tr><td>有人转移控制权</td><td>代码存在但永不运行</td><td>hook 一个必然被调用的函数</td></tr>
+<tr><td>不破坏系统假设</td><td>运行后立刻崩溃</td><td>保存/恢复现场，遵守 ABI</td></tr>
+</tbody></table></div>
+<p>APatch 的“打桩”本质上就是在解决第二个条件：它找到了一个“系统必然会走到”的位置，在那里留下一个跳转。至于第一个条件，kernel 的 text 段本身就是可执行的，所以最省事的做法就是“把载荷塞进 kernel 自己的映射里”。</p>
+<p>这也解释了为什么“改 ramdisk”和“改 kernel”在能力上差别这么大：ramdisk 的东西运行在用户态，受 SELinux 与 capability 的全部约束；而 kernel 里的东西运行在 EL1，约束少了一个数量级。</p>
+<h2>1.12 数据细节：一次 patch 之后，设备上多了什么</h2>
+<p>把“新装了一台设备”和“patch 过的设备”放在一起做 diff，能看到的东西比想象中多：</p>
+<div class="tbl"><table>
+<thead><tr><th>观测面</th><th>干净设备</th><th>patch 后</th></tr></thead><tbody>
+<tr><td>/proc/modules</td><td>若干厂商模块</td><td>通常无变化（KPM 不进这里）</td></tr>
+<tr><td>内核 text 段</td><td>与官方镜像一致</td><td>多出一段跳转</td></tr>
+<tr><td>dmesg</td><td>标准启动日志</td><td>可能多出 loader 的打印</td></tr>
+<tr><td>mountinfo</td><td>标准挂载</td><td>通常无变化</td></tr>
+<tr><td>进程列表</td><td>标准服务</td><td>可能有 su 守护</td></tr>
+</tbody></table></div>
+<p>这张表的用处是：它告诉你“哪些面本来就不会变”，于是那些变了的面就成了高价值线索。做检测时，优先查“本该稳定却变了”的地方，比遍历所有特征高效得多。</p>
+<h2>1.13 工程权衡：为什么不直接改 syscall 表</h2>
+<p>新手常问：既然都在内核里了，为什么不直接把 <code>open</code> 的 syscall 换掉？答案有三层。</p>
+<ol><li><strong>性能</strong>：syscall 是所有进程的高频路径，换掉它意味着每次调用都要多走一层。</li><li><strong>风险</strong>：一旦实现有 bug，整个系统立刻不可用（连 shell 都起不来）。</li><li><strong>暴露</strong>：syscall 表是最经典的检测点，几乎所有内核完整性检查都会比对它。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>结论：能在一个“低频、必经、且不被比对”的位置动手，就不要动高频路径。这是内核工程的第一条实践原则。</div></aside>
+</article>
+<div class="pager"><span></span><a href="02-abl.html" style="text-align:right"><span class="dir">下一讲</span>02 Android 手机启动过程</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

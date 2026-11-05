@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>14 Android dex 详解</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item active" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">14</span><h1>Android dex 详解</h1><p class="ch-en">dex 执行与脱壳核心</p></div>
+<p class="lead">脱壳不是“把文件拽出来”，而是“找到运行时真正执行的那份字节”。</p>
+<h2>14.1 结构：按 map_list 读就不会迷路</h2>
+<figure>
+<img src="../assets/f14_dex.png" alt="图 14-1" width="1080">
+<figcaption><b>图 14-1</b><span>dex 的六段结构，以及脱壳的三个层次</span></figcaption>
+</figure>
+<ol><li><strong>header</strong>：magic、checksum、各段偏移与大小、<code>map_off</code>。</li><li><strong>string_ids / type_ids</strong>：字符串池与类型池，后面所有结构都用索引引用它们。</li><li><strong>proto_ids / field_ids</strong>：方法签名与字段符号。</li><li><strong>method_ids</strong>：方法符号，由 class_idx + proto_idx + name_idx 组成。</li><li><strong>class_defs</strong>：类定义，指向 <code>class_data_off</code>，那里才有方法与字段列表。</li><li><strong>data 区</strong>：<code>code_item</code>（真正的指令）与调试信息、注解等。</li></ol>
+<h2>14.2 三个层次的脱壳</h2>
+<div class="tbl"><table>
+<thead><tr><th>层次</th><th>做法</th><th>适用</th></tr></thead><tbody>
+<tr><td>dump 内存</td><td>扫 dex magic，按 file_size 整段抓</td><td>整体加固、dex 完整加载</td></tr>
+<tr><td>修复</td><td>拼多 dex、修 checksum、补 map 顺序</td><td>dump 出来的文件不能反编译时</td></tr>
+<tr><td>对抗抽取</td><td>在“回填之后、执行之前”抓</td><td>壳把 code_item 抽空、运行时回填</td></tr>
+</tbody></table></div>
+<h2>14.3 dump 的时机比工具重要</h2>
+<p>同一个 App，在不同时刻 dump，拿到的可能是完全不同的东西：启动时只有壳的桩代码，真正业务 dex 要等某个类被加载才解密。所以正确顺序是：<strong>先定位 ClassLoader 与 DexFile 对象，再在“目标类加载完成”这个事件上触发 dump</strong>。</p>
+<div class="code">
+<div class="code-title">定位 DexFile 的思路（Frida 侧）</div>
+<pre><code>Java.perform(() =&gt; {
+  Java.enumerateClassLoaders({
+    onMatch(loader) {
+      try {
+        const pcl = Java.cast(loader,
+          Java.use(&#x27;dalvik.system.BaseDexClassLoader&#x27;));
+        console.log(pcl.getDexPathList().toString());
+      } catch (e) {}
+    }, onComplete() {}
+  });
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>常见误区：以为 dump 出来的文件一定能反编译。实际上壳会在 header、map、code_item 里做各种手脚，修复工作量往往比 dump 本身更大。</div></aside>
+<h2>14.4 本章自测</h2>
+<ul><li>dex 的六段结构按顺序说出来。</li><li>为什么“dump 时机比工具重要”？</li><li>对抗抽取型壳，应该在哪一刻抓？</li><li>dump 出来的文件打不开，可能是哪几处被改了？</li></ul>
+<h2>14.5 深入：一个 code_item 长什么样</h2>
+<p><code>code_item</code> 是 dex 里真正存指令的地方。结构是：寄存器数、入参个数、出参个数、try/catch 表偏移、调试信息偏移、以及指令字节数组。抽取型壳的做法是把指令数组清零或加密，运行时再填回去。</p>
+<div class="code">
+<div class="code-title">code_item 的字段（示意）</div>
+<pre><code>struct code_item {
+  u2 registers_size;
+  u2 ins_size;
+  u2 outs_size;
+  u2 tries_size;
+  u4 debug_info_off;
+  u4 insns_size;
+  u2 insns[insns_size];   // 真正的指令
+};</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>14.6 修复 dump 出来的 dex 要做哪些事</h2>
+<ol><li><strong>补 header</strong>：<code>file_size</code>、<code>data_size</code>、<code>data_off</code> 常被改坏。</li><li><strong>修 checksum 与签名</strong>：<code>checksum</code> 是 adler32，<code>signature</code> 是 sha1，都要重算。</li><li><strong>整理 map_list</strong>：有些壳会把 map 打乱，导致反编译工具解析失败。</li><li><strong>合并多 dex</strong>：如果业务被拆到多个 dex，要分别 dump 再拼。</li><li><strong>验证</strong>：用 <code>dexdump -d</code> 看指令是否完整，用 jadx 看能否反编译。</li></ol>
+<aside class="note"><span class="note-tag">要点</span><div>经验：<strong>先修 header，再看 map，最后才动指令</strong>。顺序错了会陷入“改一处崩一处”的循环。建议写一个小工具，每次 dump 后自动跑一遍修复与校验。</div></aside>
+<h2>14.7 快速判断“壳到第几代”</h2>
+<div class="tbl"><table>
+<thead><tr><th>观察点</th><th>一代</th><th>二代</th><th>三代+</th></tr></thead><tbody>
+<tr><td>code_item 指令</td><td>完整</td><td>空/加密</td><td>空/加密</td></tr>
+<tr><td>方法数量</td><td>正常</td><td>正常</td><td>大量桩方法</td></tr>
+<tr><td>dispatcher</td><td>无</td><td>少量</td><td>巨型 switch</td></tr>
+<tr><td>native 占比</td><td>低</td><td>中</td><td>高</td></tr>
+</tbody></table></div>
+<h2>14.8 原理推演：为什么“壳”必须让代码可执行</h2>
+<p>无论怎么加密、怎么抽取，最终 CPU 必须执行到真实的指令。所以“真实指令一定会在某个时刻以明文形式存在于内存中”——这是所有脱壳方法的理论基础。</p>
+<div class="tbl"><table>
+<thead><tr><th>时刻</th><th>明文在哪</th><th>可抓性</th></tr></thead><tbody>
+<tr><td>加载时</td><td>解密后的 dex 缓冲区</td><td>高</td></tr>
+<tr><td>首次调用前</td><td>回填后的 code_item</td><td>高</td></tr>
+<tr><td>执行中</td><td>可能已被 JIT 成机器码</td><td>中</td></tr>
+<tr><td>执行后</td><td>可能被重新加密</td><td>低</td></tr>
+</tbody></table></div>
+<p>所以“最佳 dump 点”永远是“明文存在且尚未被清理”的那个窗口。找到这个窗口，比用什么工具重要得多。</p>
+<h2>14.9 数据细节：dex 的 checksum 怎么算</h2>
+<div class="code">
+<div class="code-title">checksum 与 signature</div>
+<pre><code>// checksum: adler32，范围是 [12, file_size)
+// signature: sha1，范围是 [32, file_size)
+// 两者都在 header 里，修改任何内容后必须重算</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>修复时最容易忘的是“范围起点”：checksum 从偏移 12 开始（跳过 magic 与 checksum 自身），signature 从偏移 32 开始（跳过更多 header 字段）。起点错了，算出来的值永远对不上。</p>
+</article>
+<div class="pager"><a href="13-binder.html"><span class="dir">上一讲</span>13 Android IPC 相关内容</a><a href="15-scrcpy.html" style="text-align:right"><span class="dir">下一讲</span>15 Android 自动化</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F07 Frida Stalker 原理与修复</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item active" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">F07</span><h1>Frida Stalker 原理与修复</h1><p class="ch-en">follow/infect、ExecCtx、basic block 翻译、slab、event sink、arm64 near allocation</p></div>
+<p class="lead">把一段代码“搬进沙箱”再执行，就得到了指令级可观测性。</p>
+<h2>7.1 五步流程</h2>
+<figure>
+<img src="../assets/f_f07.png" alt="图 F7-1" width="1080">
+<figcaption><b>图 F7-1</b><span>Stalker 的五个环节</span></figcaption>
+</figure>
+<ol><li><code>follow</code> / <code>infect</code>：选定要跟踪的线程或函数。</li><li><code>ExecCtx</code>：为线程建立执行上下文，保存现场。</li><li><strong>basic block 翻译</strong>：把 ARM64 指令复制成带回调的副本。</li><li><strong>slab 分配</strong>：从近地址池分配可执行内存放副本。</li><li><strong>event sink</strong>：把 call / ret / block 事件送到 JS。</li></ol>
+<h2>7.2 为什么必须“近地址分配”</h2>
+<p>ARM64 的 <code>B</code> 指令只有 ±128MB 的跳转范围。翻译后的代码如果离原代码太远，就得用更贵的长跳转（<code>LDR + BR</code>），性能与实现复杂度都会上升。所以 Stalker 会尽量在目标附近分配内存。</p>
+<h2>7.3 检测方怎么看 Stalker</h2>
+<div class="tbl"><table>
+<thead><tr><th>痕迹</th><th>说明</th></tr></thead><tbody>
+<tr><td>大量匿名可执行页</td><td>翻译副本的存放区</td></tr>
+<tr><td>代码段出现跳转密集区</td><td>trampoline 特征</td></tr>
+<tr><td>执行速度骤降</td><td>每条指令都要过一遍</td></tr>
+<tr><td>特定线程被暂停</td><td>infect 时会挂起目标</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>实用建议：Stalker 只用于“短时间、定点”的观测。长期开启会让目标行为变形，甚至触发基于时序的反调试。</div></aside>
+<h2>7.4 本章自测</h2>
+<ul><li>basic block 翻译具体做了什么？</li><li>为什么需要 near allocation？</li><li>Stalker 会留下哪些痕迹？</li><li>什么场景下值得用 Stalker，什么场景不值得？</li></ul>
+<h2>7.5 深入：翻译后的代码长什么样</h2>
+<p>原本的一条 <code>MOV X0, #1</code> 会被复制过去，但每个基本块的首尾会插入“回调 + 条件跳转”。所以翻译后的代码体积通常是原来的数倍，且充满了 <code>B</code> 与 <code>BL</code>。</p>
+<div class="code">
+<div class="code-title">概念上的翻译结果</div>
+<pre><code>block_0:
+    BTI c
+    MOV X0, #1          // 原指令
+    BL  on_block_event  // 插入的回调
+    B   block_1         // 跳到下一个基本块</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.6 实战：什么时候该用 Stalker</h2>
+<div class="tbl"><table>
+<thead><tr><th>场景</th><th>适合</th><th>原因</th></tr></thead><tbody>
+<tr><td>找算法入口</td><td>是</td><td>能看到完整执行路径</td></tr>
+<tr><td>长期监控</td><td>否</td><td>开销太大</td></tr>
+<tr><td>抓解密循环</td><td>是</td><td>指令级可见</td></tr>
+<tr><td>性能敏感路径</td><td>否</td><td>会改变时序</td></tr>
+</tbody></table></div>
+<h2>7.7 原理推演：为什么“翻译”比“模拟”快</h2>
+<p>翻译是把原指令复制成一份“带回调的副本”，然后直接执行副本——CPU 跑的还是原生指令。模拟是“逐条解释执行”，每条都要走一次解释器。前者快一到两个数量级。</p>
+<div class="tbl"><table>
+<thead><tr><th>方式</th><th>执行速度</th><th>实现复杂度</th></tr></thead><tbody>
+<tr><td>翻译（Stalker）</td><td>接近原生</td><td>高</td></tr>
+<tr><td>解释（模拟器）</td><td>慢 10~100 倍</td><td>中</td></tr>
+<tr><td>硬件 trace</td><td>原生</td><td>最低（但功能受限）</td></tr>
+</tbody></table></div>
+<p>这也解释了 Stalker 的定位：它适合“短时间、需要明细”的场景，不适合长期开着。</p>
+<h2>7.8 数据细节：翻译后的代码膨胀比例</h2>
+<div class="tbl"><table>
+<thead><tr><th>代码类型</th><th>膨胀比例</th><th>说明</th></tr></thead><tbody>
+<tr><td>简单算术</td><td>3~5 倍</td><td>每条后加回调</td></tr>
+<tr><td>调用密集</td><td>5~10 倍</td><td>call/ret 都要拦</td></tr>
+<tr><td>循环密集</td><td>2~4 倍</td><td>基本块复用</td></tr>
+</tbody></table></div>
+<h2>7.9 深入：ExecCtx 里存了什么</h2>
+<p><code>ExecCtx</code> 是“这个线程正在被跟踪”的上下文：它保存了当前的基本块、返回地址栈、以及一些寄存器快照。每次进入/离开被跟踪的代码，都要更新它。</p>
+<div class="tbl"><table>
+<thead><tr><th>字段</th><th>作用</th><th>不维护的后果</th></tr></thead><tbody>
+<tr><td>当前 block</td><td>知道在哪</td><td>事件错乱</td></tr>
+<tr><td>返回栈</td><td>跟踪 call/ret</td><td>栈深度错</td></tr>
+<tr><td>寄存器快照</td><td>支持读写</td><td>读到脏值</td></tr>
+</tbody></table></div>
+<p>所以 Stalker 的“正确性”高度依赖对 ABI 的精确理解。写错一个寄存器保存，表现就是“偶尔崩”。</p>
+<h2>7.10 深入：为什么“infect”要挂起线程</h2>
+<p>因为要在“线程不执行”的时候，把它的执行流重定向到翻译后的代码。如果线程正在跑，改它的入口就是竞态。</p>
+<div class="code">
+<div class="code-title">概念流程</div>
+<pre><code>1. suspend(thread)
+2. 保存现场
+3. 把“下一条指令”指向翻译版本
+4. resume(thread)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>7.11 实战：用 Stalker 抓一次解密循环</h2>
+<div class="code">
+<div class="code-title">只跟一段</div>
+<pre><code>Stalker.follow(Process.getCurrentThreadId(), {
+  transform(iterator) {
+    let ins = iterator.next();
+    while (ins) { send(ins.address + &#x27; &#x27; + ins.mnemonic); ins = iterator.next(); }
+  }
+});
+// 记得在目标代码跑完后 Stalker.unfollow()</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+</article>
+<div class="pager"><a href="f06-pthread.html"><span class="dir">上一讲</span>F06 Frida 默认 Hook</a><a href="f08-glib.html" style="text-align:right"><span class="dir">下一讲</span>F08 Frida 线程名称处理</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

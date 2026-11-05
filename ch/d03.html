@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D03 Promon 类方案的对抗思路</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item active" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">D03</span><h1>Promon 类方案的对抗思路</h1><p class="ch-en">以“持续更新”的方式硬刚顶级检测</p></div>
+<p class="lead">顶级检测壳的共同点是：它们把“检测”做成了产品，而不是补丁。</p>
+<h2>3.1 顶级方案的特征</h2>
+<ul><li><strong>多进程协作</strong>：检测逻辑分散在多个进程，杀掉一个不影响其他。</li><li><strong>动态下发</strong>：规则可以远程更新，昨天有效的绕过今天可能失效。</li><li><strong>证明链优先</strong>：不依赖本地特征，依赖硬件证明（第 03 章）。</li><li><strong>行为基线</strong>：采集正常行为分布，偏离即报警（第 L09 章）。</li></ul>
+<h2>3.2 应对策略：从“绕过”到“共存”</h2>
+<p>当检测足够强时，“彻底绕过”往往不现实。更务实的思路是<strong>共存</strong>：让你的改动落在它不采集的维度上，而不是正面对抗。</p>
+<div class="tbl"><table>
+<thead><tr><th>思路</th><th>做法</th><th>适用</th></tr></thead><tbody>
+<tr><td>避开采样窗口</td><td>在检测间隙完成操作</td><td>短时操作</td></tr>
+<tr><td>缩小改动面</td><td>只改必要的一个点</td><td>精准 hook</td></tr>
+<tr><td>改变实现层</td><td>从用户态转到内核态</td><td>深度需求</td></tr>
+<tr><td>接受部分暴露</td><td>只保证关键能力可用</td><td>长期维护</td></tr>
+</tbody></table></div>
+<h2>3.3 持续演进</h2>
+<p>顶级检测壳一直在更新，所以具体的“绕过步骤”很快就过期。可持续的方法只有一条：<strong>先建模型，再做实验，最后才谈对抗</strong>。任何“技巧”脱离模型都是不可复用的。</p>
+<aside class="note"><span class="note-tag">要点</span><div>这一章刻意写得“方法论”而不是“步骤”。因为壳在更新，具体步骤三个月就过期；而“先分层、再找成本边界、最后共存”这套思路，五年都不过时。</div></aside>
+<h2>3.4 本章自测</h2>
+<ul><li>顶级检测方案的四个共同特征是什么？</li><li>为什么“共存”比“绕过”更现实？</li><li>四种应对思路分别适合什么场景？</li><li>为什么方法论比步骤更保值？</li></ul>
+<h2>3.5 深入：为什么“动态下发”让对抗变成持久战</h2>
+<p>规则可以远程更新，意味着“今天有效的绕过，明天可能失效”。这让对抗从“一次性攻克”变成“持续维护”。理解了这一点，就会明白为什么方法论比技巧重要。</p>
+<div class="tbl"><table>
+<thead><tr><th>模式</th><th>对抗形态</th><th>应对</th></tr></thead><tbody>
+<tr><td>静态规则</td><td>一次性</td><td>找到即赢</td></tr>
+<tr><td>动态下发</td><td>持久战</td><td>建立可持续的验证流程</td></tr>
+</tbody></table></div>
+<h2>3.6 实战：建立自己的“回归套件”</h2>
+<ul><li>固定一组设备与系统版本。</li><li>固定一组测试用例（启动、登录、关键功能）。</li><li>每次改动后跑一遍，记录“哪几项退化”。</li><li>把退化项当作待办，而不是“偶发问题”。</li></ul>
+<h2>3.7 原理推演：为什么“产品化检测”难以被彻底绕过</h2>
+<p>因为产品化的核心不是“检测更强”，而是“迭代更快”。它可以每周更新规则，而你只能被动应对。在这种不对称下，“彻底绕过”在数学上不成立——你追不上它的迭代速度。</p>
+<div class="tbl"><table>
+<thead><tr><th>形态</th><th>迭代速度</th><th>对抗结果</th></tr></thead><tbody>
+<tr><td>静态 SDK</td><td>随版本</td><td>可绕过</td></tr>
+<tr><td>动态下发</td><td>每周</td><td>持久战</td></tr>
+<tr><td>服务端风控</td><td>实时</td><td>只能共存</td></tr>
+</tbody></table></div>
+<p>所以务实的策略是“共存”：保证你的核心能力在“它不采集的维度”上稳定工作。</p>
+<h2>3.8 数据细节：共存策略的四个维度</h2>
+<div class="tbl"><table>
+<thead><tr><th>维度</th><th>做法</th><th>风险</th></tr></thead><tbody>
+<tr><td>时间</td><td>在采样间隙操作</td><td>窗口短</td></tr>
+<tr><td>空间</td><td>用不被扫描的内存形态</td><td>兼容性</td></tr>
+<tr><td>权限</td><td>在内核态完成</td><td>门槛高</td></tr>
+<tr><td>身份</td><td>复用合法进程</td><td>受限</td></tr>
+</tbody></table></div>
+<h2>3.9 深入：为什么“多进程协作”难对付</h2>
+<p>因为杀掉一个进程，其他进程还在。而且它们之间可能通过 Binder、共享内存、甚至文件来互相监控——你对一个进程的改动，会被另一个进程发现。</p>
+<div class="tbl"><table>
+<thead><tr><th>架构</th><th>杀一个的后果</th><th>对抗难度</th></tr></thead><tbody>
+<tr><td>单进程</td><td>检测停止</td><td>低</td></tr>
+<tr><td>多进程</td><td>其他继续</td><td>中</td></tr>
+<tr><td>多进程 + 互监控</td><td>立刻报警</td><td>高</td></tr>
+</tbody></table></div>
+<p>应对思路：不要“杀”，要“让它们都看到正常的结果”。这比“绕过检测函数”难，但更持久。</p>
+<h2>3.10 深入：动态下发的两种粒度</h2>
+<div class="tbl"><table>
+<thead><tr><th>粒度</th><th>内容</th><th>影响</th></tr></thead><tbody>
+<tr><td>规则级</td><td>新增/修改检测规则</td><td>无需发版</td></tr>
+<tr><td>策略级</td><td>调整阈值/开关</td><td>快速试错</td></tr>
+</tbody></table></div>
+<p>策略级下发最麻烦：它意味着“同一个版本，在不同时间可能有不同行为”。这让“复现问题”变得困难。</p>
+<h2>3.11 实战：把“共存”拆成可执行的动作</h2>
+<ol><li>列出它的采集面（第一章的检测地图）。</li><li>找出“采集不到的维度”。</li><li>把你的改动迁移到那些维度上。</li><li>每迁移一项，用三组对照验证。</li></ol>
+</article>
+<div class="pager"><a href="d02-vmp.html"><span class="dir">上一讲</span>D02 DexProtect 的加固结构与脱壳路径</a><a href="p01-cfg.html" style="text-align:right"><span class="dir">下一讲</span>P01 二期主线：从编译原理到 VMP</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>

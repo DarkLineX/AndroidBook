@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M02 内核观察面与基础检测处理</title>
+<link rel="stylesheet" href="../style.css">
+
+</head>
+<body class="">
+<input type="checkbox" id="nav-toggle" hidden>
+<label for="nav-toggle" class="nav-btn" aria-label="目录">☰</label>
+<aside class="sidebar">
+  <div class="brand"><a href="../index.html">
+    <span class="brand-k">ANDROID</span>
+    <span class="brand-t">安卓系统 逆向 · 内核 · 运行时</span>
+  </a></div>
+  <div class="search-wrap"><input id="q" type="search" placeholder="搜索章名…" autocomplete="off"></div>
+  <nav class="toc">
+<a class="part" href="../part/01-foundation.html">第一部 · 系统与检测基础</a>
+<a class="item" href="../ch/01-patch.html"><span class="num">01</span>APatch 的 root 原理</a>
+<a class="item" href="../ch/02-abl.html"><span class="num">02</span>Android 手机启动过程</a>
+<a class="item" href="../ch/03-tee.html"><span class="num">03</span>Android 硬件证明</a>
+<a class="item" href="../ch/04.html"><span class="num">04</span>Android root 检测</a>
+<a class="item" href="../ch/05-zygote.html"><span class="num">05</span>Android App 启动过程</a>
+<a class="item" href="../ch/06-open.html"><span class="num">06</span>Android linker 启动过程</a>
+<a class="item" href="../ch/07-ptrace.html"><span class="num">07</span>Android ptrace 原理</a>
+<a class="item" href="../ch/08-fork.html"><span class="num">08</span>Android zygisk 原理</a>
+<a class="item" href="../ch/09-frida.html"><span class="num">09</span>Android hook 原理</a>
+<a class="item" href="../ch/10-frida.html"><span class="num">10</span>Android frida 源码讲解</a>
+<a class="item" href="../ch/11.html"><span class="num">11</span>Android 注入检测</a>
+<a class="item" href="../ch/12-java.html"><span class="num">12</span>Android Java Hook 原理</a>
+<a class="item" href="../ch/13-binder.html"><span class="num">13</span>Android IPC 相关内容</a>
+<a class="item" href="../ch/14-dex.html"><span class="num">14</span>Android dex 详解</a>
+<a class="item" href="../ch/15-scrcpy.html"><span class="num">15</span>Android 自动化</a>
+<a class="item" href="../ch/16.html"><span class="num">16</span>基础 hook 脚本、检测与算法分析</a>
+<a class="part" href="../part/02-kernel.html">第二部 · 内核基础</a>
+<a class="item" href="../ch/k01-fork.html"><span class="num">K01</span>Linux 进程、线程与调度</a>
+<a class="item" href="../ch/k02-vma.html"><span class="num">K02</span>Linux 内存管理</a>
+<a class="item" href="../ch/k03-vector.html"><span class="num">K03</span>ARM64 异常、中断与信号</a>
+<a class="item" href="../ch/k04-file.html"><span class="num">K04</span>VFS、文件系统与 procfs</a>
+<a class="item" href="../ch/k05-printk.html"><span class="num">K05</span>Linux 内核调试与追踪</a>
+<a class="item" href="../ch/k06-image.html"><span class="num">K06</span>BTF、vmlinux 与内核类型</a>
+<a class="item" href="../ch/k07-kallsyms.html"><span class="num">K07</span>内核符号、KASLR 与运行地址</a>
+<a class="item" href="../ch/k08-domain.html"><span class="num">K08</span>SELinux 安全模型</a>
+<a class="part" href="../part/03-frida.html">第三部 · Frida 详解：源码与兼容工程</a>
+<a class="item" href="../ch/f01-server.html"><span class="num">F01</span>Frida 整体启动、进程注入与 Zygote 门控</a>
+<a class="item" href="../ch/f02-gumjs.html"><span class="num">F02</span>Frida 第一个脚本运行时机</a>
+<a class="item" href="../ch/f03-java.html"><span class="num">F03</span>Frida Java.perform 原理</a>
+<a class="item" href="../ch/f04-webservice.html"><span class="num">F04</span>Frida server IPC 逻辑</a>
+<a class="item" href="../ch/f05-patch.html"><span class="num">F05</span>Frida server 与 Android SELinux</a>
+<a class="item" href="../ch/f06-pthread.html"><span class="num">F06</span>Frida 默认 Hook</a>
+<a class="item" href="../ch/f07-follow.html"><span class="num">F07</span>Frida Stalker 原理与修复</a>
+<a class="item" href="../ch/f08-glib.html"><span class="num">F08</span>Frida 线程名称处理</a>
+<a class="item" href="../ch/f09-relocation.html"><span class="num">F09</span>Frida 自定义 linker</a>
+<a class="item" href="../ch/f10-bionic.html"><span class="num">F10</span>Frida 线程结构体处理</a>
+<a class="item" href="../ch/f11-maps.html"><span class="num">F11</span>当前工程隐藏与兼容处理总表</a>
+<a class="part" href="../part/04-kpm.html">第四部 · 内核模块详解：KPM 内核工程</a>
+<a class="item" href="../ch/m01-kpm.html"><span class="num">M01</span>KPM 模块设计、装载与生命周期</a>
+<a class="item active" href="../ch/m02-maps.html"><span class="num">M02</span>内核观察面与基础检测处理</a>
+<a class="item" href="../ch/m03-trampoline.html"><span class="num">M03</span>ARM64 指令 Hook 与 Text Shadow</a>
+<a class="item" href="../ch/m04-cpu.html"><span class="num">M04</span>ARM64 内核单步 Trace</a>
+<a class="item" href="../ch/m05-inherit.html"><span class="num">M05</span>硬件断点 Hook 与 Perf 生命周期</a>
+<a class="item" href="../ch/m06-inode.html"><span class="num">M06</span>SELinux 与 FD 安全扩展</a>
+<a class="item" href="../ch/m07-oem.html"><span class="num">M07</span>Android Chrome 多进程多开</a>
+<a class="part" href="../part/05-lsposed.html">第五部 · LSPosed 详解：运行时工程</a>
+<a class="item" href="../ch/l01-zygisk.html"><span class="num">L01</span>LSPosed 总体设计与进程进入</a>
+<a class="item" href="../ch/l02-artmethod.html"><span class="num">L02</span>LSPlant Java Hook 原理</a>
+<a class="item" href="../ch/l03-hookitem.html"><span class="num">L03</span>多模块回调与去优化</a>
+<a class="item" href="../ch/l04-sharedmemory.html"><span class="num">L04</span>模块 ClassLoader 与 DEX 生命周期</a>
+<a class="item" href="../ch/l05-native.html"><span class="num">L05</span>标识泛化与字符串源头治理</a>
+<a class="item" href="../ch/l06-bridge.html"><span class="num">L06</span>Binder、FD 与 linker 账本收口</a>
+<a class="item" href="../ch/l07-generated.html"><span class="num">L07</span>Android 16 ART / JVMTI 根因修复</a>
+<a class="item" href="../ch/l08-moving.html"><span class="num">L08</span>Android 14 / 16 分层适配</a>
+<a class="item" href="../ch/l09-classloader.html"><span class="num">L09</span>侧信道与结构差分检测</a>
+<a class="item" href="../ch/l10-hook.html"><span class="num">L10</span>验证矩阵与工程交付</a>
+<a class="part" href="../part/06-shell.html">企业壳实战 · 持续更新</a>
+<a class="item" href="../ch/d01.html"><span class="num">D01</span>DexProtect 的检测逻辑拆解</a>
+<a class="item" href="../ch/d02-vmp.html"><span class="num">D02</span>DexProtect 的加固结构与脱壳路径</a>
+<a class="item" href="../ch/d03.html"><span class="num">D03</span>Promon 类方案的对抗思路</a>
+<a class="part" href="../part/07-plan.html">二期规划 · 混淆与 VMP</a>
+<a class="item" href="../ch/p01-cfg.html"><span class="num">P01</span>二期主线：从编译原理到 VMP</a>
+<a class="item" href="../ch/p02.html"><span class="num">P02</span>混淆与反混淆的基本盘</a>
+<a class="part" href="../part/08-training.html">实战训练营</a>
+<a class="item" href="../ch/t01.html"><span class="num">T01</span>训练营一：给自写靶场 App 加一道检测，再绕过它</a>
+<a class="item" href="../ch/t02-hook.html"><span class="num">T02</span>训练营二：从一个陌生 App 里挖出一个算法</a>
+<a class="item" href="../ch/t03.html"><span class="num">T03</span>训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a>
+<a class="part" href="../part/99-appendix.html">附录</a>
+<a class="item" href="../ch/a01.html"><span class="num">A01</span>附录 A · 全书速查表</a>
+<a class="item" href="../ch/a02.html"><span class="num">A02</span>附录 B · 术语表</a>
+<a class="item" href="../ch/a03.html"><span class="num">A03</span>附录 C · 学习路线与实验环境</a>
+<a class="item" href="../ch/a04.html"><span class="num">A04</span>附录 D · 全书自测参考答案</a>
+<a class="item" href="../ch/a05.html"><span class="num">A05</span>附录 E · 常见问题与排错清单</a>
+  </nav>
+  <div class="side-foot">V1.0 · 2026</div>
+</aside>
+<main class="content">
+<article class="chapter">
+<div class="ch-head"><span class="ch-no">M02</span><h1>内核观察面与基础检测处理</h1><p class="ch-en">maps/smaps/map_files、mountinfo/statx、syscall table、调试状态、USB/VPN/netlink/Binder 只读观测</p></div>
+<p class="lead">内核态最大的优势不是能改，而是“能看见用户态看不见的东西”。</p>
+<h2>2.1 六个高价值观测面</h2>
+<figure>
+<img src="../assets/m02_observe.png" alt="图 M2-1" width="1080">
+<figcaption><b>图 M2-1</b><span>六类只读观测与对应的异常表现</span></figcaption>
+</figure>
+<div class="tbl"><table>
+<thead><tr><th>观测面</th><th>能看到什么</th><th>典型异常</th></tr></thead><tbody>
+<tr><td>maps / smaps</td><td>内存布局与统计</td><td>匿名段、PSS 异常</td></tr>
+<tr><td>map_files</td><td>映射对应的真实文件</td><td>路径伪造</td></tr>
+<tr><td>mountinfo / statx</td><td>挂载树与文件身份</td><td>dev+inode 不一致</td></tr>
+<tr><td>syscall table</td><td>系统调用入口</td><td>被替换的 syscall</td></tr>
+<tr><td>调试状态</td><td>TracerPid、ptrace 标志</td><td>被调试进程</td></tr>
+<tr><td>USB/VPN/netlink</td><td>外设与网络</td><td>异常连接、代理</td></tr>
+</tbody></table></div>
+<h2>2.2 为什么优先“只读”</h2>
+<p>读不会引起崩溃，也不会留下“被改过”的痕迹。等你确认了异常，再决定要不要动手——这个顺序能避免 90% 的“改完才发现方向错了”。</p>
+<h2>2.3 syscall table 的两种用法</h2>
+<ol><li><strong>观测</strong>：对比表项与预期符号地址，发现被替换的项。</li><li><strong>利用</strong>：替换某个 syscall 的入口，实现全局拦截（这是最“重”的一类 hook，痕迹也最明显）。</li></ol>
+<div class="code">
+<div class="code-title">检测 syscall 表是否被改</div>
+<pre><code>// 伪代码：把表里每项与 kallsyms 查到的地址比对
+for (int i = 0; i &lt; NR_syscalls; i++) {
+    if (table[i] != expected[i])
+        report(&quot;syscall %d replaced: %p != %p&quot;, i, table[i], expected[i]);
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>注意：不同内核版本 syscall 表的组织方式不同（有的用数组，有的用跳转表 / 分段），写死结构会直接踩坑。先 dump，再决定怎么读。</div></aside>
+<h2>2.4 本章自测</h2>
+<ul><li>六个观测面里，哪个最能揭示“内容与身份不符”？</li><li>为什么优先只读观测？</li><li>syscall 表被替换有什么特征？</li><li>如果目标内核用了不同的 syscall 组织方式，你怎么适配？</li></ul>
+<h2>2.5 深入：map_files 为什么能戳穿伪装</h2>
+<p><code>/proc/pid/map_files/&lt;start&gt;-&lt;end&gt;</code> 是一个符号链接，指向“这段映射对应的真实文件”。它绕过了路径层面的伪装——即使你在 maps 里把路径改成了 <code>/system/lib64/libc.so</code>，<code>map_files</code> 仍然指向真实的 inode。</p>
+<div class="code">
+<div class="code-title">对比两个视图</div>
+<pre><code>grep libc /proc/self/maps
+ls -l /proc/self/map_files/ | grep libc
+# 两者不一致 = 有问题</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>视图</th><th>来源</th><th>可否被轻易伪造</th></tr></thead><tbody>
+<tr><td>maps 文本</td><td>内核拼接字符串</td><td>可以（改输出）</td></tr>
+<tr><td>map_files</td><td>VMA 的 vm_file</td><td>较难</td></tr>
+<tr><td>smaps</td><td>VMA + 统计</td><td>较难</td></tr>
+<tr><td>pagemap</td><td>页表</td><td>很难</td></tr>
+</tbody></table></div>
+<h2>2.6 原理推演：为什么“内核视角”能看到用户态看不到的</h2>
+<p>因为用户态的一切观测，都是“内核把某些信息格式化后给你”。而内核自己可以直接读数据结构——没有格式化、没有过滤、也没有“按你的 namespace 裁剪”。</p>
+<div class="tbl"><table>
+<thead><tr><th>信息</th><th>用户态可见</th><th>内核态可见</th></tr></thead><tbody>
+<tr><td>其他进程的 maps</td><td>否</td><td>是</td></tr>
+<tr><td>页表内容</td><td>否</td><td>是</td></tr>
+<tr><td>其他 namespace 的挂载</td><td>否</td><td>是</td></tr>
+<tr><td>task 的 cred</td><td>部分</td><td>全部</td></tr>
+</tbody></table></div>
+<p>这就是为什么“内核级检测”比“App 级检测”强：它不受“被检测者能改什么”的限制。</p>
+<h2>2.7 数据细节：遍历所有 task 的正确姿势</h2>
+<div class="code">
+<div class="code-title">必须在 RCU 保护下</div>
+<pre><code>rcu_read_lock();
+for_each_process_thread(g, t) {
+    // 读 t 的字段
+}
+rcu_read_unlock();</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>常见错误：在循环里 <code>sleep</code> 或做可能睡眠的操作。RCU 读侧临界区不能睡眠，否则会死锁或读到已释放的对象。</p>
+<h2>2.8 深入：smaps 里哪些字段最有用</h2>
+<div class="tbl"><table>
+<thead><tr><th>字段</th><th>含义</th><th>异常信号</th></tr></thead><tbody>
+<tr><td>Rss / Pss</td><td>驻留内存</td><td>与预期不符</td></tr>
+<tr><td>Shared_Clean/Dirty</td><td>共享页</td><td>共享异常高</td></tr>
+<tr><td>Private_Dirty</td><td>私有脏页</td><td>突增</td></tr>
+<tr><td>VmFlags</td><td>映射标志</td><td>出现不该有的标志</td></tr>
+</tbody></table></div>
+<p><code>VmFlags</code> 特别有用：它能告诉你“这段是不是可执行、是不是共享、是不是被锁定”。很多异常映射在 <code>VmFlags</code> 上比在权限位上一目了然。</p>
+<h2>2.9 深入：syscall 表在不同内核上的形态</h2>
+<div class="code">
+<div class="code-title">三种常见形态</div>
+<pre><code>// 1. 经典数组
+sys_call_table[NR_syscalls]
+ 
+// 2. 带 wrapper 的表（带签名检查）
+// 3. 分段 / 间接表（新内核 / 加固）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>写“检测 syscall 表”的代码前，先 dump 一下当前内核的实际结构。写死结构是最常见的失败原因。</p>
+<h2>2.10 实战：只读观测的一个完整例子</h2>
+<div class="code">
+<div class="code-title">统计“匿名可执行映射”的数量</div>
+<pre><code>// 遍历 mm-&gt;mmap，检查 (vm_flags &amp; VM_EXEC) &amp;&amp; !vma-&gt;vm_file
+int n = 0;
+for (vma = mm-&gt;mmap; vma; vma = vma-&gt;vm_next)
+    if ((vma-&gt;vm_flags &amp; VM_EXEC) &amp;&amp; !vma-&gt;vm_file) n++;
+pr_info(&quot;anon exec mappings: %d\n&quot;, n);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>写成“统计”而不是“判定”，是为了先拿到数据分布。有了分布，才知道阈值该定在哪。</div></aside>
+</article>
+<div class="pager"><a href="m01-kpm.html"><span class="dir">上一讲</span>M01 KPM 模块设计、装载与生命周期</a><a href="m03-trampoline.html" style="text-align:right"><span class="dir">下一讲</span>M03 ARM64 指令 Hook 与 Text Shadow</a></div>
+</main>
+<script src="../app.js"></script>
+</body>
+</html>
