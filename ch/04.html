@@ -194,6 +194,35 @@ THRESHOLD = p99 * 1.5</code></pre>
 <h2>4.11 工程权衡：什么时候该放弃检测</h2>
 <p>有一类场景必须放弃“运行时检测”，改为“服务端风控”：当对手拥有完全的内核控制权时，任何本地检测都只是“提高成本”，而不是“阻止”。这时候正确的做法是把判定搬到服务端，用行为数据（请求频率、参数分布、设备聚类）来做。</p>
 <aside class="note"><span class="note-tag">要点</span><div>判断标准：如果攻击者能在同一台设备上反复试验而不被你发现，那本地检测就已经失效了。</div></aside>
+<h2>一台刚开机、什么都没装的机器</h2>
+<p>先把所有注入工具收起来。拿一台刚恢复出厂、只装了目标 App 的机器，开机，什么都别动，让检测 SDK 安静地跑一整轮，把它打印出来的每一行数抄下来：多少线程、多少段映射、开了多少 fd、有几个 ClassLoader。这张皱巴巴的手抄表，比后面写的任何一条判断规则都值钱——因为检测的全部难点，是<strong>先知道「正常」长什么样</strong>。</p>
+<p>很多人一上手就问「怎么发现 frida」。这个问题问反了。真正该问的是：这台进程在干净状态下，各层的数量、时序、布局分别是什么；一旦多出东西，多在哪一层、多了多少、和别的层对不对得上。下面把一次采集按拍拆开，你会看到检测并不是一把扫描枪，而是一台反复拍快照再求差的相机。</p>
+<h2>干净机上的第一轮采集</h2>
+<ol><li><strong>SDK 初始化</strong> → 对自己的进程 → 拉起采集线程、打开 <code>/proc/self</code> 下几个句柄 → 结果：注意它自己就多了 2~3 个线程和几个 fd，这一步必须记进基线。</li><li><strong>拍内存快照</strong> → 对 <code>/proc/self/maps</code> → 逐段记录起止、权限、back-file 是否存在 → 结果：得到「合法映射」的白名单骨架，包括 JIT 缓存这类本来就是匿名的段。</li><li><strong>拍结构快照</strong> → 对 <code>/proc/self/task</code> 与 ClassLoader 列表 → 记线程名与 dexPath 集合 → 结果：得到线程数与加载器数量的基线值。</li><li><strong>拍服务快照</strong> → 对 PackageManager、ActivityManager 的 Binder 查询 → 记录包列表与进程列表 → 结果：本地视图与系统视图第一次被放在同一张表里对齐。</li><li><strong>归档</strong> → 对以上四组数 → 写成本次基线，之后只比增量不比绝对值 → 结果：误报被压到最低。</li></ol>
+<p>第 1 步和第 5 步是一对：SDK 自己也是注入进进程的代码，它一启动就改变了被观测对象。不把这点算进去，「干净机」也会被自己判成异常——这是新手写检测最常踩的坑。</p>
+<h2>注入一次后，再看哪一层先偏</h2>
+<ol><li><strong>注入器 attach</strong> → 对目标进程 → 短暂停下它、写内存、塞进 agent → 结果：<code>TracerPid</code> 短暂非 0、状态出现 T，这是最早露出的一拍。</li><li><strong>agent 落地</strong> → 对进程地址空间 → 新增匿名可执行段、新增若干线程与通信 fd → 结果：maps 与 task 两张快照同时偏离基线。</li><li><strong>hook 挂上</strong> → 对代码段或 GOT 表 → 改字节或改函数指针 → 结果：CRC 与页权限两项出现变化。</li><li><strong>汇总打分</strong> → 对四类信号 → 按「来自不同层」去重后计分 → 结果：只有两类以上同时命中才判为异常，单点一律忽略。</li></ol>
+<h2>动手：拿命令复刻这套采集</h2>
+<div class="code">
+<div class="code-title">干净机 vs 注入后，各拍一张快照</div>
+<pre><code>adb shell &#x27;cat /proc/PID/maps&#x27; &gt; clean_maps.txt       # 干净机
+adb shell &#x27;ls /proc/PID/task&#x27; | wc -l                  # 线程数基线
+adb shell &#x27;ls -l /proc/PID/fd&#x27; | wc -l                 # fd 数基线
+adb shell &#x27;cat /proc/PID/status&#x27; | grep TracerPid      # 正常应为 0
+adb shell &#x27;cat /proc/PID/maps&#x27; &gt; after_maps.txt        # 注入后再拍
+diff clean_maps.txt after_maps.txt                     # 差出来的就是新增段</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>的样子：<code>diff</code> 只列出你预期中的那几段新增映射，且 <code>TracerPid</code> 在 detach 后回到 0；<strong>失败</strong>有两种需要分清——干净机上 <code>diff</code> 本身就一堆差异，说明基线没在页面静止时采，是采集方法错了；注入后 <code>diff</code> 几乎没变化，也别高兴，那只说明痕迹不落在 maps 这一层，得回头查 task、fd 与服务视图。把 <code>PID</code> 换成真实 pid，可以用 <code>adb shell pidof com.target.app</code> 先取到。</p>
+<div class="tbl"><table>
+<thead><tr><th>排查现象</th><th>先查哪一层</th><th>一条命令定位</th></tr></thead><tbody>
+<tr><td>干净机就报警</td><td>自污染 / 基线</td><td>对比 SDK 初始化前后的线程数</td></tr>
+<tr><td>注入后毫无差异</td><td>换观测面</td><td>查 /proc/PID/task 与 /proc/PID/fd</td></tr>
+<tr><td>本地干净、系统查得到</td><td>服务层</td><td>pm list packages 与 dumpsys</td></tr>
+<tr><td>全部命中但不敢下结论</td><td>判据</td><td>看是否来自两个以上不同层</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>一份「什么都没检出」的报告，可能是最坏的消息</strong>。它只说明对手的痕迹没落在你查的那几层里，不代表进程干净。同理，单条规则命中也几乎不能说明任何问题——真正有说服力的，是两条来自不同层、互相独立、而且在时序上同时出现的偏差。</div></aside>
+<p>这套「先基线、再差分、按层去重」的做法，第 11 章会展开成六个具体观测面，把每一层该看哪些字段逐一列全；第 09 章与第 12 章讲的 GOT / inline / Java Hook 留下的字节变化，正是本章 CRC 与页权限两项要抓的输入。换句话说，<strong>后面几章在制造痕迹，这一章在定义怎么认出它们</strong>。</p>
 </article>
 <div class="pager"><a href="03-tee.html"><span class="dir">上一讲</span>03 Android 硬件证明</a><a href="05-zygote.html" style="text-align:right"><span class="dir">下一讲</span>05 Android App 启动过程</a></div>
 </main>

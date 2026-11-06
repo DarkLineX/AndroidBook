@@ -175,6 +175,40 @@ Java.enumerateClassLoaders({ onMatch: l =&gt; console.log(l), onComplete: () =&g
 // 抛 ClassNotFoundException = 没加载 / 路径不对</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>第一行 findClass 为什么会抛异常</h2>
+<p>模块的 <code>handleLoadPackage</code> 里写了一句 <code>XposedHelpers.findClass(&#x27;com.target.Sign&#x27;, lpparam.classLoader)</code>，跑得好好的；换成 <code>Class.forName(&#x27;com.target.Sign&#x27;)</code> 却抛了 <code>ClassNotFoundException</code>。同一个类、同一个进程，只因为换了一个加载器就找不到——这是模块工程里第一道劝退坎。原因不玄：在 ART 里，一个类的身份是 <code>(ClassLoader, 类名)</code> 二元组，两个加载器加载同名类得到的是两个互不兼容的 <code>Class</code> 对象，连强转都会失败。</p>
+<p>再往下一层，模块自己带来的 DEX 该放在哪、能不能用匿名内存、带资源的模块怎么拿到 <code>Resources</code>、带 so 的模块又该怎么 <code>System.load</code>，最后是&#x27;什么时候能卸掉&#x27;。这一整串问题的答案都挂在一条委派链上。把方向画对，其余都是顺推。</p>
+<h2>谁看得见谁：把委派方向画对</h2>
+<ol><li><strong>BootClassLoader → framework 类</strong>：最顶层，负责 <code>java.lang</code>、<code>android.*</code> 等；结果是所有子加载器都能看到系统类，且这些类全局只有一份。</li><li><strong>App 的 PathClassLoader → APK dex</strong>：parent 是 BootClassLoader，先委托父、父找不到才查自己的 <code>DexPathList.dexElements</code>；结果是业务类由它独占，别的加载器看不见。</li><li><strong>框架 → 模块 ClassLoader</strong>：LSPosed 为每个模块建一个加载器，把 <strong>parent 设成 App 的 ClassLoader</strong>（而不是反过来）；结果是模块代码里能 <code>findClass</code> 到宿主类。</li><li><strong>模块代码 → 宿主类</strong>：用 <code>lpparam.classLoader</code> 显式查找，而不是 <code>Class.forName</code>；结果是拿到正确的 <code>Class</code> 对象，反射调用与 hook 才能对上号。</li><li><strong>宿主代码 → 模块类</strong>：查不到，因为委派只会向上不会向下；结果是模块类对 App 天然隐身，这既是限制，也是一层隔离。</li><li><strong>框架 → 桥接</strong>：需要让宿主&#x27;看见&#x27;某个模块类型时，只能由框架显式注入引用或改 dexElements；结果是这类桥接每多一处，就多一处可被枚举的结构差异。</li></ol>
+<p>第 3 拍的方向最容易记反。很多人以为是&#x27;把模块 dex 塞进 App 的加载器&#x27;，实际正相反：是让模块加载器挂在 App 加载器下面，于是模块能向下看不见自己、向上看得见宿主。<code>Class.forName</code> 用的是&#x27;调用者所在类的加载器&#x27;，调用者是模块类，自然掉进这条链的另一端。</p>
+<h2>DEX 落地的三种姿势与一次卸载</h2>
+<ul><li><strong>file-backed</strong>：把 dex 释放到 <code>code_cache</code> 或私有目录再 <code>DexClassLoader</code> 加载——最稳，但 <code>/proc/self/maps</code> 里会留一条带路径的可读映射。</li><li><strong>InMemoryDexClassLoader / SharedMemory</strong>：API 26+ 传 <code>ByteBuffer[]</code>，或 <code>memfd_create</code> 后 走匿名 fd——不落盘，代价是要处理 fd 生命周期与不同 ROM 的兼容。</li><li><strong>纯内存 dex</strong>：自己构造 <code>DexFile</code> 并插入 <code>dexElements</code>——最不显眼，也最容易在版本升级后失效。</li><li><strong>资源</strong>：模块资源不并进宿主的 id 空间，用 <code>AssetManager.addAssetPath</code> 构造独立 <code>Resources</code>；少这一步，<code>getIdentifier</code> 会一律返回 0。</li><li><strong>native 库</strong>：<code>System.load</code> 要一个真实路径，通常从 APK 的 <code>lib/&lt;abi&gt;/</code> 释放到私有目录；想直接从 APK <code>dlopen</code> 得自己处理 <code>android_dlopen_ext</code> 与对齐。</li><li><strong>卸载</strong>：只要还有任一强引用——存活实例、静态字段、线程的 <code>contextClassLoader</code>、JNI global ref——ClassLoader 就不会被回收，<code>System.load</code> 过的 so 更是进程期内无法真正卸载。</li></ul>
+<p>最后一条常被误读成&#x27;忘了置空变量&#x27;。实际排查时，十有八九是某个后台线程创建于模块加载期间，它的 <code>contextClassLoader</code> 一直抓着模块加载器；或者一个 <code>JNI NewGlobalRef</code> 把模块类钉住了。所以 LSPosed 的模块热更新通常要重启目标进程，而不是在进程内做优雅卸载。</p>
+<h2>可复现：把加载器树打出来</h2>
+<div class="code">
+<div class="code-title">在模块入口打印当前进程的加载器拓扑</div>
+<pre><code>// 遍历所有已加载的 ClassLoader，观察父子关系与 dex 来源
+ClassLoader cl = Thread.currentThread().getContextClassLoader();
+for (int i = 0; cl != null; i++) {
+    Log.d(&quot;probe&quot;, i + &quot;: &quot; + cl.getClass().getName());
+    cl = cl.getParent();
+}
+Log.d(&quot;probe&quot;, &quot;app=&quot; + lpparam.classLoader);
+Log.d(&quot;probe&quot;, &quot;self=&quot; + getClass().getClassLoader());
+Log.d(&quot;probe&quot;, &quot;host=&quot; + XposedHelpers.findClass(&quot;com.target.Sign&quot;, lpparam.classLoader));
+// 干净基线：从 contextClassLoader 往上只有 PathClassLoader -&gt; BootClassLoader</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：<code>self</code> 与 <code>app</code> 是两个不同的加载器，<code>self</code> 向上能走到 <code>app</code>，而 <code>host</code> 打印出 <code>class com.target.Sign</code> 不抛异常，同时 <code>adb shell cat /proc/[PID]/maps | grep -E &#x27;dex|apk&#x27;</code> 的数量与干净基线差得有解释。<strong>看到什么算失败</strong>：<code>host</code> 抛 <code>ClassNotFoundException</code>——先确认传的是 <code>lpparam.classLoader</code> 而不是 <code>getClass().getClassLoader()</code>；或者 <code>self.getParent()</code> 直接是 BootClassLoader，说明 parent 装配错了，模块看不到任何宿主类。把注入前后两份日志 diff 一下，多出来的那条加载器就是模块自己。</p>
+<div class="tbl"><table>
+<thead><tr><th>加载器</th><th>parent</th><th>能看见</th><th>看不见</th><th>卸载条件</th></tr></thead><tbody>
+<tr><td>BootClassLoader</td><td>无</td><td>framework / java.*</td><td>任何 App 类</td><td>进程结束</td></tr>
+<tr><td>App PathClassLoader</td><td>BootClassLoader</td><td>APK 内全部业务类</td><td>模块类</td><td>进程结束</td></tr>
+<tr><td>模块 ClassLoader</td><td>App ClassLoader</td><td>宿主类 + 自己的 dex</td><td>其它模块的类</td><td>所有强引用断开</td></tr>
+<tr><td>InMemoryDexClassLoader</td><td>通常为 App 或 Boot</td><td>ByteBuffer 里的类</td><td>落盘路径（无）</td><td>dex 字节与实例皆释放</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>模块类对宿主&#x27;不可见&#x27;，是框架刻意保留的隔离，不是没接好线</strong>。一旦为了图方便把模块 dex 直接插进宿主的 <code>dexElements</code>，宿主就能 <code>Class.forName</code> 到模块类，检测方也能——枚举加载器数量与 <code>dexElements</code> 长度时，这条捷径会立刻变成一个 +1 的结构差分。方便与隐蔽在这里是严格反比。</div></aside>
+<p>把这条链与第三部 F09 的 Frida 自定义 linker 对读，会看到同一套&#x27;自己造加载器、自己维护账本&#x27;的做法搬到了 native 层：Java 侧是 <code>dexElements</code>，so 侧是 <code>solist</code>。第二部 K04 讲 fd、inode 与 VMA 时那段&#x27;映射有没有 back-file&#x27;，正好判了 file-backed 与匿名 dex 的生死。训练营 T01 做自写靶场 App 时，第一道检测写成&#x27;枚举 ClassLoader 并核对来源路径&#x27;，用的就是本章这张表。</p>
 </article>
 <div class="pager"><a href="l03-hookitem.html"><span class="dir">上一讲</span>L03 多模块回调与去优化</a><a href="l05-native.html" style="text-align:right"><span class="dir">下一讲</span>L05 标识泛化与字符串源头治理</a></div>
 </main>

@@ -192,6 +192,42 @@ art/factory.cpp            // 运行时按能力选择</code></pre>
 <tr><td>最新机型</td><td>最新版本</td><td>提前发现</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>三台设备足够。四台以上维护成本会超过收益——尤其是当每台都需要单独刷机、单独配置时。</div></aside>
+<h2>同一份代码，在两台机器上各崩一次</h2>
+<p>回归日，Android 14 的机器跑满八项用例全绿；Android 16 的机器在&#x27;full GC&#x27;那一格挂了：<code>SIGSEGV</code>，栈顶指向一个看起来完全合法的 <code>ArtMethod*</code>。把 L07 的根因都修完还是崩。最后发现问题不在 hook 逻辑，而在模块缓存了一个跨 GC 的裸指针——Android 14 的 GC 不常搬对象，它运气好；Android 16 的 moving GC 一挪，指针立刻指向旧地址。<strong>版本差异改的不是常量，是引用的语义。</strong></p>
+<p>另一台机器上，崩的是 <code>declaring-class</code> 引用：模块把 <code>GcRoot&lt;mirror::Class&gt;</code> 的裸值存进了自己的全局表，GC 之后类对象被移动，表里那份成了悬空引用。这两类问题的共同形状是&#x27;缓存了本该每次重新解析的东西&#x27;。适配层要解决的，就是让上层代码再也拿不到这种会过期的句柄。</p>
+<h2>四个变化点，谁动了什么</h2>
+<ol><li><strong>moving GC → 对象地址</strong>：并发复制式 GC 在回收期搬动 Java 对象与类对象；结果是任何跨 GC 存活的裸 <code>ArtMethod*</code> / <code>mirror::Class*</code> 都可能失效。</li><li><strong>适配层 → 上层</strong>：用 <code>Handle</code> / <code>GcRoot</code> 包装，或干脆只存&#x27;类名 + 签名&#x27;，需要时现场解析；结果是上层永远拿不到会过期的地址。</li><li><strong>declaring-class 引用 → 类关系</strong>：新版本调整了 ArtMethod 与声明类之间的引用方式；结果是 backup 若沿用旧引用，GC 后类归属错乱。</li><li><strong>适配层 → backup</strong>：为不同版本分别构造 backup 的 declaring-class 装配逻辑，并在 full GC 后重新校验；结果是 backup 与本体始终指向同一份有效类元数据。</li><li><strong>API 36 gate → 隐藏 API 校验</strong>：新 SDK 对 <code>VMRuntime</code> / <code>DexFile</code> 等接口的访问限制再收紧；结果是原本能过的反射路径开始抛异常或被静默拒绝。</li><li><strong>适配层 → 工厂</strong>：<code>ArtAdapter</code> 按运行时能力选实现，上层只依赖 <code>get_entrypoint</code> 等纯虚接口；结果是新版本来了只加一个实现类，业务代码一行不动。</li></ol>
+<p>第 2 拍里&#x27;只存签名&#x27;是最省事的策略，代价是每次调用多一次查表。对热点方法这未必划算，所以适配层通常提供两档：<code>resolve_once()</code> 给冷路径，<code>Handle</code> 给热路径——由调用方自己声明&#x27;我这个引用要活多久&#x27;，比框架统一猜更可靠。</p>
+<h2>把回归矩阵收紧成三行</h2>
+<ul><li><strong>选机型</strong>：最老支持版本、当前主流、最新版本各一台；再加一台已知 moving GC 行为激进的 OEM 机型做压力项。</li><li><strong>固定用例集</strong>：L10 的八项用例原样跑，额外补&#x27;多轮 System.gc() 后重入&#x27;与&#x27;运行中切换模块&#x27;两项。</li><li><strong>固定环境</strong>：同一 App 版本、同一模块产物哈希、同一注入时机，冷启动前清 logcat 与 tombstone。</li><li><strong>记录路径</strong>：把 L07 能力探测选中的路径写进每份报告；不同路径的失败要分开统计。</li><li><strong>判据统一</strong>：全部以&#x27;回调次数 == 调用次数且无 native crash&#x27;为准，不靠肉眼看日志。</li></ul>
+<p>矩阵别贪多。机型铺到十几台之后，维护成本会超过它带来的信息量——因为差异几乎都集中在&#x27;GC 行为&#x27;与&#x27;隐藏 API 校验&#x27;两处，三到四台有代表性的机器足够把这两条轴覆盖完。真正容易漏的是第 4 条：不记录路径，你就分不清&#x27;这个实现在 16 上不行&#x27;还是&#x27;16 选中了另一条实现&#x27;。</p>
+<h2>可复现：一条命令跑出版本差异</h2>
+<div class="code">
+<div class="code-title">同一台 adb host 上对比两个版本</div>
+<pre><code># 1. 确认 SDK 与 GC 类型
+adb shell getprop ro.build.version.sdk
+adb shell getprop dalvik.vm.gctype
+# 2. 强杀后冷启动，抓初始化路径（L07 的能力表日志）
+adb shell am force-stop com.example.app
+adb logcat -c; adb shell monkey -p com.example.app 1
+adb logcat -s Adapter:V | grep -E &#x27;capability|selected|sdk&#x27;
+# 3. 触发多轮 full GC 后重入，看是否 SIGSEGV
+adb logcat -s Probe:V | grep -E &#x27;gc|reenter|alive&#x27;
+# 4. 有崩溃就取 tombstone 并符号化
+adb shell ls /data/tombstones/ | tail -1</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：两台机器都打印出 <code>selected</code> 且路径可以不同，GC 后 <code>reenter</code> 与 <code>alive</code> 成对出现，调用次数与回调次数相等，<code>/data/tombstones/</code> 没有新增文件。<strong>看到什么算失败</strong>：14 上 <code>selected</code> 指向旧路径、16 上指向新路径但 <code>reenter</code> 之后立刻没有 <code>alive</code>——那是裸指针没换 <code>Handle</code>；或者两台都打印 <code>selected</code> 却都崩，说明适配层选路本身没错，问题在 backup 的declaring-class 装配。第 1 步的 <code>dalvik.vm.gctype</code> 不能省，它决定了这次回归有没有真正压到moving GC。</p>
+<div class="tbl"><table>
+<thead><tr><th>变化点</th><th>Android 14</th><th>Android 16 / API 36</th><th>失败表现</th><th>适配策略</th></tr></thead><tbody>
+<tr><td>moving GC</td><td>搬动少，裸指针常侥幸可用</td><td>并发复制，对象地址会变</td><td>GC 后 SIGSEGV</td><td>Handle / 每次重解析</td></tr>
+<tr><td>declaring-class</td><td>引用关系稳定</td><td>引用方式调整</td><td>backup 类归属错乱</td><td>分版本装配 + GC 后校验</td></tr>
+<tr><td>dex method index</td><td>索引可缓存</td><td>语义变化</td><td>静默不生效</td><td>按签名解析（L07）</td></tr>
+<tr><td>隐藏 API gate</td><td>限制较松</td><td>校验收紧</td><td>反射被拒 / 抛异常</td><td>能力探测 + 多路径</td></tr>
+<tr><td>回归矩阵</td><td>单一机型即可</td><td>需覆盖 GC 与 gate 两条轴</td><td>绿了但线上崩</td><td>3~4 台固定机型</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>Android 14 上全绿，往往是危险信号而不是好消息</strong>。moving GC 搬动得少，跨 GC 的裸指针能连续跑几千次不出事，把 bug 一直藏到 16 上才爆。所以回归矩阵里必须有一台&#x27;故意让它搬&#x27;的机型，否则你验证的是运气，不是正确性。同类问题在 L07 里以&#x27;静默失效&#x27;出现，在这里以&#x27;延迟崩溃&#x27;出现。</div></aside>
+<p>把适配层与第三部 F11 的兼容总表、L07 的能力探测串起来看，就是一条完整的版本工程链：探测出能力 → 选一条实现 → 用适配层把差异关在门内。第四部 M05 讲硬件断点在不同内核上的Perf 生命周期时，用的也是&#x27;能力探测 + 多路径&#x27;，只是探测对象换成了内核特性；第二部 K06 用 BTF 取 offset 免于硬编码结构，与这里免于硬编码版本是同一个习惯。训练营 T03 要求做完整一轮改进，把&#x27;加一台激进 GC 机型&#x27;补进矩阵，通常就是最容易见效的一步。</p>
 </article>
 <div class="pager"><a href="l07-generated.html"><span class="dir">上一讲</span>L07 Android 16 ART / JVMTI 根因修复</a><a href="l09-classloader.html" style="text-align:right"><span class="dir">下一讲</span>L09 侧信道与结构差分检测</a></div>
 </main>

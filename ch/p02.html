@@ -219,6 +219,51 @@ b = a + 1;
 return b;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>Ghidra 转了四十秒，吐出八百行</h2>
+<p>函数只有一个参数，逻辑据说只是「算个校验位」，可反编译窗口里八百行，一半是 <code>state = 7</code>、<code>state = 13</code> 这样的赋值，另一半是长得一模一样的 <code>if ((x * x - x) % 2 == 0)</code>。你顺着读三行就丢了上下文，回头重来，又丢一次。这时候别硬读——先问一个更值钱的问题：这八百行里，有多少是真正改变结果的，有多少只是为了让工具慢下来？混淆从来不指望骗过人，它指望的是让自动化失效、让你的时间被耗光。</p>
+<p>把窗口缩到一边，另一边开个文本编辑器准备写化简脚本。已有的三手法表和「先化简再理解」的顺序给了你地图，这里要练的是手上那把刀：怎么把恒真条件、恒等变形、死分支一批一批削掉，让八百行自己塌回十几行。</p>
+<h2>平坦化是怎么把一句话搅成八百行的</h2>
+<ol><li><strong>混淆器</strong> → 对 <strong>原本三个顺序执行的基本块</strong> → 各切一刀，塞进一个 <code>while(1) + switch(state)</code> 的骨架 → 结果是原来的前后顺序被拆散，块之间的边变成状态变量的取值。</li><li><strong>混淆器</strong> → 对 <strong>每个基本块尾部</strong> → 追加一句 <code>state = 下一个编号</code> → 结果是控制流不再由跳转指令表达，反编译器画不出有意义的 CFG，只能画出一个大环。</li><li><strong>混淆器</strong> → 对 <strong>分支条件</strong> → 换成恒真或恒假的不透明谓词 → 结果是每个 <code>if</code> 看起来都像有两条路，实际上永远只走一条，工具却会为死分支照样生成代码。</li><li><strong>混淆器</strong> → 对 <strong>一条简单运算</strong> → 用代数恒等式展开成七八条等价指令 → 结果是数据流被拉长，常量传播跑不动，手工读的人也得在纸上验一遍才敢下结论。</li><li><strong>你</strong> → 对 <strong>状态变量</strong> → 收集所有 <code>state = N</code> 与 <code>case N:</code> 的配对，还原出真实的块顺序 → 结果是那个大环被拉直，CFG 重新长成三块顺序加一个分支。</li><li><strong>你</strong> → 对 <strong>化简后的 IR</strong> → 再跑一遍死代码消除 → 结果是不透明谓词的另一半、冗余的临时变量一起消失，八百行塌回十几行，语义一眼可见。</li></ol>
+<h2>三类噪声，各自动哪一刀</h2>
+<ul><li><strong>常量折叠</strong> → 对 <strong>编译期可求值的表达式</strong> → 直接把 <code>2 + 3</code> 换成 <code>5</code>、把 <code>(x*x-x)%2==0</code> 换成 <code>true</code> → 结果是不透明谓词连着它护着的死分支一起被删。</li><li><strong>代数化简</strong> → 对 <strong>恒等变形</strong> → 把 <code>x ^ 0</code> 还原成 <code>x</code>、<code>x * 1</code> 还原成 <code>x</code>、<code>(x &lt;&lt; 2) &gt;&gt; 2</code> 标成需谨慎（有符号/溢出）→ 结果是指令替换拉出来的长度被压回去。</li><li><strong>可达性分析</strong> → 对 <strong>控制流图</strong> → 从入口做一次遍历，凡是不可达的块全部摘掉 → 结果是插进来的死代码不再占你的注意力。</li><li><strong>支配关系重建</strong> → 对 <strong>平坦化后的 switch</strong> → 用「谁唯一支配谁」把状态编号重排成基本块顺序 → 结果是被打散的逻辑恢复前后关系。</li><li><strong>人</strong> → 对 <strong>剩下的十几行</strong> → 这时候才开始读语义 → 结果是理解成本从「一小时」降到「两分钟」，而且结论可复核。</li></ul>
+<h2>可复现实验：写个批量化简器跑一遍</h2>
+<div class="code">
+<div class="code-title">真的能跑的 python（把三类噪声一起削掉）</div>
+<pre><code>import re
+ 
+RULES = [
+    (r&#x27;\((\w+)\s*\*\s*\1\s*-\s*\1\)\s*%\s*2\s*==\s*0&#x27;, &#x27;true&#x27;),
+    (r&#x27;\b(\w+)\s*\^\s*0\b&#x27;, r&#x27;\1&#x27;),
+    (r&#x27;\b(\w+)\s*\*\s*1\b&#x27;, r&#x27;\1&#x27;),
+    (r&#x27;(\d+)\s*\+\s*(\d+)&#x27;, lambda m: str(int(m[1]) + int(m[2]))),
+]
+ 
+def simplify(lines):
+    out = []
+    for ln in lines:
+        for pat, rep in RULES:
+            ln = re.sub(pat, rep, ln)
+        if &#x27;if (true)&#x27; in ln or &#x27;if (false)&#x27; in ln:
+            continue          # 恒真/恒假条件整行丢掉
+        out.append(ln)
+    return out
+ 
+src = [&#x27;if ((x * x - x) % 2 == 0) { real_code(); }&#x27;,
+       &#x27;y = a ^ 0;&#x27;, &#x27;z = 2 + 3;&#x27;, &#x27;w = b * 1;&#x27;]
+for l in simplify(src): print(l)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：输出里 <code>y = a;</code>、<code>z = 5;</code>、<code>w = b;</code> 三行干净落地，恒真条件那一行被摘掉，<code>real_code()</code> 需要你再补一步「展开块」才能露出来——这正说明化简把噪声削到了只剩语义。看到什么算失败：原样输出、一行没变，通常是正则里的反向引用在 Python 字符串里被转义吃掉了，先把 <code>\1</code>  raw 字符串核对一遍；或者样本里的写法带了多余空格，先归一化空白再跑。切记化简器只做「语义绝对不变」的替换，凡涉及溢出、有符号移位、浮点的一律留给人判断。</p>
+<div class="tbl"><table>
+<thead><tr><th>手法</th><th>它针对的是谁</th><th>人读起来的代价</th><th>自动化可行性</th></tr></thead><tbody>
+<tr><td>控制流平坦化</td><td>反编译器的 CFG 重建</td><td>极高，容易丢上下文</td><td>中：靠状态编号配对可半自动</td></tr>
+<tr><td>不透明谓词</td><td>符号执行与可达性分析</td><td>中，但要手动验恒真</td><td>高：常量折叠一批就掉</td></tr>
+<tr><td>指令替换</td><td>常量传播与数据流</td><td>中，得在纸上验等价</td><td>高：代数规则覆盖大部分</td></tr>
+<tr><td>死代码 / 虚假调用</td><td>你的注意力</td><td>高，纯耗时</td><td>高：可达性分析直接删</td></tr>
+<tr><td>字符串加密</td><td>静态扫描器</td><td>低，运行时一眼可见</td><td>中：hook 解密函数更快</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>混淆主要不是冲着人来的，是冲着工具来的</strong>。人看八百行会烦，但总能靠直觉猜出主干；工具却会因为一个恒假分支、一次寄存器重命名就整段失控。于是最高效的反混淆顺序反而是「先替工具把路铺平，再让人上场」——先把能自动化的削干净，剩下那十几行才值得你花脑子。</div></aside>
+<p>这套「先替工具铺路」的思路和 P01 是同一件事的两面：那边把源码翻成 IR，这边把 IR 从噪声里捞回来。到 T02 你会再遇到它——不硬读混淆代码、先抓输入输出，本质是同一个判断：把有限的理解力留给真正承载语义的那一小段。</p>
 </article>
 <div class="pager"><a href="p01-cfg.html"><span class="dir">上一讲</span>P01 二期主线：从编译原理到 VMP</a><a href="t01.html" style="text-align:right"><span class="dir">下一讲</span>T01 训练营一：给自写靶场 App 加一道检测，再绕过它</a></div>
 </main>

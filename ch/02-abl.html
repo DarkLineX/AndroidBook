@@ -191,6 +191,67 @@ init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
 <h2>2.13 工程权衡：为什么不要在 rc 里加东西</h2>
 <p>在 <code>init.rc</code> 里加一个 service 是最直观的“开机自启”方式，但它有三个明显缺点：<strong>rc 文件本身可被校验</strong>、**service 会出现在 <code>init.svc.*</code> 属性里<strong>、</strong>崩溃会被 init 记录并重启**。</p>
 <p>更隐蔽的做法是“挂到已有 service 上”——不新增节点，而是修改既有服务的启动参数或环境变量。这样属性面、进程面都不变，只有真正比对 rc 内容的人才能发现。</p>
+<h2>把时间倒回到上电那一纳秒</h2>
+<figure class="anim" data-delay="820" data-n="8" data-key="a_boot">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Android 启动链：八步接力</span>
+  </div>
+  <p class="anim-sub">从按下电源键到桌面出现，每一步都是下一级的“可信起点”</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_boot/f00.png" alt="Android 启动链：八步接力 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 8</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>上电，BootROM 从 SoC 内部开始执行</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 上电，BootROM 从 SoC 内部开始执行</button>
+    <button type="button" data-i="1">2. BootROM 验签后跳到 abl</button>
+    <button type="button" data-i="2">3. abl 校验 vbmeta，加载并跳进 kernel</button>
+    <button type="button" data-i="3">4. kernel 起来后执行 /init（PID 1）</button>
+    <button type="button" data-i="4">5. init 拉起 zygote，预加载 framework</button>
+    <button type="button" data-i="5">6. zygote fork 出 system_server</button>
+    <button type="button" data-i="6">7. AMS 请求 zygote 再 fork 出 App 进程</button>
+    <button type="button" data-i="7">8. Activity 完成绘制，桌面可见</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_boot.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["上电，BootROM 从 SoC 内部开始执行", "BootROM 验签后跳到 abl", "abl 校验 vbmeta，加载并跳进 kernel", "kernel 起来后执行 /init（PID 1）", "init 拉起 zygote，预加载 framework", "zygote fork 出 system_server", "AMS 请求 zygote 再 fork 出 App 进程", "Activity 完成绘制，桌面可见"]</script>
+<p>手指按住电源键，PMIC 把各路电压依次拉起来，复位信号被拉高的那一纳秒，CPU 还不知道什么是内存——DDR 没初始化、没有栈、没有堆，连一条 <code>C</code> 函数都调不了。它只能从复位向量跳进固化在 SoC 里的几十 KB 的 BootROM。把镜头停在这里：整台手机此后所有的「信任」，都是从这几十 KB、物理上再也改不了的代码开始的。</p>
+<p>接下来的十几秒是一场接力：每一级跑起来后，先验证下一级的签名，再把控制权交出去。只要中间有一级说「对不上」，链子就断在那一拍。与其背八个阶段的名字，不如盯住每一拍里那个「谁验谁、验不过会怎样」的动作。</p>
+<h2>验签这一下，到底比对了什么</h2>
+<ol><li><strong>BootROM 读熔丝</strong> → 对 SoC 内一次性可编程的 efuse → 取出出厂时烧死的公钥哈希 → 结果：手里有了一把「信任根」，它不在磁盘上，改不动。</li><li><strong>BootROM 读下一级镜像头</strong> → 对 XBL/SBL 镜像 → 取出签名与公钥，先用 efuse 哈希核对公钥是否被换过 → 结果：公钥是原厂的那把，才继续。</li><li><strong>BootROM 算哈希并验签</strong> → 对镜像正文 → 用公钥解出签名里的摘要，与自己算的摘要逐字节比 → 结果：一致就跳进去执行，不一致直接停在这里，屏幕全黑。</li><li><strong>abl 接棒</strong> → 对 boot.img 与 vbmeta → 再做一次 AVB 校验，把 <code>androidboot.verifiedbootstate=</code> 拼进内核命令行 → 结果：一个带着「本次启动是否可信」结论的 cmdline 被递给了内核。</li><li><strong>内核把 cmdline 收好</strong> → 对 <code>/proc/cmdline</code> → 原样保存这串参数 → 结果：这个结论第一次落到了普通世界能读到的地方。</li></ol>
+<p>这里最容易记反的是方向：<strong>abl 是值的产生者，它写 cmdline；init 是值的翻译者，它把 cmdline 变成属性</strong>。BootROM 那一步则连「属性」这个概念都还不存在——它只有熔丝和一段验签代码。</p>
+<h2>一条 cmdline 是怎么变成 ro.boot.* 的</h2>
+<ol><li><strong>内核启动</strong> → 对收到的一长串参数 → 原样挂到 <code>/proc/cmdline</code> → 结果：<code>adb shell cat /proc/cmdline</code> 能逐字看到它。</li><li><strong>init 作为 PID 1 起来</strong> → 对 cmdline 里所有 <code>androidboot.*</code> 键值对 → 逐个解析 → 结果：<code>androidboot.verifiedbootstate=green</code> 被识别成一个待设的属性。</li><li><strong>init 写属性区</strong> → 对共享的 property area → 把键名换成 <code>ro.boot.verifiedbootstate</code> 并写入 → 结果：<code>getprop ro.boot.verifiedbootstate</code> 第一次有了值。</li><li><strong>上层开读</strong> → 对 zygote、system_server、App → 通过 property 接口读到这个只读值 → 结果：Play Integrity、检测 SDK、Attestation 全都拿它当「系统自述」用。</li></ol>
+<p>于是同一份事实在三个地方有三个形态：熔丝里的哈希、cmdline 里的字符串、属性区里的键值对。伪造者往往只改最后一层，却忘了前两层还在那儿——这就是后面所有交叉校验能成立的原因。</p>
+<h2>动手：把这条链从头到尾摸一遍</h2>
+<div class="code">
+<div class="code-title">从 cmdline 到属性的三段采样</div>
+<pre><code>adb shell cat /proc/cmdline                       # 看 abl 到底拼了什么进来
+adb shell getprop ro.boot.verifiedbootstate       # GREEN / YELLOW / ORANGE
+adb shell getprop ro.boot.flash.locked            # 1 = 已锁
+adb shell getprop ro.boot.vbmeta.digest           # 部分机型有 vbmeta 摘要
+adb shell dmesg | grep -i &#x27;avb\|verified&#x27;        # 内核侧看到的校验记录</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>的样子是三处自洽：cmdline 里的 <code>androidboot.verifiedbootstate</code>、属性里的 <code>ro.boot.verifiedbootstate</code>、以及 <code>ro.boot.flash.locked</code> 三者能互相对上（已锁且验证通过就是 green＋1）。<strong>失败</strong>有两种：一是 <code>getprop</code> 返回空，说明这台 ROM 没把该字段透传出来，别当成「没问题」；二是 cmdline 写着 green、属性却被人改成别的，这恰恰是隐藏方案只改了一层留下的破绽。注意上面 <code>grep</code> 里的 <code>\|</code> 是转义后的或号，别漏了反斜杠。</p>
+<div class="tbl"><table>
+<thead><tr><th>观测点</th><th>由谁写入</th><th>普通世界能改吗</th></tr></thead><tbody>
+<tr><td>efuse 公钥哈希</td><td>产线一次性烧断</td><td>不能，物理熔断</td></tr>
+<tr><td>/proc/cmdline</td><td>abl 拼接、内核保存</td><td>启动后只读</td></tr>
+<tr><td>ro.boot.* 属性</td><td>init 从 cmdline 翻译</td><td>ro. 前缀只读，但读取路径可拦</td></tr>
+<tr><td>Attestation 扩展</td><td>TEE 签进证书</td><td>普通世界改不动</td></tr>
+<tr><td>getprop 的显示值</td><td>属性服务返回</td><td>最常被 hook 的一层</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>「信任根」不是一段软件，而是一排被物理烧断的熔丝</strong>。你可以重刷磁盘上的每一个分区、改掉每一条属性，也改不了已经熔断的那几位。安全启动之所以叫「链」，是因为最上面那一环根本不在你能写的介质里。</div></aside>
+<p>把「cmdline 产生状态 → init 翻译成属性」这条链记牢。第 03 章会看到，TEE 把 <code>verifiedBootState</code>、<code>deviceLocked</code>、<code>verifiedBootHash</code> 这些值签进证书时，用的正是本章这一路传上来的结论——<strong>你在启动链上改的每一个字节，最后都会以「签了名的事实」形式出现在证明里</strong>。</p>
 </article>
 <div class="pager"><a href="01-patch.html"><span class="dir">上一讲</span>01 APatch 的 root 原理</a><a href="03-tee.html" style="text-align:right"><span class="dir">下一讲</span>03 Android 硬件证明</a></div>
 </main>

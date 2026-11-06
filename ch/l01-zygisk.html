@@ -178,6 +178,67 @@ post-specialize: 把 dex 插进 dexElements</code></pre>
 3. dexElements 里有额外条目</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>进程睁眼前的那一秒</h2>
+<p>一个 App 刚被 zygote <code>fork</code> 出来，还没来得及执行第一行 <code>Application.onCreate</code>。此刻它继承了父进程整张页表、几十个已经打开的 fd、以及 zygote 里所有已加载的 DEX。LSPosed 必须在这个进程<strong>睁眼之前</strong>做完三件事：把 framework dex 摆到能被调用的位置、按包名决定要不要继续、把模块列表变成进程内的回调。晚一步，App 的 <code>PathClassLoader</code> 就已经建好，想再往 <code>dexElements</code> 里塞东西就得动隐藏 API；早一步，你还不知道自己是 <code>com.example.app</code> 还是 <code>com.android.systemui</code>。</p>
+<p>把这一秒放大看，它其实是一条<strong>权限递减</strong>的通道：<code>preAppSpecialize</code> 时进程还顶着 zygote 的 SELinux 域，能读 <code>/data/adb/lspd</code> 下的模块配置，但 <code>nice_name</code> 与最终包名还没落定；<code>specialize</code> 一过，UID、补集 GID、<code>seinfo</code>、<code>untrusted_app</code> 域一次性贴上，<code>/data/adb</code> 立刻变成 <code>EACCES</code>。所以框架不是&#x27;可选地分两段&#x27;，而是&#x27;只有这两段各自能拿到对方拿不到的东西&#x27;——配置必须过河，权限必须留下。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_lsp">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">LSPosed：一次被 Hook 的方法调用</span>
+  </div>
+  <p class="anim-sub">从进程进入到 before/after 回调链完成</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_lsp/f00.png" alt="LSPosed：一次被 Hook 的方法调用 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>Zygisk 在 specialize 前后把 framework 注入进程</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. Zygisk 在 specialize 前后把 framework 注入进程</button>
+    <button type="button" data-i="1">2. 加载模块 DEX，调整 ClassLoader 委派顺序</button>
+    <button type="button" data-i="2">3. LSPlant 改写 ArtMethod，生成 trampoline 与 backup</button>
+    <button type="button" data-i="3">4. 多个模块按 priority 串成 HookItem 回调链</button>
+    <button type="button" data-i="4">5. before → 原方法 → after，结果沿链回传</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_lsp.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["Zygisk 在 specialize 前后把 framework 注入进程", "加载模块 DEX，调整 ClassLoader 委派顺序", "LSPlant 改写 ArtMethod，生成 trampoline 与 backup", "多个模块按 priority 串成 HookItem 回调链", "before → 原方法 → after，结果沿链回传"]</script>
+<h2>两道门之间，谁搬了什么</h2>
+<ol><li><strong>Zygisk 加载器 → zygote 进程</strong>：Magisk / KernelSU 的 Zygisk 在 zygote 启动时 <code>dlopen</code> 模块 so，注册 <code>preAppSpecialize</code> 与 <code>postAppSpecialize</code> 两个回调；结果是此后每个即将诞生的 App 都会先穿过这一段 native 代码，没有例外。</li><li><strong>preAppSpecialize → 模块配置与 framework dex</strong>：框架在这道门里读 scope 配置、把 <code>framework.dex</code> 的字节缓存进堆；结果是子进程不需要再碰 <code>/data/adb</code>，配置已经以内存形态躺在被继承的页表里。</li><li><strong>companion 进程 → 特权读写</strong>：枚举模块 APK、读 sqlite 配置这类需要高权限的活，通过 <code>connectCompanion()</code> 转交给一个独立进程；结果是 zygote 里不会长时间挂着一个指向模块目录的 fd。</li><li><strong>fork + specialize → 子进程</strong>：内核复制页表（COW），Android 侧补上 UID/GID、进程名与 SELinux context；结果是同一份 framework dex 被父子共享，但权限已经塌到 <code>untrusted_app</code>。</li><li><strong>postAppSpecialize → 二次筛选</strong>：框架用此时才准确的包名与 UID 查 scope 表，不在作用域内就直接返回并释放缓存；结果是白名单外的进程几乎零残留，连初始化日志都不打。</li><li><strong>Main.forkCommon → 进程内框架</strong>：命中作用域才初始化 <code>LSPosedBridge</code>、装配 LSPlant、构造模块 ClassLoader、把 <code>handleLoadPackage</code> 派发给各模块；结果是 App 的 <code>onCreate</code> 执行时，回调链已经挂好，业务代码一无所知。</li></ol>
+<p>最容易被读漏的是第五拍：<strong>筛掉也是一种动作</strong>。很多&#x27;进不进得来&#x27;的排查，最后发现问题不在注入，而在 scope 没勾上目标包，框架在 post 阶段自己退了出去。日志一片安静，不代表机制失效，只代表筛选器按预期工作。</p>
+<p><code>framework.dex</code> 必须在 pre 阶段读进内存，还有一个更硬的理由：它要在 App 的 <code>PathClassLoader</code> 构造之前就变成可用的 <code>DexFile</code>，否则只能事后去改 <code>DexPathList.dexElements</code>——那是隐藏 API，Android 14 之后还要再过一层 <code>VMRuntime</code> 的校验。fork 时继承一份已加载的 dex，比在子进程里补插一段数组干净得多，也不会在 <code>dexElements</code> 上留下突兀的追加痕迹。</p>
+<h2>把进没进来变成日志里的一行</h2>
+<div class="code">
+<div class="code-title">四步现场确认（替换包名与 PID）</div>
+<pre><code># 1. 拿 PID：输出一个数字算成功，空输出说明进程根本没起来
+adb shell pidof com.example.app
+# 2. 看它继承了哪些 fd；pre 阶段漏关的 /data/adb 会在这里露出来
+adb shell ls -l /proc/[PID]/fd | grep -i adb
+# 3. 看 maps：框架 dex、匿名可执行段、lspd 的 so
+adb shell cat /proc/[PID]/maps | grep -E &#x27;lspd|dex|memfd|anon:dalvik&#x27;
+# 4. 抓初始化日志，forkCommon 后面应当跟着模块名
+adb logcat -s LSPosedBridge:V LSPosed:I | grep -E &#x27;forkCommon|loaded module|scope&#x27;
+# 5. 对照：未启用框架的同一台机器上重跑 2、3，作为干净基线</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：<code>pidof</code> 有 PID，<code>logcat</code> 里出现 <code>forkCommon</code> 且后面跟着模块名，而 <code>/proc/[PID]/fd</code> 里 grep 不到 <code>adb</code>。<strong>看到什么算失败</strong>：只有 <code>pidof</code> 有输出、其余三项全空——那是框架没进这个进程，先去查 Zygisk 是否对该进程启用、scope 是否勾了目标包；反过来，如果 fd 里 grep 到了 <code>/data/adb</code> 而模块确实生效，说明 pre 阶段打开的目录 fd 没关干净，这正是检测方最爱抓的一处。第 5 步的对照不能省，否则你无法区分&#x27;多出来的 dex&#x27;是框架的还是 App 自带的热修复。</p>
+<ul><li><strong>pre 残留是文件与映射</strong>：未关的目录 fd、随 fork 继承的 framework dex，最容易被 <code>/proc</code> 看到。</li><li><strong>fork 残留是共享页</strong>：COW 计数与页表项，不产生新对象，却让内存对比带着 zygote 旧账。</li><li><strong>post 残留是对象与引用</strong>：Binder 代理、额外 ClassLoader、回调链，改名字抹不掉。</li><li><strong>规律</strong>：越往后，残留越从&#x27;看得见的文件&#x27;变成&#x27;数得清的结构&#x27;——L09 差分检测由此成立。</li></ul>
+<div class="tbl"><table>
+<thead><tr><th>时机</th><th>SELinux 域</th><th>此刻能拿到</th><th>此刻拿不到</th><th>典型残留</th></tr></thead><tbody>
+<tr><td>pre-specialize</td><td>zygote</td><td>模块目录、APK、framework dex</td><td>精确包名、App data 目录</td><td>未关的目录 fd、多出的 dex 映射</td></tr>
+<tr><td>fork 瞬间</td><td>继承父进程</td><td>父进程全部页表与 fd</td><td>自己的最终身份</td><td>共享页的 COW 计数</td></tr>
+<tr><td>post-specialize</td><td>untrusted_app</td><td>包名、UID、cmdline</td><td>/data/adb、提权能力</td><td>Binder 代理、额外 ClassLoader</td></tr>
+<tr><td>forkCommon 后</td><td>untrusted_app</td><td>已挂好的回调链</td><td>任何超出应用域的文件</td><td>dexElements 条目、线程</td></tr>
+</tbody></table></div>
+<p>横向读最后一列会发现一件事：越往后，残留越是&#x27;结构性&#x27;的——前两行是文件和映射，后两行是对象和引用。这正好预告了 L09 的结论：改名字能抹掉前两行，抹不掉后两行。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>框架在 post 阶段读不到模块目录，不是缺陷，是刻意设计</strong>。正因为 App 进程全程没有权限打开 <code>/data/adb</code>，配置才必须由 zygote 在 specialize 之前读进来、随 fork 一起继承。理解这条，就明白它为什么宁愿把 dex 缓存在内存里，也不愿在进程内按需打开——按需打开的那一刻，权限已经没了。</div></aside>
+<p>把这条&#x27;权限递减的通道&#x27;记住，第三部 F01 讲 Frida 的 Zygote 门控时你会看到同一张图：注入点同样卡在 specialize 前后，只是 Frida 要的是 <code>ptrace</code> 与 agent 线程，LSPosed 要的是 dex 与回调链；第二部 K01 里 <code>fork</code> 继承 fd 表与 <code>cred</code> 的那几页，正好解释了这里 <code>/proc/[PID]/fd</code> 为什么会露出 zygote 的旧账。训练营 T01 让学员自己造一道检测，第一道往往就架在这个 fd 上。</p>
 </article>
 <div class="pager"><a href="m07-oem.html"><span class="dir">上一讲</span>M07 Android Chrome 多进程多开</a><a href="l02-artmethod.html" style="text-align:right"><span class="dir">下一讲</span>L02 LSPlant Java Hook 原理</a></div>
 </main>

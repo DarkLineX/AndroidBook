@@ -183,6 +183,50 @@ regs-&gt;pc = (unsigned long)my_handler_entry;
 <tr><td>睡眠 / 分配内存</td><td>不能</td><td>异常上下文</td></tr>
 <tr><td>发信号</td><td>谨慎</td><td>可能死锁</td></tr>
 </tbody></table></div>
+<h2>一个字节都不改，CPU 自己会停下来</h2>
+<p>检测方把 <code>.text</code> 从头到尾 CRC 一遍，全过；反汇编比对也全过。而目标函数入口的 <code>DBGBVR0_EL1</code> 里已经静静躺着它的地址，<code>DBGBCR0_EL1</code> 配好了“执行、EL0/EL1、使能”。命中那一刻 CPU 抛同步调试异常，你在 <code>pt_regs</code> 里读走参数、把 <code>pc</code> 改成另一个地址，<code>eret</code> 之后函数像什么都没发生一样被重定向。<strong>代码段没有任何变化，变化的是 CPU 的比较逻辑</strong>。</p>
+<p>这类 hook 属于 perf 子系统的 <code>PERF_TYPE_BREAKPOINT</code>：一个 <code>perf_event</code> 绑一个 task，内核在每次上下文切换时把该 task 的断点写进当前 CPU 的调试寄存器。于是生命周期不再只是“注册—回调”，还要管 fork 的 inherit、线程退出、文件描述符关闭与槽位归还——账本比 hook 本身长得多。</p>
+<h2>从 attr 到回调的五拍</h2>
+<ol><li><strong>模块 → 对 perf_event_attr</strong>：填 <code>type=PERF_TYPE_BREAKPOINT</code>、<code>bp_type=HW_BREAKPOINT_X</code>、<code>bp_addr</code>、<code>bp_len=HW_BREAKPOINT_LEN_4</code>、<code>size=sizeof(attr)</code>，结果是一份内核能接受的描述；<code>size</code> 漏填直接 <code>-EINVAL</code>，这是最不像错误的错误。</li><li><strong>模块 → 对目标 task</strong>：调 <code>register_user_hw_breakpoint(&amp;attr, handler, NULL, task)</code>，结果拿到一个 <code>struct perf_event</code>，内核为它的每个线程在 DBGBVR/DBGBCR 上排布槽位；<code>inherit</code> 设为 1 时新建线程自动继承，否则只覆盖注册时那一个线程。</li><li><strong>CPU → 对取指地址</strong>：把当前 PC 与所有已使能的 <code>DBGBVRn_EL1</code> 比较，命中即抛同步调试异常，结果是控制流转进 <code>do_debug_exception</code>；这一步纯硬件完成，不读内存、不改代码、也不经过任何可 CRC 的字节。</li><li><strong>handler → 对 pt_regs</strong>：读 <code>regs-&gt;pc</code>、<code>regs-&gt;regs[0..7]</code>、<code>regs-&gt;regs[30]</code>（LR）记录现场，若要重定向就把 <code>pc</code> 写成目标地址，结果是 <code>eret</code> 后从新地址继续；目标是间接跳转落点时要确认首指令为 <code>BTI</code>/<code>PACIASP</code>，并处理好 PAC 签名的 LR。</li><li><strong>回收路径 → 对 task exit notifier 与 perf 文件</strong>：<code>unregister_hw_breakpoint</code> 后 <code>put_task_struct</code>，结果是槽位归还给该 CPU；缺了这一步，进程早就没了，槽位还占着，下一次注册直接 <code>-ENOSPC</code>。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>返回码</th><th>触发条件</th><th>真实原因</th><th>处理</th></tr></thead><tbody>
+<tr><td>-EINVAL</td><td>attr.size 漏填 / bp_len 填 sizeof(long)</td><td>arm64 执行断点只接受 4 且地址 4 字节对齐</td><td>改 HW_BREAKPOINT_LEN_4 并对齐地址</td></tr>
+<tr><td>-ENOSPC</td><td>注册返回槽位不足</td><td>该 CPU 仅 4~6 个 BRP，且被 perf/kgdb 占用</td><td>合并断点、按重要性分级</td></tr>
+<tr><td>-EBUSY</td><td>同一 task 重复注册</td><td>已有 perf event 占着同一地址</td><td>复用已有 event 的 fd</td></tr>
+<tr><td>-ESRCH</td><td>目标线程已退出</td><td>task 引用未 pin 住</td><td>在 exit notifier 里同步回收</td></tr>
+<tr><td>-EOPNOTSUPP</td><td>内核无 HW breakpoint</td><td>CONFIG_HAVE_HW_BREAKPOINT 未开</td><td>回退到 M03 的影子页</td></tr>
+</tbody></table></div>
+<h2>线程一多，账本就要加两列</h2>
+<p><code>register_user_hw_breakpoint</code> 传进去的那个 <code>task</code> 只代表一个线程，不是整个进程。若目标开了八条线程，而 <code>inherit</code> 又没设，结果就是“主线程命中、其他七条照常跑”；把 <code>inherit</code> 打开能让新建线程继承，但已经存在的线程不会补登记，仍要遍历线程组逐个挂 event。于是每个断点要记的不只是地址和 slot，还得记“绑到了哪个 task、什么时候由谁回收”。</p>
+<p>上下文切换是另一处容易误判的地方：DBGBVR/DBGBCR 是 per-CPU 寄存器，调度器把待运行 task 换上 CPU 时才把它的断点写进当前核的寄存器组。所以“注册成功”不等于“此刻硬件里就有值”——线程被调度上来之前，槽位只是 perf 账本里的一行记录；<code>slots_in_use</code> 与“当前核实际生效的槽位”是两个数，验收时要分开看。</p>
+<h2>槽位不够时怎么分</h2>
+<ul><li><strong>先合并同地址</strong>：多个模块盯同一个函数入口就共用一个 event，用回调链分发，结果是省下整一个槽位；<code>inherit</code> 打开的线程组只算一份配置，不按线程数重复申请。</li><li><strong>再按优先级降级</strong>：只给关键入口留执行断点，次要观测点退回 M03 的影子页或 kprobe，结果是有限的 BRP 全落在绕不开的点上。</li><li><strong>最后留出诊断位</strong>：至少保留一个槽位给临时排查，否则一旦四个全被占满，连“为什么注册失败”都没法现场验证，只能重启。</li></ul>
+<h2>可复现实验：注册、触发、杀进程、数槽位</h2>
+<div class="code">
+<div class="code-title">四段对账，最后一段最容易被漏掉</div>
+<pre><code># 1. 先探测支持与当前占用
+zcat /proc/config.gz | grep -E &#x27;CONFIG_HAVE_HW_BREAKPOINT|CONFIG_PERF_EVENTS&#x27;
+cat /proc/kallsyms | grep -E &#x27; register_user_hw_breakpoint| hw_breakpoint_add&#x27;
+# 成功：两项均为 y 且符号存在；失败：=n 或无符号，改走 Text Shadow
+ 
+# 2. 注册一个执行断点（bp_len 必须是 4，地址 4 字节对齐）
+insmod /data/local/tmp/hwbp.kpm pid=$PID addr=0x7f00123400
+dmesg | tail -n 20
+# 成功：打印 bp slot 0、hw_bp_enabled=1；失败：-EINVAL 先查 bp_len，-ENOSPC 查槽位
+ 
+# 3. 触发并观察重定向
+cat /proc/demo/hwbp_stats
+# 成功：hits 递增且 redirected 与 hits 相等；失败：hits=0 = 地址错或 inherit 没覆盖子线程
+ 
+# 4. 强杀目标进程后核对回收
+kill -9 $PID
+sleep 1
+cat /proc/demo/hwbp_stats
+# 成功：slots_in_use 回到 0；失败：仍非 0 = exit notifier 没挂上，槽位泄漏</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：硬件断点最“干净”，却不是最隐蔽。它确实一个字节都不改，CRC 与反汇编比对全过；但 <code>perf_event</code> 会出现在 fdinfo 与 perf 子系统的账本里，调试槽位的占用也能被同级内核读到，上下文切换时写 DBGBVR 的开销还是可测的。<strong>“不改字节”只骗过校验代码，骗不过看账本的人</strong>。</div></aside>
+<p>把三种入口改控制流的方式并排看：Frida 部 F06 讲默认 Hook 时用 trampoline 覆盖入口指令，LSPosed 部 L02 讲 LSPlant 时改写 <code>ArtMethod</code> 的入口与 backup，M05 则把地址交给 CPU 的调试寄存器。手段从“改字节码”一路退到“只改配置”，但三者面对的是同一个工程问题：注册、生效、并发、撤销，四步一步都不能少。</p>
 </article>
 <div class="pager"><a href="m04-cpu.html"><span class="dir">上一讲</span>M04 ARM64 内核单步 Trace</a><a href="m06-inode.html" style="text-align:right"><span class="dir">下一讲</span>M06 SELinux 与 FD 安全扩展</a></div>
 </main>

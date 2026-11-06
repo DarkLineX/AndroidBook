@@ -193,6 +193,45 @@ assert sign(case1, salt) == expected1</code></pre>
 <tr><td>CRC32</td><td>8 hex</td><td>校验用，非安全</td></tr>
 </tbody></table></div>
 <p>看到输出长度就能排除一大半可能性。再结合“是否有密钥参与”（改一个字符看输出是否全变），基本能锁定算法族。</p>
+<h2>把签名函数追到最后一次比较</h2>
+<p>抓包里躺着一条请求：<code>sign=8f14e45f...</code>，32 位十六进制，每次换参数就变。你翻了半小时反编译代码，满屏都是 <code>a</code>、<code>b</code>、<code>c</code> 和跳转表，看不出个所以然。换个方向：不问「它怎么算的」，先问「它拿什么跟什么比」。在 <code>equals</code> 上挂一钩子，两条字符串同时打出来——一条是本地刚算出来的，一条是期望值——<strong>汇聚点一找到，算法类型十分钟内就能定下来</strong>。</p>
+<p>这就是本部收束要留的方法论：先定边界（输入是什么、输出是什么），再找所有校验最终都要经过的那个比较点，最后才决定是改输入、改输出，还是干脆把整套算法复现出来。工具会换，顺序不会。</p>
+<h2>从一条请求到一份可复现结论</h2>
+<ol><li><strong>定边界</strong> → 对抓包里的请求 → hook <code>OkHttp</code> 的 <code>Request.Builder.build</code>，把最终 URL、header、body 全打出来 → 结果：确认 <code>sign</code> 放在哪个字段、输入串由哪几部分拼成。</li><li><strong>找汇聚点</strong> → 对 <code>String.equals</code> / <code>strcmp</code> / <code>MessageDigest.digest</code> → 同时挂上 → 结果：定位到「本地算出的值」与「期望值」相遇的那一拍。</li><li><strong>回栈</strong> → 对 <code>Java.use(...).implementation</code> 里打印的调用栈 → 沿栈帧往上找计算函数 → 结果：从混淆代码里捞出真正干活的那个方法。</li><li><strong>判类型</strong> → 对输出长度与常量 → 32 位 hex 想到 MD5、40 位想到 SHA1、<code>0x9E3779B9</code> 想到 TEA 系 → 结果：给出「可能是 XX」的假设，注意这只是假设。</li><li><strong>复现</strong> → 对同语言重写 → 用 5 组真实样本跑，逐组对输出 → 结果：假设被证实或被证伪，对不上就回去看拼接顺序与 salt，别硬凑。</li><li><strong>落脚本</strong> → 对结论 → 固化成独立工具 + 回归样本集 → 结果：不再依赖 hook，版本变了也能靠样本集立刻发现。</li></ol>
+<h2>动手：先抓输入，再复现</h2>
+<div class="code">
+<div class="code-title">抓比较点 + Python 复现验证</div>
+<pre><code>// compare_probe.js（frida -U -f com.target.app -l compare_probe.js）
+Java.perform(function () {
+  var S = Java.use(&#x27;java.lang.String&#x27;);
+  S.equals.implementation = function (o) {
+    if (this.length() === 32 &amp;&amp; o !== null &amp;&amp; String(o).length === 32) {
+      console.log(&#x27;local =&#x27;, this, &#x27;expect =&#x27;, o);
+    }
+    return this.equals(o);
+  };
+});
+ 
+# verify_sign.py —— 拿到 local / expect 后做可证伪实验
+# import hashlib
+# def sign(params, salt):
+#     s = &#x27;&amp;&#x27;.join(k + &#x27;=&#x27; + params[k] for k in sorted(params))
+#     return hashlib.md5((s + salt).encode()).hexdigest()
+# assert sign(case1, salt) == expect1   # 对不上就说明假设错了</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>compare_probe.js</code> 打出成对的 <code>local = ...</code> 与 <code>expect = ...</code>，把 <code>local</code> 喂进 <code>verify_sign.py</code> 后 5 组样本全部 <code>assert</code> 通过——这才叫结论成立。<strong>失败</strong>要按拍分流：<code>equals</code> 一次都没打印，说明比较根本不走 Java 层，换 <code>Interceptor.attach</code> 挂 <code>strcmp</code> / <code>memcmp</code>；打印了但长度不是 32，别硬套 MD5，先看是不是 Base64（含 <code>+/=</code>）或 SHA256（64 位）；<code>assert</code> 挂掉是最有价值的结果——它明确告诉你「MD5(排序参数+salt)」这个假设错了，回去核对拼接顺序、编码方式与 salt 位置，而不是把输出强行截断对齐。另外别忘了先确认脚本真挂上了：随便触发一次已知调用，看钩子有没有计数，很多「算法分析失败」其实是 hook 根本没生效。</p>
+<div class="tbl"><table>
+<thead><tr><th>线索</th><th>先想到的假设</th><th>一条可证伪实验</th></tr></thead><tbody>
+<tr><td>32 位 hex</td><td>MD5</td><td>换 1 位输入看是否完全不同（雪崩）</td></tr>
+<tr><td>64 位 hex</td><td>SHA256</td><td>同输入跑标准库逐字节比</td></tr>
+<tr><td>含 +/ 与 = 结尾</td><td>Base64</td><td>解码看是否可读 / 是二进制</td></tr>
+<tr><td>常量 0x9E3779B9</td><td>TEA / XXTEA</td><td>数轮数与移位方向</td></tr>
+<tr><td>256 项 S 盒</td><td>AES / SM4</td><td>找轮密钥生成与轮数</td></tr>
+<tr><td>local 与 expect 始终相等</td><td>抓的是同一份值</td><td>回栈确认是不是比较点选反了</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>「这个算法是 MD5」这种结论，只有配上一个能把它推翻的实验才算数</strong>。把已知输入输出丢进标准实现，对不上就承认假设错了——这比在混淆代码里找出一段「看起来像 MD5」的循环可靠得多。同理，<code>assert</code> 失败不是实验搞砸了，而是实验终于给了你一条真信息：拼接顺序或 salt 跟你以为的不一样。</div></aside>
+<p>到这里，第一部的十六章走完了一整圈：第 01、02 章从 boot.img 与启动链拿到内核执行能力，第 05、06 章看清进程与 so 怎么落地，第 07~10 章把注入与 hook 装进去，第 04、11 章转过身来定义怎么发现它们，第 12~14 章下探到 ART 与 dex，最后两章把工具收成方法论。<strong>本章这个「先定边界、再找汇聚点、用可证伪实验收口」的顺序，会在第二部挖内核、第三部解剖 Frida、第四部写 KPM、第五部拆 LSPosed 时被原样复用</strong>——换的只是被观测的对象，不换的是这条把猜测逼成证据的路。</p>
 </article>
 <div class="pager"><a href="15-scrcpy.html"><span class="dir">上一讲</span>15 Android 自动化</a><a href="k01-fork.html" style="text-align:right"><span class="dir">下一讲</span>K01 Linux 进程、线程与调度</a></div>
 </main>

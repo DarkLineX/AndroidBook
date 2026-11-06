@@ -171,6 +171,50 @@
 <tr><td>启动 App</td><td>1~3s</td><td>冷启动</td></tr>
 </tbody></table></div>
 <p>这组数字的意义：如果你的轮询间隔小于 dump 的耗时，就会“越等越慢”。正确做法是“指数退避”：先 100ms，再 200ms、400ms，上限 2s。</p>
+<h2>一条会自己找路的流水线</h2>
+<p>深夜两点，脚本在第一百台设备上跑挂了：前九十九台都点到了那个按钮，这一台卡在「元素没出现」然后一路重试到超时。把日志翻出来，页面其实早就到了，只是那台机器动画慢了 300 毫秒。<strong>稳定的自动化，靠的从来不是点得准，而是等得对</strong>——要修的不是坐标，是那句写死的 <code>sleep(2)</code>。把一次点击拆成「等待 → 动作 → 断言」三拍，这条流水线就能自己找路。</p>
+<p>还有一件事得先摆正：uiautomator2 读的是窗口树，scrcpy 拿的是像素，<strong>这是两条各自独立的通道，不是一条链</strong>。u2 挂了，画面通道照样能录屏、能截图、能靠 <code>adb input</code> 兜底；反过来，自绘界面里 scrcpy 看得见按钮，却不知道它叫什么。把它们画成串联，是这类脚本最常见的架构错误。</p>
+<h2>一次点击，三拍各做了什么</h2>
+<ol><li><strong>等待</strong> → 对 <code>UiAutomation</code> 的窗口树 → 轮询 <code>resourceId</code> 或 text 直到命中，或超时 → 结果：拿到的不是「两秒后的屏幕」，而是「元素确实出现了」这个确定事件。</li><li><strong>动作</strong> → 对命中的控件节点 → <code>click()</code> / <code>setText()</code>，必要时退回 <code>adb input tap</code> → 结果：动作作用在语义对象上，换分辨率也不偏。</li><li><strong>断言</strong> → 对下一页的「页面签名」（3~5 个必然存在的元素集合）→ 全部命中才算迁移成功 → 结果：能区分「点了」和「点对了」，失败时知道该回退到哪个稳定态。</li><li><strong>异常恢复</strong> → 对状态机 → 超时就按返回键 / 重新拉起页面，回到上一个已知状态再重跑 → 结果：重试是幂等的，不会把已经填过的表单再填一遍。</li><li><strong>留现场</strong> → 对失败点 → 截图 + <code>dump_hierarchy()</code> + 当前 Activity 名一起落盘 → 结果：第一百台设备那 300 毫秒，下次一眼就能看出来。</li></ol>
+<h2>动手：把 sleep 换成会等的版本</h2>
+<div class="code">
+<div class="code-title">一个不会随机失败的流程骨架（uiautomator2）</div>
+<pre><code>import uiautomator2 as u2, time
+ 
+d = u2.connect()                       # 或 u2.connect(&#x27;设备序列号&#x27;)
+d.app_start(&#x27;com.target.app&#x27;)
+ 
+def wait(sel, timeout=8):
+    end = time.time() + timeout
+    while time.time() &lt; end:
+        el = d(**sel)
+        if el.exists:
+            return el
+        time.sleep(0.2)
+    raise RuntimeError(&#x27;wait timeout: &#x27; + str(sel))
+ 
+def page_sign(names):
+    return {n: d(resourceId=n).exists for n in names}
+ 
+login = {&#x27;resourceId&#x27;: &#x27;com.target.app:id/btn_login&#x27;}
+el = wait(login)                       # 第 1 拍：等事件，不是等时间
+el.click()                             # 第 2 拍：作用在语义节点
+assert all(page_sign([&#x27;com.target.app:id/tv_home&#x27;,
+                      &#x27;com.target.app:id/tab_bar&#x27;]).values())   # 第 3 拍
+print(&#x27;flow ok&#x27;)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：打印 <code>flow ok</code>，且把设备动画速度调慢（<code>adb shell settings put global window_animation_scale 3</code>）后依然通过——这说明脚本等的是元素而不是固定秒数。<strong>失败</strong>按三类分：<code>RuntimeError: wait timeout</code> 是元素真没出现，先 <code>d.dump_hierarchy()</code> 看是不是页面走岔了，别急着加长超时；<code>assert</code> 挂了说明点到了但没跳到预期页，检查页面签名里是不是混进了非必然元素；而 <code>u2.connect()</code> 报连接失败，跟脚本逻辑无关，先 <code>adb devices</code> 确认设备在线、再确认 <code>atx-agent</code> 还活着。测完记得把动画缩放调回 1。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>根因</th><th>该改哪一拍</th></tr></thead><tbody>
+<tr><td>慢设备上偶发失败</td><td>固定 sleep / 坐标点击</td><td>等待：改成 wait(selector)</td></tr>
+<tr><td>点了但断言挂</td><td>页面签名混了非必然元素</td><td>断言：只留 3~5 个必然元素</td></tr>
+<tr><td>重试后表单重复提交</td><td>动作不幂等</td><td>恢复：回已知状态再重跑</td></tr>
+<tr><td>u2 拿不到控件但屏幕可见</td><td>自绘视图无控件节点</td><td>换 scrcpy 画面通道 + 截图校验</td></tr>
+<tr><td>自绘界面能点、不知按钮名</td><td>画面通道没有语义</td><td>并列用 u2 读树 / 用 OCR 兜底</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>「找不到元素」时最不该做的，就是把超时调大</strong>。绝大多数超时不是等得不够久，而是页面根本走岔了——调大超时只会让错误晚几秒发生，还会把整批任务拖慢。正确动作是立刻 dump 层级 + 截图，先确认「我在哪一页」，再决定是回退还是重来。自动化的门槛从来不是写脚本，是设计可恢复的流程。</div></aside>
+<p>这套「等待 → 动作 → 断言 → 恢复」的第 16 章会被直接借走：那里把「页面签名」换成「输出样本」，用同样可证伪的思路去验证一个算法结论；第 13 章的 Binder 通道是 <code>UiAutomation</code> 与 App 之间真正的通信底座；而第 11 章反复强调的「先采基线再差分」，在这里就是那张「页面静止后连续两次 dump 一致」的稳定化条件。</p>
 </article>
 <div class="pager"><a href="14-dex.html"><span class="dir">上一讲</span>14 Android dex 详解</a><a href="16.html" style="text-align:right"><span class="dir">下一讲</span>16 基础 hook 脚本、检测与算法分析</a></div>
 </main>

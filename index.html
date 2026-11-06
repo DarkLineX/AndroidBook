@@ -100,11 +100,16 @@
 <p class="sub">从 boot.img patch 到 KPM 内核工程的一本条理化教程</p>
 <img class="cover" src="assets/cover.png" alt="封面">
 <div class="stats">
-  <div class="stat"><b>60</b><span>讲正文</span></div>
+  <div class="stat"><b>65</b><span>讲正文</span></div>
   <div class="stat"><b>8</b><span>个部分</span></div>
   <div class="stat"><b>60</b><span>幅原理图</span></div>
+  <div class="stat"><b>16</b><span>组动图演示</span></div>
   <div class="stat"><b>3</b><span>条主线</span></div>
 </div>
+<h2>这一版新增了什么</h2>
+<p>每一讲都补上了<b>现场引子、逐拍拆解、可复现实验、对照表和反直觉要点</b>，把"是什么"讲成"怎么一步步发生"。
+另外做了 <b>16 组逐帧动图</b>：启动链、COW 缺页、Inline Hook、Stalker、Text Shadow、
+SELinux 判定、Binder、DEX 回填、VMP 解释循环……网页版可以播放、暂停、逐帧点选，GitBook 版是自动循环的 GIF。</p>
 <h2>这本书讲什么</h2>
 <p>这不是一本“技巧合集”，而是一本<b>按能力阶梯组织</b>的工程手册。全书围绕三条主线展开：
 <b>可信链</b>（怎么验证）、<b>运行链</b>（怎么执行）、<b>检测链</b>（怎么发现）。
@@ -115,6 +120,7 @@
   <li><b>先建模型，再记细节</b>。模型对了，细节可以查；模型错了，细节全是散的。</li>
   <li><b>每个结论配一个可证伪实验</b>。不做实验的“理解”，多半是错觉。</li>
   <li><b>改完必须回归</b>。任何“应该没问题”的改动，都要用同一套用例重跑。</li>
+  <li><b>遇到过程，先看动图</b>。16 组逐帧演示把“谁先谁后”摆出来，再回头读文字拆解。</li>
 </ol>
 <blockquote>把地图画对，把实验做扎实，剩下的只是时间问题。</blockquote>
 </article>

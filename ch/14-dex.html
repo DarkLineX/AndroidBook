@@ -176,6 +176,70 @@
 <button class="copy" type="button">复制</button>
 </div>
 <p>修复时最容易忘的是“范围起点”：checksum 从偏移 12 开始（跳过 magic 与 checksum 自身），signature 从偏移 32 开始（跳过更多 header 字段）。起点错了，算出来的值永远对不上。</p>
+<h2>把 dex 当成一张可以按图索骥的地图</h2>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_dex">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">二代壳：方法抽取与运行时回填</span>
+  </div>
+  <p class="anim-sub">为什么 dump 早了是空壳，回填后才是完整 dex</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_dex/f00.png" alt="二代壳：方法抽取与运行时回填 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>加固阶段把 code_item 挖空，真指令加密存放</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 加固阶段把 code_item 挖空，真指令加密存放</button>
+    <button type="button" data-i="1">2. App 启动，壳代码先执行并准备解密环境</button>
+    <button type="button" data-i="2">3. 首次调用某方法时触发回填：解密并写回 dex 内存</button>
+    <button type="button" data-i="3">4. ART 此刻才看到完整指令，可解释或编译执行</button>
+    <button type="button" data-i="4">5. 选择回填完成后的窗口 dump，才能拿到完整 dex</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_dex.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["加固阶段把 code_item 挖空，真指令加密存放", "App 启动，壳代码先执行并准备解密环境", "首次调用某方法时触发回填：解密并写回 dex 内存", "ART 此刻才看到完整指令，可解释或编译执行", "选择回填完成后的窗口 dump，才能拿到完整 dex"]</script>
+<p>把 <code>classes.dex</code> 拖进十六进制编辑器，开头八个字节是 <code>dex\n035\0</code>，再往后是 checksum、sha1 签名、<code>file_size</code>、一长串 <code>xxx_ids_size</code> 与 <code>xxx_off</code>。别被这一排数字吓住——<strong>它其实是一张目录</strong>：每个 <code>off</code> 告诉你去文件的哪个位置找那张表，每个 <code>size</code> 告诉你那张表有几行，而表里存的又全是「索引」，指向更早的字符串池和类型池。整个 dex 就是这么一张层层引用的大表，<code>map_off</code> 则是这张表的总目录。</p>
+<p>脱壳之所以不是「把文件拽出来」，正是因为这个结构：壳可以只把 <code>code_item</code> 里的指令数组抽空，header、map、方法表全都留着——文件看起来完全合法，反编译出来却是一堆空方法。你真正要找的，是<strong>运行时被回填之后、CPU 真正执行的那份字节</strong>。</p>
+<h2>跟着一次类加载，看指令从哪冒出来</h2>
+<ol><li><strong>读 header</strong> → 对文件偏移 0 → 取 magic 验版本、<code>file_size</code> 验长度、<code>map_off</code> 找总目录 → 结果：知道这个文件共有哪几段、各段在哪。</li><li><strong>查 `class_defs`</strong> → 对类定义表 → 按类名找到目标那一行，取出 <code>class_data_off</code> → 结果：定位到这个类的方法与字段列表。</li><li><strong>查 `method_ids` → `code_item`</strong> → 对方法索引 → 经 <code>proto_ids</code> 拿签名，经 <code>class_data</code> 拿 <code>code_off</code> → 结果：指向 data 区里真正的 <code>insns</code> 指令数组。</li><li><strong>ART 解析</strong> → 对 <code>DexFile</code> 对象 → 在 <code>DefineClass</code> 时把 <code>code_item</code> 读进内存、校验、准备编译或解释执行 → 结果：字节第一次变成可执行的方法体。</li><li><strong>抽取型壳回填</strong> → 对被抽空的 <code>insns</code> → 在类真正被加载的前一刻解密、写回原位置 → 结果：此刻内存里的 dex 才是完整的，磁盘上那份仍是空的。</li><li><strong>dump 方</strong> → 对这段内存 → 按 <code>file_size</code> 整段抓出、补 header、重算 checksum 与 sha1、整理 map → 结果：一份能反编译的 dex；抓早了只有桩，抓晚了又可能已被改回去。</li></ol>
+<h2>动手：从文件到内存各验一次</h2>
+<div class="code">
+<div class="code-title">离线验结构 + 运行时定位 DexFile</div>
+<pre><code># host：看 header 与各段偏移
+xxd -l 112 classes.dex | head -8                # magic + checksum + 各 off/size
+dexdump -f classes.dex | head -40               # header 概览
+dexdump -d classes.dex | grep -A12 &#x27;Class descriptor.*Lcom/target/SignUtil;&#x27;
+ 
+# device：目标类加载之后再 dump（Frida 侧）
+# dex_dump.js 内容：
+#   Java.perform(function () {
+#     var DexFile = Java.use(&#x27;dalvik.system.DexFile&#x27;);
+#     console.log(&#x27;dex names =&#x27;, DexFile.class.getName());
+#     Java.enumerateClassLoaders({ onMatch: function (l) {
+#       console.log(&#x27;loader =&#x27;, l.toString());
+#     }, onComplete: function () {} });
+#   });
+frida -U -f com.target.app -l dex_dump.js</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>xxd</code> 头八字节是 <code>6465780a 30333500</code>（<code>dex\n035\0</code>），<code>dexdump -f</code> 里 <code>file_size</code> 与实际文件大小一致、<code>map_off</code> 非零，<code>dexdump -d</code> 能打出目标类的 <code>insns</code> 指令而不是空方法体；运行时脚本列出 <code>PathClassLoader</code> / <code>InMemoryDexClassLoader</code> 等加载器。<strong>失败</strong>按三类分：<code>dexdump</code> 报 <code>bad checksum</code>，说明 header 被壳改过或你 dump 的是半成品，先按第 6 拍重算 adler32 与 sha1；指令数组全是 <code>nop</code> / 长度为 0，是典型的抽取型壳，得把触发点挪到「类被加载之后」；而枚举出的加载器里出现 <code>InMemoryDexClassLoader</code>，说明业务 dex 根本没落盘——磁盘上翻不到文件不是工具坏了，是这次本来就该从内存里抓。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>更像哪一代壳</th><th>下一步动作</th></tr></thead><tbody>
+<tr><td>code_item 完整、能直接反编译</td><td>一代 / 未加固</td><td>直接当普通 dex 分析</td></tr>
+<tr><td>insns 全空但方法数正常</td><td>二代：抽取型</td><td>在类加载事件上触发 dump</td></tr>
+<tr><td>大量桩方法 + 巨型 switch</td><td>三代 + VMP/混杂</td><td>先找 dispatcher，再逐段回填</td></tr>
+<tr><td>出现 InMemoryDexClassLoader</td><td>内存加载，无磁盘文件</td><td>从 DexFile 的 begin/size 抓内存</td></tr>
+<tr><td>bad checksum / map 打不开</td><td>header 或 map 被改</td><td>补 file_size、重算 adler32 与 sha1、整理 map_list</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>一份「完全合法」的 dex，可能一个业务方法都没有</strong>。header 的 checksum 对得上、<code>map_list</code> 规规矩矩、类名方法名一应俱全，唯独 <code>code_item.insns</code> 被清零——校验全过，因为壳没破坏结构，只搬走了内容。所以「文件能不能打开」和「有没有拿到真正执行的字节」，在这章里是两件完全不同的事。</div></aside>
+<p>这张「header → class_defs → code_item」的地图，第 05 章 <code>dexElements</code> 数组里插进来的正是这样一份 dex；第 12 章那些 <code>ArtMethod</code>，就是 ART 在解析 <code>class_data</code> 时一个个造出来的；第 16 章做算法分析时，从 <code>equals</code> 回溯到计算函数，最终要读的也还是本章这段 <code>insns</code>。第六部拆企业壳、以及二期规划的 VMP→IR 路线，都会从「怎么在回填之后抓到它」继续往下走。</p>
 </article>
 <div class="pager"><a href="13-binder.html"><span class="dir">上一讲</span>13 Android IPC 相关内容</a><a href="15-scrcpy.html" style="text-align:right"><span class="dir">下一讲</span>15 Android 自动化</a></div>
 </main>

@@ -143,6 +143,40 @@
 <h2>C.10 一页纸的“开始动手”清单</h2>
 <ol><li>装好 adb、frida-tools，跑通 <code>frida-ps -U</code>。</li><li>写一个空脚本，能 <code>send(&#x27;alive&#x27;)</code>。</li><li>对自己写的靶场 App 做一次 hook，改一个方法的返回值。</li><li>用 <code>frida-trace</code> 抓一次 <code>open</code>，看输出。</li><li>把自己 App 的 dex 用 jadx 打开，找到 MainActivity。</li><li>对一个真实 App 做一次“抓输入输出”，记录步骤。</li><li>写一个三组对照的检测脚本，跑一遍。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这七步做完，你就“入门”了。剩下的都是在这条链上加深度——而深度是可以按需补的。</div></aside>
+<h2>桌上摆着一台二手机和三根线</h2>
+<p>桌上摆着一台刚到手的二手机、三根分不清用途的数据线、一台还装着旧版 frida-tools 的电脑。你很想立刻开始做实验，但请先忍住——前面 C.1 给了四个阶段的阶梯，C.10 给了七步动手清单，这一页补的是最容易低估的半天：把环境固定下来并写进文档。多少人卡在「昨天还能跑」上，不是技术不够，是没记下当时到底是哪一版 server、哪一个系统补丁、哪一台机器。</p>
+<p>拿一张纸当环境档案，抬头写日期。每装好一样东西就填一行：设备型号、Android 版本、安全补丁、bootloader 是否解锁、root 方案、frida-server 版本、host 端 frida-tools 版本。填完拍照存档。这半天会在第四周连本带利还给你。</p>
+<h2>从裸机到能 spawn，逐拍搭</h2>
+<ol><li><strong>你</strong> → 对 <strong>bootloader</strong> → 按厂商流程解锁并立刻记下解锁状态 → 结果是能刷镜像，同时明确这台机器从此不再代表「干净设备」，得另备一台做基线。</li><li><strong>你</strong> → 对 <strong>系统镜像</strong> → 刷入与 AOSP 资料对应的固定版本 → 结果是内核符号、BTF、KMI 都有确定参照，不会随 OTA 漂移。</li><li><strong>你</strong> → 对 <strong>root 方案</strong> → 选一套并固定，不中途换 → 结果是 <code>/data/adb</code>、SELinux 策略、挂载视图都稳定，检测实验才可比。</li><li><strong>你</strong> → 对 <strong>frida-server</strong> → 挑与 host 端 <code>frida-tools</code> 完全同版的可执行文件推入 <code>/data/local/tmp</code> → 结果是排掉最常见的一类「能连但脚本不执行」。</li><li><strong>你</strong> → 对 <strong>端口</strong> → <code>adb forward tcp:27042 tcp:27042</code> 并验证 <code>frida-ps -U</code> → 结果是注入层打通，可以开始写第一个 <code>send(&#x27;alive&#x27;)</code>。</li><li><strong>你</strong> → 对 <strong>靶场 App</strong> → 自己写一个带签名校验与反调试的最小工程，用固定 key 签名 → 结果是有了一个完全可控、可反复重装的对照物。</li><li><strong>你</strong> → 对 <strong>环境档案</strong> → 把上面六行连同哈希一起归档 → 结果是四周后你还能精确复现第一次实验。</li></ol>
+<h2>版本矩阵怎么选，别贪多</h2>
+<ul><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 1 周只做启动链与进程模型，验收是「不看资料口述八步」→ 结果是先把地图建起来，不碰工具细节。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 2~3 周写 hook、抓算法，验收是「复现一个 App 的签名」→ 结果是手上有了可证伪的第一次成功。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 4~6 周读内核与模块化源码，验收是「读懂一个 KPM」→ 结果是理解力从用户态抬到 EL1。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 7~8 周做交付与验证矩阵，验收是「八项用例全跑过」→ 结果是从「能跑」升级到「能维护」。</li><li><strong>你</strong> → 对 <strong>版本矩阵</strong> → 只留最老、主流、最新三档，不要每台都测 → 结果是把适配成本压到可控，同时覆盖绝大多数行为差异。</li><li><strong>你</strong> → 对 <strong>实验笔记</strong> → 每次都写「假设 → 操作 → 观察 → 结论」四行 → 结果是失败也能复用，因为它排除了一种可能。</li></ul>
+<h2>可复现实验：环境自检一条龙</h2>
+<div class="code">
+<div class="code-title">新机器到手先跑这七行，全绿才开工</div>
+<pre><code>adb devices                        # 期望：device，不是 offline
+adb shell getprop ro.build.version.release
+adb shell getprop ro.build.version.security_patch
+adb shell getenforce                # 期望：Enforcing（记下来，别急着改）
+adb shell getprop ro.boot.verifiedbootstate
+adb forward tcp:27042 tcp:27042
+frida --version &amp;&amp; frida-ps -U | head -10
+ 
+# 把输出整段贴进环境档案，附日期与设备序列号
+# 版本不一致：先 pip install frida-tools==&lt;server版本&gt; 再重跑</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：七行全部有预期输出，<code>getenforce</code>、<code>verifiedbootstate</code> 两个状态值被明确记下，<code>frida-ps -U</code> 能列出进程，且 host 与 server 版本号字符串完全一致。看到什么算失败：<code>adb devices</code> 显示 <code>unauthorized</code>（去设备端点授权弹窗）、<code>frida-ps</code> 空但 <code>adb shell ps</code> 里 server 明明在（多半是版本不匹配或 SELinux 拦了），或者 <code>verifiedbootstate</code> 是 <code>orange</code> 而你却打算拿它做干净基线——这时候先换机器，别在错的基础上往下走。</p>
+<div class="tbl"><table>
+<thead><tr><th>周次</th><th>目标</th><th>对应章节</th><th>验收动作</th><th>最常见翻车</th></tr></thead><tbody>
+<tr><td>第 1 周</td><td>建启动链与进程模型</td><td>01–08, K01–K05</td><td>口述八步启动链</td><td>一上来就装工具、跳过地图</td></tr>
+<tr><td>第 2–3 周</td><td>能写 hook、能挖算法</td><td>09–16, F01–F04</td><td>复现一个签名并带断言</td><td>hook 没生效却以为分析完了</td></tr>
+<tr><td>第 4–6 周</td><td>懂内核与模块原理</td><td>K06–K08, M01–M07</td><td>读懂一个 KPM 源码</td><td>符号偏移随 OTA 变了没察觉</td></tr>
+<tr><td>第 7–8 周</td><td>能交付可维护方案</td><td>L01–L10, D01–D03</td><td>八项用例全跑并归档</td><td>只测热启动、漏掉冷启动</td></tr>
+<tr><td>穿插</td><td>三组训练营</td><td>T01–T03</td><td>交付物清单逐项打勾</td><td>没写已知限制清单</td></tr>
+<tr><td>全程</td><td>环境固定与回归</td><td>本页 + A05</td><td>同套用例三次结果一致</td><td>升级 server 后没更新档案</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>最省时间的做法，是先花半天把环境固定下来并写进文档，而不是立刻开始做实验</strong>。看起来半天白花了，实际上它买断了后面几十次「昨天还能跑」的排查。逆向里最贵的从来不是算力，是不可复现——一次环境漂移能让你把正确的结论误判成错误，再花两天去修一个根本没坏的东西。</div></aside>
+<p>环境档案合上，就可以按 C.1 的阶梯往上走了。中途卡住时回 A01 用症状倒推层，词看不懂时翻 A02 看旁边的动词，答完自测题去 A04 对照掌握度，真出了「命令都对就是没输出」再去 A05 走五层二分。这几个附录不是书的尾巴，是你每次开工时真正会翻的那几页。</p>
 </article>
 <div class="pager"><a href="a02.html"><span class="dir">上一讲</span>A02 附录 B · 术语表</a><a href="a04.html" style="text-align:right"><span class="dir">下一讲</span>A04 附录 D · 全书自测参考答案</a></div>
 </main>

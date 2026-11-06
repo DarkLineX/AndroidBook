@@ -182,6 +182,39 @@
 // 在回调里调用原方法，比对返回值是否与不 hook 时一致</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>一次普通调用落到了哪里</h2>
+<p>业务代码写下一行 <code>tv.setText(s)</code>，编译成 DEX 后是 <code>invoke-virtual</code>。ART 解释或执行这条指令时，做的事朴素得近乎粗暴：从方法的 <code>ArtMethod*</code> 里取出 <code>entry_point_from_quick_compiled_code_</code>，按调用约定摆好寄存器，然后跳过去。<strong>整个 Java Hook 的全部秘密，就是把这个指针换成别人。</strong>问题在于，换完之后原来的实现去哪了，谁来接住那些散落在寄存器和栈上的参数，以及怎么让 ART 别再用它自己缓存好的那份机器码。</p>
+<p>LSPlant 的答案不是&#x27;改一行指针&#x27;，而是造一整套替身：一个动态生成的桩类、一段汇编蹦床、一份完整的 ArtMethod 副本。四样东西凑齐，才能既拦下调用又安全地调回原方法。少了任何一样，表现都不是&#x27;功能不生效&#x27;，而是随机崩溃——这恰恰是这类框架最难调的地方。</p>
+<h2>一个 ArtMethod 被改成了什么</h2>
+<ol><li><strong>JNI 层 → 目标 ArtMethod</strong>：用 <code>art::ArtMethod::FromReflectedMethod</code> 从反射拿到的 <code>Method</code> 解包出真实地址；结果是拿到一个可写的、长度等于 <code>art::ArtMethod</code> 大小的结构体。</li><li><strong>框架 → 动态桩类</strong>：生成一份极小的 DEX，里面有一个与目标方法签名一致的 stub，经 <code>InMemoryDexClassLoader</code> 加载；结果是回调逻辑有了一个 ART 认得的宿主类。</li><li><strong>框架 → 原结构体</strong>：<code>memcpy</code> 出一份完整的 ArtMethod 作为 backup，把它的 <code>declaring_class_</code> 指向桩类、清掉 native 标志、恢复原入口；结果是原实现有了一个能被反射安全调用的独立身份，GC 不会把两个方法搅在一起。</li><li><strong>框架 → 目标 access_flags_</strong>：给目标加上 <code>kAccNative</code>（及 fast-native 变体），把 quick 入口换成 <code>art_quick_generic_jni_trampoline</code>，<code>entry_point_from_jni_</code> 指向蹦床；结果是 ART 认为这是一个 JNI 方法，乖乖走带完整参数封送的路径。</li><li><strong>蹦床 → 回调分发器</strong>：保存现场后把参数转发进 C++ 分发器，再转给 Java 层的 <code>beforeHookedMethod</code>；结果是最外层的模块拿到 <code>MethodHookParam</code>，可以读参数、改参数、直接返回。</li><li><strong>分发器 → backup</strong>：模块不 <code>returnEarly</code> 时，分发器通过反射包装调用 backup；结果是原方法在正确的调用约定下执行，返回值沿链回传，锁语义与异常行为都还在。</li></ol>
+<p>第 3 拍值得停一下：backup 是<strong>副本</strong>，不是指针。因为目标 ArtMethod 接下来会被改成 native，若只留一个&#x27;旧入口地址&#x27;，ART 查 <code>declaring_class_</code> 时拿到的已经是改过的那份，<code>synchronized</code> 的锁对象、<code>@CriticalNative</code> 的快路径、<code>kAccNative</code> 的参数封送全部会错位。复制整个结构体并给它换一个声明类，才是最省事的正确做法。</p>
+<h2>蹦床逐拍走一遍</h2>
+<ul><li>调用者执行 <code>invoke-virtual</code>，ART 查 <code>ArtMethod</code>，发现 <code>kAccNative</code>，转入 generic JNI trampoline。</li><li>trampoline 按 ABI 把 x0–x7 与栈上参数、以及 <code>ArtMethod*</code> 一起交给 <code>entry_point_from_jni_</code> 处的蹦床。</li><li>蹦床保存 LR 与被调用者保存寄存器，建立可回溯的栈帧，然后跳进 C++ 回调分发器。</li><li>分发器组装 <code>MethodHookParam</code>（<code>thisObject</code> / <code>args</code> / <code>result</code>），按 priority 依次调用 before 回调。</li><li>若无人 <code>setResult</code> / <code>setThrowable</code>，分发器用反射包装调用 backup，把返回值写回 <code>param.result</code>。</li><li>after 回调逆序执行，蹦床恢复寄存器并返回；调用者看到的就是一次&#x27;正常&#x27;的方法调用。</li></ul>
+<p>这也解释了为什么 Java Hook 的开销不是固定的：一次调用走完六拍，比直接跳进 JIT 编译好的机器码多出参数封送、对象分配与至少两次跨层跳转。方法越热，这条增量在 p95 上越显眼——L03 的 deopt 和 L09 的时延侧信道，都是从这里长出来的。</p>
+<h2>用反射把改动照出来</h2>
+<div class="code">
+<div class="code-title">不用读内存，三行 Java 就能看到 hook 后的形态</div>
+<pre><code>// 在目标进程内执行（如模块 handleLoadPackage 里打日志）
+Method m = Target.class.getDeclaredMethod(&quot;sign&quot;, String.class);
+Log.d(&quot;probe&quot;, &quot;native=&quot; + Modifier.isNative(m.getModifiers()));
+Log.d(&quot;probe&quot;, &quot;mods=&quot; + Modifier.toString(m.getModifiers()));
+Log.d(&quot;probe&quot;, &quot;decl=&quot; + m.getDeclaringClass().getName());
+Log.d(&quot;probe&quot;, &quot;loader=&quot; + m.getDeclaringClass().getClassLoader());
+// 干净基线：native=false，decl=Target 自身，loader=App 的 PathClassLoader
+// 被 hook 后：native=true 是 LSPlant 路径的强信号；decl 仍是 Target，不要被它骗了</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：hook 前 <code>native=false</code>，hook 后 <code>native=true</code>，且 <code>loader</code> 仍是 App 的 <code>PathClassLoader</code>。<strong>看到什么算失败</strong>：<code>native=true</code> 但 <code>decl</code> 变成了一个陌生包名——说明你查的是 backup 的包装而不是目标方法；或者 <code>native</code> 一直是 <code>false</code> 而回调却在跑，那多半走的是inline hook / interpreter 的另一条实现，别拿这张表硬套。补一条 <code>adb logcat -s probe:V</code> 抓输出，并留一份未注入时的对照日志，否则 <code>native=false</code> 到底是&#x27;没 hook 上&#x27;还是&#x27;本来就是 native&#x27;，分不清。</p>
+<div class="tbl"><table>
+<thead><tr><th>ArtMethod 字段</th><th>原始作用</th><th>Hook 后的变化</th><th>漏改的后果</th></tr></thead><tbody>
+<tr><td>declaring_class_</td><td>指向声明类（GcRoot）</td><td>backup 改指桩类</td><td>GC 与反射查错类、锁对象错</td></tr>
+<tr><td>access_flags_</td><td>修饰符与 native 标志</td><td>目标加 kAccNative</td><td>ART 走错调用路径，参数错位</td></tr>
+<tr><td>dex_method_index_</td><td>DEX 内方法索引</td><td>backup 保留原值</td><td>栈回溯与异常信息失真</td></tr>
+<tr><td>entry_point_from_quick_compiled_code_</td><td>编译后入口</td><td>换成 JNI trampoline</td><td>hook 完全不生效</td></tr>
+<tr><td>entry_point_from_jni_</td><td>JNI 实现地址</td><td>指向蹦床</td><td>调用落空或直接 SIGSEGV</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>让 hook 生效的那一步，恰恰是把目标方法&#x27;声明成 native&#x27;</strong>。很多人以为框架在偷偷改 Java 字节码，其实它反过来利用了 ART 对 JNI 方法最完备的参数封送逻辑——因为只有这条路径能保证任意签名的方法都能被完整接住。代价是 <code>getModifiers()</code> 会如实汇报，于是&#x27;想藏&#x27;和&#x27;想稳&#x27;在这里天然冲突。</div></aside>
+<p>把这套&#x27;替身 + 蹦床&#x27;的结构与第三部 F06 的 Frida 默认 Hook 对读，会发现两者只是取入口的层次不同：Frida 在 <code>ArtMethod</code> 之上用 <code>implementation</code> 换掉整段行为，LSPosed 在 <code>ArtMethod</code> 之内换掉入口指针。第四部 M03 讲 Text Shadow 时那句&#x27;保留一份可执行原件、把跳转改到影子页&#x27;，与这里的 backup 是同一个思路搬到了 EL1。训练营 T02 要求从一个陌生 App 里挖出算法，第一件事往往就是先照出这张字段表，判断自己面对的是哪一种 hook 形态。</p>
 </article>
 <div class="pager"><a href="l01-zygisk.html"><span class="dir">上一讲</span>L01 LSPosed 总体设计与进程进入</a><a href="l03-hookitem.html" style="text-align:right"><span class="dir">下一讲</span>L03 多模块回调与去优化</a></div>
 </main>

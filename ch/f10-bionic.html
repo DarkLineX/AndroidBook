@@ -187,6 +187,43 @@ register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>第 2 步最关键：如果两条路径数出来的线程数不一致，说明你的“洗链表”把某一方骗过去了，但没有把两方都骗过去——这种不一致本身就是最强的检测信号。</div></aside>
+<h2>现场：改名改不掉的那一列</h2>
+<p>名字改完了，maps 也过滤了，检测方还是一口报出“发现注入”。它没读 <code>/proc/self/task/*/comm</code>，而是顺着 TLS 顶端的 <code>pthread_internal_t</code> 双向链表走了一遍，看到某个节点的 <code>start_routine</code> 落在一片没有文件名的可执行页里。那一列是运行时留给自己看的，不像 comm 那样能随手涂改。</p>
+<p>bionic 把每个线程的元信息放在 TLS 块附近：<code>next</code> / <code>prev</code> 串成全局链表，<code>start_routine</code> 记着“这条线程是怎么被造出来的”，栈基址与大小也在同一片结构里。正常的线程入口一定落在 libc 或某个带路径的 so 内；注入线程的入口落在匿名映射里，这个差异<strong>改名字消除不了</strong>，过滤 maps 也只是让它换个地方露出马脚。</p>
+<h2>把一次枚举拆成七拍</h2>
+<ol><li><strong>检测方 → 对当前线程的 TP 寄存器（aarch64 的 tpidr_el0）→ 读出 TLS 基址</strong> → 结果：拿到自己这条线程的 pthread_internal_t 起点，整套枚举不需要打开任何 /proc 文件。</li><li><strong>检测方 → 对 pthread_internal_t 的 next / prev → 沿全局双向链表逐个走</strong> → 结果：不碰 /proc 就把所有线程列全，连刚创建还没来得及出现在 task 目录里的也算上。</li><li><strong>检测方 → 对每个节点的 start_routine → 与 maps 中带路径的可执行区间比对</strong> → 结果：落在 libc / 业务 so 的判为正常，落在匿名 r-xp 段的当场标记异常。</li><li><strong>检测方 → 对 stack_base / stack_size 或 TLS 里的 decoy 字段 → 查栈落在哪个 VMA</strong> → 结果：贴着 agent 映射分配的栈同样可疑；栈地址分布是改名之后仍存在的硬线索。</li><li><strong>检测方 → 对 tid、comm、join_state → 与 /proc/&lt;tid&gt;/stat 交叉核对</strong> → 结果：名字改得漂亮但 start_routine 没动，两份数据自相矛盾，反而坐实了伪造。</li><li><strong>你的清洗代码 → 对全局链表 → 先备份指针、选没有其它线程在遍历的时机、再摘节点</strong> → 结果：遍历者看不到这条线程；改错一步，崩溃会出现在几分钟后一个完全无关的 pthread_join 里。</li><li><strong>你的清洗代码 → 对 start_routine 与栈 → 让入口指向合法区间、栈落在常规 mmap 区</strong> → 结果：粗查通过；但用入口地址反查 so 的符号表，一个“看起来像 libc 却没有符号”的地址更可疑。</li></ol>
+<h2>复现：把入口地址打出来看</h2>
+<p>先用 Frida 自己观察自己：枚举线程与可执行区间，把 PC / 入口和带文件路径的映射对上号。再用 gdb 或 bionic 的私有接口读 TLS，确认偏移——<strong>这一步千万别硬编码常数</strong>，<code>pthread_internal_t</code> 相对 TP 的位置随 Android 版本变。</p>
+<div class="code">
+<div class="code-title">自查脚本与 TLS 取法</div>
+<pre><code>// tls.js —— 用 Frida 观察自己的线程与区间
+const ranges = Process.enumerateRanges(&#x27;r-x&#x27;);
+send({tid: Process.getCurrentThreadId(), ranges: ranges.length});
+Process.enumerateThreads().forEach(function (t) {
+  send({tid: t.id, pc: String(t.context.pc)});
+});
+ 
+# gdb（能否直接读到系统寄存器取决于 gdb 与目标）
+(gdb) info registers tpidr
+(gdb) x/8gx $tpidr_el0
+ 
+// C 侧更稳的取法：用 bionic 私有接口，别写死偏移
+// #include &lt;bionic/tls.h&gt;（各版本路径与结构不同）
+void* tls = __get_tls();
+// 再按对应版本头文件的定义取 pthread_internal_t</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：脚本枚举出的 tid 与 <code>/proc/self/task</code> 完全对得上，每条线程的 PC 都能在带路径的 r-x 映射里找到归属；清洗后再跑同一套枚举，异常节点数归零，并且连续跑 1000 次线程创建/销毁不崩。<strong>算失败</strong>：枚举结果与 /proc 不一致，说明链表摘漏或摘错；清洗后出现随机 SIGSEGV，多半是有别的线程正在遍历时动了 next/prev；最糟的一种是把 <code>start_routine</code> 改成一个“看着像 libc、反查却查不到符号”的地址——这比不改更容易被判定为伪造，等于自己给检测方递了一条高置信度特征。</p>
+<div class="tbl"><table>
+<thead><tr><th>枚举入口</th><th>能读到什么</th><th>改名能否骗过</th><th>过滤 maps 能否骗过</th></tr></thead><tbody>
+<tr><td>/proc/self/task/*/comm</td><td>线程名</td><td>能</td><td>无关</td></tr>
+<tr><td>/proc/self/task/*/stat</td><td>tid、状态、优先级</td><td>不能</td><td>无关</td></tr>
+<tr><td>TLS 全局 pthread 链表</td><td>start_routine、栈、tid</td><td>不能</td><td>不能</td></tr>
+<tr><td>/proc/self/maps</td><td>栈与映射归属</td><td>无关</td><td>能，但 dev/inode 会露</td></tr>
+<tr><td>ART ThreadList / JNI</td><td>Java 线程对象</td><td>部分</td><td>无关</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>摘链表比留着更危险</strong>。把节点从 pthread_internal_t 全局链表里摘掉，/proc 视角立刻干净，可 bionic 的 join、退出清理、线程池统计仍会沿这条链表走。一旦有别的线程正在遍历，你改的不是“一份数据”，而是别人脚下的一块地板。崩溃往往发生在几分钟后、一个完全无关的 pthread_join 里，看上去像玄学——所以备份、择时、事后校验这三步一步都省不得。</div></aside>
+<p>“结构自洽比字段好看更重要”这条结论，直接通向 LSPosed 部 <strong>L09 侧信道与结构差分检测</strong>：那里不讲单个特征，把线程数、创建时序、栈地址分布直接做成差分；KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 则从内核读 task 结构，连用户态那条被你洗过的链表都不必信——你在 EL0 洗得再干净，EL1 看到的是另一份原始数据。</p>
 </article>
 <div class="pager"><a href="f09-relocation.html"><span class="dir">上一讲</span>F09 Frida 自定义 linker</a><a href="f11-maps.html" style="text-align:right"><span class="dir">下一讲</span>F11 当前工程隐藏与兼容处理总表</a></div>
 </main>

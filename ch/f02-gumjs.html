@@ -168,6 +168,45 @@ C.sign.overload(&#x27;java.lang.String&#x27;, &#x27;int&#x27;).implementation = 
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意：不写 <code>overload</code> 时，Frida 会替换所有重载；如果参数个数不同，回调里 <code>arguments</code> 的长度也会不同。这是“hook 看起来生效但结果错”的常见原因。</div></aside>
+<h2>现场：三行代码，三个时间</h2>
+<p>你写好了 hook.js：第一行 <code>console.log(&#x27;hi&#x27;)</code>，第二行 <code>Interceptor.attach(...)</code>，第三行 <code>Java.perform(...)</code>。回车，<code>hi</code> 几乎立刻打印出来了，可 perform 里的日志过了好一会儿才冒出来，hook 的 <code>onEnter</code> 更是要等用户点一下按钮才触发。同一份文件里的三行代码，居然落在三个完全不同的时间点上。</p>
+<p>问题出在一个很朴素的误会：我们把“脚本加载完了”等同于“脚本里的代码都跑完了”。实际上 <code>create_script</code> 只是把字符串交给 server，<code>load</code> 只是编译，真正执行顶层代码的是一个<strong>独立 JS 线程上的任务</strong>；而 <code>Java.perform</code> 更干脆——它把你的回调排队，然后立刻返回。把这三行按时间轴摊开，很多“hook 挂了却不触发”的悬案当场就能结案。</p>
+<h2>把一次加载拆成七拍</h2>
+<ol><li><strong>host 的 create_script(source) → 对 server → 把源码字符串打包成一条 IPC 消息</strong> → 结果：server 侧多了一个 Script 对象，目标进程里什么都没发生，连一个字节的字节码都还没有。</li><li><strong>host 的 load() → 对 server → 请求编译</strong> → 结果：server 让 agent 把源码交给 QuickJS 或 V8 编译成字节码；语法错误就在这一拍抛，但你的语句依然一行未执行。</li><li><strong>agent 的 JS 运行时 → 对独立 JS 线程 → 投递“执行顶层代码”这个任务</strong> → 结果：JS 线程被唤醒，第一行 <code>console.log(&#x27;hi&#x27;)</code> 输出；这一步是同步发生在 load 调用内部的。</li><li><strong>顶层 Interceptor.attach → 对目标函数地址 → 写入 trampoline 并登记回调</strong> → 结果：native 层 hook 当场生效，注意“注册”是同步的，“回调”不是。</li><li><strong>顶层 Java.perform → 对 VM 的 pending ops 队列 → 把 fn 追加进去并订阅“VM 就绪”通知</strong> → 结果：函数立即返回，调用栈回到顶层代码；fn 里一个字都还没跑。</li><li><strong>JS 线程 → 对 GLib 消息循环 → 进入等待事件的循环</strong> → 结果：此后所有 send、Interceptor 回调、setTimeout、rpc 调用都由这一个循环驱动，谁插队谁先跑。</li><li><strong>目标线程命中 trampoline → 对 JS 线程的消息队列 → 投递一条“回调待执行”</strong> → 结果：JS 线程在下一次循环里才执行你的 onEnter，比真实函数调用整整晚一拍。</li></ol>
+<h2>用三个打点把时序钉死</h2>
+<p>光讲顺序没有说服力，跑一遍下面的脚本，把日志里的时间戳按出现顺序抄下来。顶层、perform 内、首次命中回调，三处打点缺一不可——少了任何一处，你都分不清“没挂上”和“挂上了但没触发”。</p>
+<div class="code">
+<div class="code-title">timing.js 与采集命令</div>
+<pre><code>// timing.js —— 顶层 / perform 内 / 首次回调 / 定时器
+send({tag: &#x27;top&#x27;, ts: Date.now()});
+Java.perform(function () {
+  send({tag: &#x27;perform&#x27;, ts: Date.now()});
+  const A = Java.use(&#x27;android.app.Activity&#x27;);
+  A.onResume.implementation = function () {
+    send({tag: &#x27;first-hit&#x27;, ts: Date.now()});
+    return this.onResume();
+  };
+});
+setTimeout(function () { send({tag: &#x27;timer&#x27;, ts: Date.now()}); }, 0);
+ 
+# 采集到文件，避免 REPL 的输出顺序干扰判断
+frida -U -f com.example.app -l timing.js -o timing.log
+cat timing.log</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：日志顺序稳定是 <code>top</code> → <code>perform</code> → <code>timer</code> → <code>first-hit</code>，<code>timer</code> 虽然写的是 0 毫秒，却排在 <code>perform</code> 之后——因为 <code>perform</code> 的回调与定时器都在同一条消息循环里排队，谁先入队谁先跑。<strong>算失败</strong>：连 <code>top</code> 都没有，说明断在 create_script / load 这一层（回 F01）；有 <code>top</code> 没有 <code>perform</code>，是 ART 未就绪或目标压根没有 JavaVM（纯 native 进程）；<code>perform</code> 有了但 <code>first-hit</code> 永远不来，是类名或 ClassLoader 不对（F03），不是时序问题。</p>
+<div class="tbl"><table>
+<thead><tr><th>动作</th><th>执行位置</th><th>何时发生</th><th>缺失时的判定</th></tr></thead><tbody>
+<tr><td>create_script</td><td>host → server</td><td>只建 Script 对象</td><td>语法/连接问题</td></tr>
+<tr><td>load 编译</td><td>agent JS 线程</td><td>加载时</td><td>语法错误在此抛</td></tr>
+<tr><td>顶层代码</td><td>JS 线程</td><td>load 内同步</td><td>缺 top：脚本层断</td></tr>
+<tr><td>Interceptor.attach 注册</td><td>JS 线程</td><td>顶层执行到即生效</td><td>native hook 未挂</td></tr>
+<tr><td>Java.perform 回调</td><td>JS 线程</td><td>VM 就绪后的某次循环</td><td>缺 perform：ART 未就绪</td></tr>
+<tr><td>setTimeout(0)</td><td>JS 线程</td><td>当前循环末尾</td><td>顺序错即循环理解错</td></tr>
+<tr><td>onEnter 回调</td><td>目标线程投递 → JS 线程</td><td>命中后下一拍</td><td>缺 first-hit：没命中</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<code>Java.perform</code> 这个名字像是“立刻执行”，实现却是“先排队、等通知”。所以 perform 外面的 <code>console.log</code> 几乎总是比里面的代码先打印——不是执行乱序，是两者根本不在同一个时间点上。真想立刻执行要用 <code>Java.performNow(fn)</code>，代价是 VM 没就绪就直接抛异常。同理，<code>Interceptor.attach</code> 同步生效、它的回调异步投递，这两件事被混为一谈，是新手排查时最常见的自欺。</div></aside>
+<p>“编译 → 顶层注册 → 消息循环 → 异步投递”这条链，在 LSPosed 部 <strong>L03 多模块回调与去优化</strong> 会原样复用：多个模块的回调同样排在同一条队列里，谁先注册、谁被去优化，决定的是同一类时序问题；KPM 部 <strong>M04 ARM64 内核单步 Trace</strong> 则是这条链的极简版——单步异常一来就投递事件，连 JS 主循环都省了，但“观测比被观测晚一拍”这个代价依然存在。</p>
 </article>
 <div class="pager"><a href="f01-server.html"><span class="dir">上一讲</span>F01 Frida 整体启动、进程注入与 Zygote 门控</a><a href="f03-java.html" style="text-align:right"><span class="dir">下一讲</span>F03 Frida Java.perform 原理</a></div>
 </main>

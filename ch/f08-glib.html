@@ -184,6 +184,40 @@ cat /proc/self/task/*/comm | sort | uniq -c | sort -rn</code></pre>
 <tr><td>pool-frida</td><td>无</td><td>有（多个）</td><td>合并</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>这张表就是“隐藏工作”的待办清单。逐行处理，处理完再复测——比凭感觉改有效得多。</div></aside>
+<h2>现场：十五字节卖了你</h2>
+<p><code>cat /proc/self/task/*/comm | sort | uniq -c</code> 这条命令花不到两毫秒，不需要 root，不需要任何权限，输出里却端端正正躺着 <code>gum-js-loop</code> 和 <code>pool-frida</code>。检测方什么都没做，只是把每个线程的 comm 读了一遍，就把整个注入现场点名了。更让人憋屈的是：这个字段只有 15 个可用字节，短得几乎写不下什么，却足够写下一个框架名。</p>
+<p>comm 由 <code>pthread_setname_np</code> 或 <code>prctl(PR_SET_NAME)</code> 写入，内核里 <code>TASK_COMM_LEN</code> 是 16，末尾一个字节留给 NUL。它是线程身上最便宜、最不需要权限、也<strong>最不容易“没有”</strong>的字段——你可以没有 maps 里的路径，可以没有 soname，但每个线程一定有个名字。所以改名是隐藏工程的第一层，也仅仅是第一层。</p>
+<h2>把一次改名拆成六拍</h2>
+<ol><li><strong>Gum 的 JS 线程创建 → 对 pthread_setname_np → 写入 gum-js-loop</strong> → 结果：<code>/proc/&lt;pid&gt;/task/&lt;tid&gt;/comm</code> 立刻可读，这条线程从诞生起就带着标签。</li><li><strong>GLib 线程池 → 对 g_thread_new → 给 pool-frida / gmain 这样的前缀</strong> → 结果：又多出两条可枚举的名字，而且命名风格在几乎所有版本里都一致。</li><li><strong>检测方 → 对 /proc/self/task → 遍历所有 tid 读 comm</strong> → 结果：两毫秒拿到全量名单，零权限、零依赖、零误报门槛。</li><li><strong>你的隐藏代码 → 对新建线程 → 在线程函数第一行调 prctl(PR_SET_NAME) 覆盖 comm</strong> → 结果：名字变成业务名，但“创建”与“改名”之间留了一段真实存在的窗口期。</li><li><strong>检测方若高频轮询 → 对同一个 tid → 恰好在窗口期内采一次</strong> → 结果：抓到原名，改名等于白做；采样频率只要压过你的改名前移量就够了。</li><li><strong>更严的检测 → 对 /proc/&lt;tid&gt;/stat、栈地址、start_routine → 与名字交叉核对</strong> → 结果：只改名字不改其余字段，两份数据自相矛盾，反而比不改更容易被判定为伪造。</li></ol>
+<h2>复现：把窗口期量出来</h2>
+<p>改名“看起来对了”不算完，得证明<strong>没有任何一帧能采到原名</strong>。下面先用高频采样把窗口期量化，再给出 C 侧的正确姿势：名字在创建前就算好，线程入口第一行立刻覆盖，别拖到初始化完成以后。</p>
+<div class="code">
+<div class="code-title">高频采样 + 入口第一行改名</div>
+<pre><code># 连采 200 次，统计每种名字出现的帧数
+adb shell &#x27;i=0; while [ $i -lt 200 ]; do
+  cat /proc/$(pidof com.example.app)/task/*/comm | sort | uniq -c;
+  i=$((i+1)); done&#x27; | sort | uniq -c | sort -rn | head -n 20
+ 
+// C 侧：名字用字符数组备好，避开字符串字面量
+static const char biz[] = {&#x27;b&#x27;,&#x27;g&#x27;,&#x27;-&#x27;,&#x27;w&#x27;,&#x27;o&#x27;,&#x27;r&#x27;,&#x27;k&#x27;,&#x27;e&#x27;,&#x27;r&#x27;,0};
+static void* entry(void* arg) {
+  prctl(PR_SET_NAME, (unsigned long)biz, 0, 0, 0);  // 入口第一行
+  /* 之后才做 Gum 初始化、消息循环等正事 */
+  return NULL;
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：200 次采样里一次都没出现 <code>gum</code> / <code>frida</code> / <code>gmain</code>，且 comm 里的名字与这个 App 自己的线程命名风格一致——带业务前缀、长度不超过 15、编号习惯也对得上。<strong>算失败</strong>：采样里哪怕只出现 1 帧原名，就说明改名发生在创建之后、而检测方的轮询压过了你的窗口；或者你把名字改成了 <code>system_server</code>、<code>JDWP</code> 这类系统线程名，在 App 进程里反而更扎眼。还有一种隐蔽失败：<code>pthread_setname_np</code> 传了 16 字节以上的名字，被内核静默截断，最后 comm 里躺着一个不完整的怪词。</p>
+<div class="tbl"><table>
+<thead><tr><th>名字来源</th><th>写入接口</th><th>典型值</th><th>该怎么处理</th></tr></thead><tbody>
+<tr><td>Gum JS 线程</td><td>pthread_setname_np</td><td>gum-js-loop</td><td>创建前算好名，入口第一行覆盖</td></tr>
+<tr><td>GLib 线程池</td><td>g_thread_new</td><td>pool-frida / gmain</td><td>改前缀，或复用 App 已有线程</td></tr>
+<tr><td>ART 系统线程</td><td>prctl</td><td>JDWP / Signal Catcher</td><td>不要仿冒，它们不该出现在 App 里</td></tr>
+<tr><td>未改名的默认线程</td><td>pthread 无改名</td><td>Thread-12</td><td>一律覆盖，一眼假</td></tr>
+<tr><td>应用业务线程</td><td>业务自己写</td><td>bg-worker / net-3</td><td>照抄这套前缀与编号习惯</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>改得越像系统，越容易被抓</strong>。<code>system_server</code>、<code>JDWP</code>、<code>Signal Catcher</code> 这些名字确实“正规”，但它们本该出现在 system_server 或 ART 的固定线程上；一个 App 进程里突然冒出 <code>JDWP Observer</code>，等于自己举手。正确的目标是“像这个 App 自己会起的名字”——包括前缀、编号习惯、甚至大小写，而不是“像 Android”。改名只是让粗查过不去，线程数量、创建时序、栈大小仍是线索。</div></aside>
+<p>名字只是第一层。LSPosed 部 <strong>L09 侧信道与结构差分检测</strong> 会把线程数、创建时序、栈地址分布一起纳入差分，正好接上本章“改名之后还剩什么”这个问题；KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 则从内核侧直接读 task 结构与调试状态，连 <code>/proc</code> 都不用遍历——你在用户态把 comm 洗得再干净，EL1 看到的仍是原始创建记录。</p>
 </article>
 <div class="pager"><a href="f07-follow.html"><span class="dir">上一讲</span>F07 Frida Stalker 原理与修复</a><a href="f09-relocation.html" style="text-align:right"><span class="dir">下一讲</span>F09 Frida 自定义 linker</a></div>
 </main>

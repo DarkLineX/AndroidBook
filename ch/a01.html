@@ -191,6 +191,42 @@ bpftool btf dump file /sys/kernel/btf/vmlinux</code></pre>
 <tr><td>能解释 KPM</td><td>说清双 PFN 与三本账</td></tr>
 <tr><td>能验证</td><td>给出八项用例的判定标准</td></tr>
 </tbody></table></div>
+<h2>凌晨两点，你不想翻六十五章</h2>
+<p>凌晨两点，实验又崩了。终端里一行红字，你明知道这本书里讲过，但完全想不起在第几章。这时候按目录从头翻是最慢的做法——六十五章、八万字，等你翻到那一页，思路早凉了。真正需要的是一张按「症状」而不是按「章节」组织的卡：先判断这件事发生在哪一层，再决定敲哪条命令。前面 A.1 到 A.4 已经把关键结论按主题压缩过一遍，这一页补的是反过来用的那一条路：从现象倒推层。</p>
+<p>把这张卡打印出来贴在显示器边上。它不解释原理，只回答三个问题：现在最可能是哪一层、第一条该敲的命令是什么、看到什么算排除。原理留给正文，卡只负责让你在两分钟内从「不知道」走到「有方向」。</p>
+<h2>五层倒推，一拍一拍定位</h2>
+<ol><li><strong>你</strong> → 对 <strong>现象</strong> → 先问「进程还在吗、adb 还通吗」→ 结果是先排除连接层；这一层不过，后面所有判断都建立在空基础上。</li><li><strong>你</strong> → 对 <strong>连接层</strong> → 敲 <code>adb devices</code> 与 <code>adb shell getenforce</code> → 结果是确认设备在线、SELinux 状态，顺手把「权限类」问题从候选里划掉或坐实。</li><li><strong>你</strong> → 对 <strong>注入层</strong> → 敲 <code>frida-ps -U</code>，再让脚本 <code>send(&#x27;alive&#x27;)</code> → 结果是区分「server 没起 / 端口没转发 / 脚本根本没执行」三种完全不同的故障。</li><li><strong>你</strong> → 对 <strong>运行时层</strong> → 打印 ClassLoader 与目标类名，确认类真的被加载 → 结果是排掉最隐蔽的一类：<code>Java.use</code> 找错了加载器。</li><li><strong>你</strong> → 对 <strong>内核层</strong> → 读 <code>dmesg</code> 里新增的 avc 与错误码 → 结果是 <code>-ENOENT</code> / <code>-EINVAL</code> / <code>-ENOSPC</code> 各自指向符号、参数、槽位，不用猜。</li><li><strong>你</strong> → 对 <strong>结论</strong> → 把命中的那一层写进实验笔记 → 结果是下次同类故障直接跳到那一步，卡越用越短。</li></ol>
+<h2>三条命令把层分出来</h2>
+<div class="code">
+<div class="code-title">三分钟定位脚本（host 端，逐条看输出）</div>
+<pre><code># 1. 连接层：设备在线 + SELinux 状态
+adb devices &amp;&amp; adb shell getenforce
+ 
+# 2. 注入层：server 活着 + 脚本真的执行了
+adb forward tcp:27042 tcp:27042
+frida-ps -U | head -20
+frida -U -f com.example.range -l probe.js --no-pause  # probe.js 首行 send(&#x27;alive&#x27;)
+ 
+# 3. 内核层：只读地看最新日志，别一上来改代码
+adb shell dmesg | tail -40
+adb shell &#x27;dmesg | grep -i avc | tail -20&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：三条命令里恰好有一条给出明确异常（设备 offline、<code>frida-ps</code> 空、<code>alive</code> 缺失、<code>dmesg</code> 有新的 avc），你据此把故障锁在单层，并且能用一句话说出「所以下一步该修哪儿」。看到什么算失败：三条全绿但现象照旧——那说明问题在目标逻辑本身（hook 了错的重载、方法被 JIT 内联、dump 时机不对），此时别再往上查环境，直接回到 A05 的排错手册按 Hook 类逐项走。</p>
+<div class="tbl"><table>
+<thead><tr><th>症状（倒推入口）</th><th>最可能的层</th><th>第一条命令</th><th>排除标准</th></tr></thead><tbody>
+<tr><td>adb 设备 offline</td><td>连接层</td><td>adb kill-server &amp;&amp; adb devices</td><td>状态变 device</td></tr>
+<tr><td>frida-ps -U 无输出</td><td>注入层</td><td>adb forward + frida-ps -U</td><td>能列出目标 pid</td></tr>
+<tr><td>脚本加载但无回调</td><td>运行时层</td><td>send(&#x27;alive&#x27;) + 打印 ClassLoader</td><td>alive 出现且类命中</td></tr>
+<tr><td>偶发崩溃 / SIGILL</td><td>运行时层</td><td>缩小 hook 范围、查 BTI 对齐</td><td>不再复现</td></tr>
+<tr><td>模块加载 -ENOENT</td><td>内核层</td><td>grep EXPORT_SYMBOL / kallsyms</td><td>符号存在且导出</td></tr>
+<tr><td>加载后立即崩</td><td>内核层</td><td>先只做只读观测</td><td>只读路径稳定</td></tr>
+<tr><td>冷启动才复现</td><td>工程层</td><td>force-stop 后完整重跑</td><td>三次结果一致</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>速查表的价值不在「快」，在「逼你先分类再动手」</strong>。人一着急就会同时改三处，改完现象变了却不知道是哪一处起的作用；一张按层组织的卡强迫你一次只排除一层，于是每次失败都真的减少了搜索空间。快是副产品，可证伪才是主功能。</div></aside>
+<h2>一页纸的携带版</h2>
+<ul><li><strong>启动链</strong>：boot.img 五段 → AVB → init → zygote → App → linker，卡住就问「断在第几棒」。</li><li><strong>Hook 三型</strong>：GOT 只拦跨 so、Inline 要顾指令边界与 BTI、Java hook 记得 deopt 内联。</li><li><strong>注入六观测面</strong>：状态 / 映射 / 账本 / 线程 / 字符串 / 时序；差分检测看的是它们之间的关系。</li><li><strong>内核三件</strong>：cred 是权限真相、所有改动落到 PTE、KASLR 只平移不改相对偏移。</li><li><strong>验证八项</strong>：基本 Hook、冷启动、full GC、时延、回归、哈希、备份、已知限制清单。</li><li><strong>三条原则</strong>：先建模型再记细节；每个结论配一个可证伪实验；改完必须用同一套用例回归。</li></ul>
+<p>这张卡和 A02 的术语表是一对：卡告诉你该敲哪条命令，术语表告诉你日志里那个缩写到底指结构、动作还是状态。真到了「命令都对、就是没输出」的时候，直接翻到 A05——那里把这张卡摊开成了五层二分的排错手册。</p>
 </article>
 <div class="pager"><a href="t03.html"><span class="dir">上一讲</span>T03 训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a><a href="a02.html" style="text-align:right"><span class="dir">下一讲</span>A02 附录 B · 术语表</a></div>
 </main>

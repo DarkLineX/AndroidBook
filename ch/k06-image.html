@@ -191,6 +191,50 @@ struct btf_member {
 <tr><td>读出来的值是否合理</td><td>中</td><td>低</td></tr>
 <tr><td>改值看行为是否变化</td><td>高</td><td>中</td></tr>
 </tbody></table></div>
+<h2>换一颗内核，一行偏移打崩整个模块</h2>
+<p>同一份内核模块，在 5.10 的设备上跑得好好的，换到 5.15 一加载就把进程打崩。差异只有一行：<code>task_struct</code> 里插了一个新字段，<code>cred</code> 的偏移往后挪了 8 字节。你的代码还在按老偏移读，读出来的是一个指向别处的指针。写内核代码最贵的一课，不是算法，是<strong>结构体对不上</strong>。</p>
+<p>BTF 就是给这件事兜底的：内核把自己身上每个结构体的名字、成员名、成员偏移，压缩成一张类型表，随运行内核一起挂在 <code>/sys/kernel/btf/vmlinux</code>。它不是外部文件，不会版本错配——因为它就是这颗内核编译时自己生成的那一份。</p>
+<h2>从 DWARF 到 CO-RE，一张类型表的五拍</h2>
+<ol><li><strong>`pahole`</strong> 对 <strong>带 DWARF 的 vmlinux</strong> 做去重与裁剪：丢掉局部变量、行号、宏，只保留结构体、联合体、枚举、typedef 与函数原型的类型图 → 结果：几十 MB 的调试信息压成几 MB 的 <code>.BTF</code> ELF section。</li><li><strong>链接与启动</strong> 对 <strong>`/sys/kernel/btf/vmlinux`</strong> 暴露这张表：内核把 BTF 数据挂成只读的二进制属性 → 结果：用户态按字节读就能拿到当前内核的类型图，与 KASLR 的 slide 完全无关。</li><li><strong>`bpftool btf dump ... format c`</strong> 对 <strong>类型表</strong> 反向生成头文件：产出只含类型定义、不含任何宏的 <code>vmlinux.h</code> → 结果：编译 CO-RE 程序时不必再去找对应版本的内核头文件。</li><li><strong>libbpf 的 CO-RE 重定位</strong> 对 <strong>字段访问</strong> 改写法：代码里写 <code>task-&gt;cred</code>，加载器查 BTF 拿到这个成员在结构体里的偏移，再填进实际指令 → 结果：换内核版本时<strong>不用重编译</strong>，只重算一次重定位。</li><li><strong>运行期兜底</strong> 对 <strong>失败路径</strong> 降级：目标内核没 BTF 就退回编译期 <code>offsetof</code> 或特征扫描，并把探测结果写进日志 → 结果：工具不至于直接崩，而是明确报出缺哪份类型信息。</li></ol>
+<p>第 1 拍要划清界限：BTF <strong>不含</strong>函数局部变量、行号、宏和常量值。它能回答 cred 在偏移多少、是什么类型，回答不了这个常量是多少或这行源码在哪。要那些得回到 DWARF 与 vmlinux；要常量，通常还得靠 K07 的符号与特征扫描。把 BTF 当成万能调试信息，是第二个常见误会。</p>
+<h2>取一个字段偏移的三条路和一个锚点</h2>
+<ol><li><strong>编译期 `offsetof`</strong> 对 <strong>对应版本头文件</strong> 求值：编译时就把偏移烘进指令 → 结果：最快最准，但换一颗内核就全错，必须一版一编。</li><li><strong>BTF 运行期</strong> 对 <strong>类型表</strong> 按名字查询：拿到 <code>BTF_KIND_STRUCT</code>，遍历 <code>btf_member</code> 读 <code>offset</code> → 结果：版本无关；注意位域成员的 offset 高位还打包了位偏移，得先拆再用。</li><li><strong>符号锚点</strong> 对 <strong>`init_task`</strong> 取地址：<code>/proc/kallsyms</code> 或 <code>nm -n vmlinux</code> 拿到静态链接地址，再叠加 K07 的 slide → 结果：在没有 BTF 的内核里也能读出实际字段值，反推布局。</li><li><strong>特征扫描</strong> 对 <strong>剥了符号的 Image</strong> 找指令模式：定位 <code>commit_creds</code> 之类的调用点，从立即数反推访问偏移 → 结果：最通用，但必须用上一步的结果做交叉验证，否则会把相似指令认错。</li><li><strong>三层探测</strong> 对 <strong>工具启动流程</strong> 收口：先探测 BTF 是否存在，再探测关键符号，最后决定走哪条路并写日志 → 结果：任何一层失败都能优雅降级，而不是拿一个野指针去解引用。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>信息源</th><th>能回答什么</th><th>回答不了什么</th><th>随内核版本变吗</th></tr></thead><tbody>
+<tr><td>/sys/kernel/btf/vmlinux</td><td>结构体成员名、类型、偏移、函数原型</td><td>局部变量、行号、宏、常量值</td><td>随运行内核生成，天然自洽</td></tr>
+<tr><td>vmlinux（带符号 ELF）</td><td>全部符号地址与 DWARF 完整调试信息</td><td>当前运行内核的 slide</td><td>必须版本精确匹配</td></tr>
+<tr><td>System.map</td><td>符号到静态链接地址</td><td>结构体布局</td><td>一版一份，错版即错</td></tr>
+<tr><td>DWARF</td><td>变量、行号、内联、调用帧</td><td>轻量（体积太大，一般不带上机）</td><td>与 vmlinux 同版</td></tr>
+<tr><td>Image（剥离符号）</td><td>指令字节序列</td><td>任何名字与类型</td><td>只能靠特征扫描</td></tr>
+<tr><td>运行期 /proc/kallsyms</td><td>当前符号的运行地址</td><td>字段偏移，因为不含类型信息</td><td>每次开机随 slide 变</td></tr>
+</tbody></table></div>
+<h2>从内核身上直接把偏移读出来</h2>
+<div class="code">
+<div class="code-title">动手：BTF 优先，没 BTF 就退回符号</div>
+<pre><code># 1. 先确认这颗内核有没有 BTF
+ls -l /sys/kernel/btf/vmlinux &amp;&amp; cat /proc/sys/kernel/kptr_restrict
+# 成功：文件存在且非空 =&gt; 走 BTF 路线；失败：文件不存在 =&gt; 跳到第 4 步
+ 
+# 2. 按名字查结构体，肉眼看成员与偏移
+bpftool btf dump file /sys/kernel/btf/vmlinux format raw | grep -A40 task_struct | head -45
+# 成功：看到 STRUCT task_struct 后跟一串 member，每行带 type_id 与 offset
+# 失败：command not found =&gt; 换工具路径，或改用 pahole -C task_struct vmlinux
+ 
+# 3. 生成一份与当前内核完全对齐的头文件
+bpftool btf dump file /sys/kernel/btf/vmlinux format c &gt; /data/local/tmp/vmlinux.h
+grep -n &#x27;cred;&#x27; /data/local/tmp/vmlinux.h | head -5
+# 成功：头文件里成员顺序与运行内核一致，用它编译不再需要内核源码树
+ 
+# 4. 没有 BTF 时的退路：看 ELF section 与符号
+readelf -S vmlinux | grep -i -E &#x27;btf|debug_info&#x27;
+nm -n vmlinux | grep -E &#x27; (init_task|commit_creds)$&#x27;
+# 成功：拿到静态链接地址；与 /proc/kallsyms 的运行地址相减即得 slide（见 K07）
+# 失败：nm 报 no symbols =&gt; 拿到的是 Image，只能做特征扫描</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>第 3 步生成的 <code>vmlinux.h</code> 值得单独说一句：它没有 <code>#include</code>、没有宏、没有任何配置开关，因此不同内核生成的头文件不能混用，但同一颗内核上它可以完全替代几十个内核头文件。判断它有没有用对，最省事的办法是拿它里面的 <code>cred</code> 位置，和 <code>init_task</code> 里读出来的实际值对一次。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>结构体字段被重排之后，名字还在，偏移变了；按偏移硬编码的代码连报错都不会有</strong>。它只会安静地读出一个合法但错误的指针，然后在几十条指令之后崩在毫不相干的地方。所以能读 BTF 就不要写死偏移，这是让崩溃点靠近病因的唯一办法。另一处反直觉：BTF 里存的全是<strong>相对偏移</strong>，天生不受 KASLR 影响——随机化改的是基址，不是类型图。</div></aside>
+<p>把这条结论带走：<strong>跨版本能不能活，取决于你的偏移是算出来的还是抄来的</strong>。第四部 M01 讲 KPM 装载与生命周期时，第一层能力探测就是查这颗内核有没有 BTF、有哪些符号；M03 做 ARM64 指令 Hook 要改 <code>cred</code> 之前，也得先按这里的方法确认字段位置；第五部 L08 处理 Android 14/16 分层适配、L09 做结构差分检测，用的是同一套按名字查、按版本降级的思路。下一讲 K07 会把这张类型表接上真实运行地址。</p>
 </article>
 <div class="pager"><a href="k05-printk.html"><span class="dir">上一讲</span>K05 Linux 内核调试与追踪</a><a href="k07-kallsyms.html" style="text-align:right"><span class="dir">下一讲</span>K07 内核符号、KASLR 与运行地址</a></div>
 </main>

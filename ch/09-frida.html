@@ -181,6 +181,73 @@ BTI j    // 只允许 jump 类型
 <tr><td>50+ 个</td><td>低</td><td>差</td><td>差</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>经验值：一个模块的 hook 数量控制在 10 个以内，超过就要考虑“是不是用错了方法”——很多时候你想 hook 50 个点，实际上只需要 hook 1 个汇聚点。</div></aside>
+<h2>把一次调用掰弯的两种手法</h2>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_hook">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Inline Hook：把前两条指令换成一个跳转</span>
+  </div>
+  <p class="anim-sub">备份 → 覆盖 → 中转 → 回调 → 回原路径，五帧看完整过程</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_hook/f00.png" alt="Inline Hook：把前两条指令换成一个跳转 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>CPU 顺序执行原函数，一切正常</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. CPU 顺序执行原函数，一切正常</button>
+    <button type="button" data-i="1">2. 把入口两条指令替换为 b trampoline</button>
+    <button type="button" data-i="2">3. 调用方照常 call 0x1000</button>
+    <button type="button" data-i="3">4. PC 进入 trampoline，保存现场并执行 hook 回调</button>
+    <button type="button" data-i="4">5. 执行备份的原指令后跳回 0x1008，函数继续</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_hook.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["CPU 顺序执行原函数，一切正常", "把入口两条指令替换为 b trampoline", "调用方照常 call 0x1000", "PC 进入 trampoline，保存现场并执行 hook 回调", "执行备份的原指令后跳回 0x1008，函数继续"]</script>
+<p>把镜头贴在 <code>libtarget.so</code> 里那条 <code>BL</code> 指令上。它要调 <code>strcmp</code>，CPU 顺着 PLT 跳进 GOT 表取地址，取到的是 <code>libc.so</code> 里真正的实现——这条路径走了几十纳秒，稳定得像钟表。现在有人在 GOT 那个表项里换了一个地址：同样的 <code>BL</code>、同样的 PLT、同样的取数动作，取出来的却变成了另一个函数。<strong>一条指令没改，行为已经全变了</strong>。</p>
+<p>但这条捷径有个硬边界：只有「跨 so、经过 PLT 的调用」才走 GOT。目标 so 内部自己调自己的函数，编译器直接生成一条相对跳转，根本不查表。想连这种调用也拦住，就得把函数开头的几条指令抠掉、换成一条跳板——代价是动了代码段。两种手法，两种痕迹，选哪个取决于你要骗过谁。</p>
+<h2>GOT 表项被换掉的那一拍</h2>
+<ol><li><strong>调用方</strong> → 对 <code>.plt</code> 里的桩 → 执行 <code>BL</code> 跳到桩上 → 结果：控制流进入 PLT，还不知道最终去哪。</li><li><strong>PLT 桩</strong> → 对 <code>.got.plt</code> 里的表项 → 间接跳转，取出里面存的地址 → 结果：正常情况下取出 <code>strcmp</code> 的真实地址。</li><li><strong>hook 方</strong> → 对目标 so 的 <code>.dynamic</code> → 从 <code>DT_JMPREL</code> / <code>DT_PLTGOT</code> 算出表项位置，按符号名匹配到 <code>strcmp</code> 那一项 → 结果：拿到一个可写的指针槽位。</li><li><strong>hook 方</strong> → 对该表项所在页 → <code>mprotect</code> 临时开写，备份旧值，写入自己的桩函数地址，再把权限改回去 → 结果：代码段一个字节没动，CRC 完全不变。</li><li><strong>桩函数</strong> → 对原函数 → 用完参数后拿备份的旧地址调回去 → 结果：调用方拿到「看起来正常」的返回值，中间已经被看过一遍。</li><li><strong>检测方</strong> → 对 <code>/proc/self/smaps</code> → 看那一页的 <code>Private_Dirty</code> → 结果：权限改回去了，但 COW 已经发生，页不再是共享的文件映射。</li></ol>
+<p>现代 Android 上还有一层麻烦：多数系统库带 <code>-z now</code> / full RELRO，GOT 在加载时就被解析完并设成只读。所以第 4 步的 <code>mprotect</code> 不是可选的优化，而是必经的一步——<strong>这恰好把「改数据」这件事也变成了可观测事件</strong>。</p>
+<h2>Inline：把函数开头改成一条跳板</h2>
+<ol><li><strong>hook 方</strong> → 对目标函数首地址 → 反汇编前 16 字节，确认覆盖了哪些完整指令（ARM64 定长 4 字节）→ 结果：知道要搬走几条指令、有没有 PC 相对寻址需要修正。</li><li><strong>hook 方</strong> → 对一块新分配的 trampoline → 写入被搬走的原始指令，末尾接一条跳回 <code>原地址+覆盖长度</code> 的长跳转 → 结果：原函数逻辑被完整保留在别处。</li><li><strong>hook 方</strong> → 对目标代码页 → <code>mprotect</code> 成 RWX，一次原子写入 <code>LDR x16, #8; BR x16; &lt;桩地址&gt;</code>（或近距离用 <code>B</code>）→ 结果：入口被替换，同 so 内部的直接调用也被拦住。</li><li><strong>hook 方</strong> → 对指令缓存 → 调 <code>__builtin___clear_cache</code> 清 I-Cache / D-Cache 一致性 → 结果：别的核不会继续执行旧字节。</li><li><strong>桩函数</strong> → 对调用者 → 处理参数与返回值，需要时经 trampoline 调回原逻辑 → 结果：hook 生效。</li><li><strong>检测方</strong> → 对 <code>.text</code> → 定期算 CRC 或反汇编比对 → 结果：字节一变就露馅，或落到权限变化这条线上。</li></ol>
+<h2>动手：亲眼看见字节被改掉</h2>
+<div class="code">
+<div class="code-title">inline_probe.js —— 挂钩前后各读一次函数开头</div>
+<pre><code>// frida -U -f com.target.app -l inline_probe.js
+const fn = Module.findExportByName(&#x27;libtarget.so&#x27;, &#x27;check&#x27;);
+if (fn === null) throw new Error(&#x27;so 还没加载，改用 spawn 门控或 Module.load&#x27;);
+ 
+console.log(&#x27;before =&#x27;, hexdump(fn, { length: 16, ansi: false }));
+ 
+Interceptor.attach(fn, {
+  onEnter(args) { console.log(&#x27;hit, arg0 =&#x27;, args[0]); },
+  onLeave(ret) { ret.replace(1); }   // 把返回值强制改成 1
+});
+ 
+console.log(&#x27;after  =&#x27;, hexdump(fn, { length: 16, ansi: false }));
+ 
+// 另一路：量化 GOT hook 的 COW 痕迹（另开终端）
+# adb shell &#x27;cat /proc/$(pidof com.target.app)/smaps&#x27; | grep -A20 libtarget.so | grep Private_Dirty</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>before</code> 与 <code>after</code> 的十六进制不同（ARM64 上开头通常变成一段 <code>LDR</code>/<code>BR</code> 跳板），触发目标逻辑时打印 <code>hit, arg0 = ...</code>，且 <code>ret.replace(1)</code> 让原本失败的校验通过。<strong>失败</strong>按三类分流：<code>Module.findExportByName</code> 返回 null，说明 so 还没被 <code>dlopen</code>，这是时机问题不是语法问题，改走 spawn 门控或挂 <code>android_dlopen_ext</code>；抛 <code>unable to intercept function</code>，多半是函数太短（不足一个跳板长度），换 <code>Interceptor.replace</code> 或找更外层的调用点；<code>before == after</code> 也不能当成功——说明这次走的是别的重定向方式，此时以 <code>hit</code> 是否打印为唯一判据。最后那行 <code>Private_Dirty</code> 若从 0 涨到 4KB，就是 GOT 被改写的旁证。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>最可能的原因</th><th>该查哪里</th></tr></thead><tbody>
+<tr><td>before ≠ after，且 hit 打印</td><td>inline hook 已落地</td><td>成功；顺手记下跳板字节</td></tr>
+<tr><td>findExportByName 返回 null</td><td>so 未加载（时机）</td><td>挂 android_dlopen_ext / 用 spawn 门控</td></tr>
+<tr><td>unable to intercept function</td><td>函数体短于跳板长度</td><td>换 Interceptor.replace 或外层调用点</td></tr>
+<tr><td>代码段 CRC 没变，行为却变了</td><td>走的是 GOT / 数据段路线</td><td>查 smaps 的 Private_Dirty 与页权限</td></tr>
+<tr><td>权限已恢复但仍被检出</td><td>COW 私有脏页不可逆</td><td>Private_Dirty、页不再共享</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>把 `mprotect` 的权限改回去，并不能把痕迹抹掉</strong>。文件 backed 的 r-x 页一旦被写过，就因写时复制变成了私有脏页——权限字段恢复了，<code>smaps</code> 里的 <code>Private_Dirty</code> 却永远多出那一页。检测方甚至不用比对字节，只要数「有几页本不该是脏的」就够了。</div></aside>
+<p>这三种痕迹会在后面反复出现：第 10 章讲 frida-server 怎么把 <code>Interceptor</code> 塞进目标进程，用的就是本章的 inline 路线；第 11 章把 CRC、页权限、私有脏页列成六个观测面；第 12 章会把同样的「换一个入口」思路从 native 搬到 ART——只不过那里被换掉的不是 GOT 表项，而是 <code>ArtMethod</code> 里的 <code>entry_point_from_quick_compiled_code</code>。</p>
 </article>
 <div class="pager"><a href="08-fork.html"><span class="dir">上一讲</span>08 Android zygisk 原理</a><a href="10-frida.html" style="text-align:right"><span class="dir">下一讲</span>10 Android frida 源码讲解</a></div>
 </main>

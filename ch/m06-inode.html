@@ -194,6 +194,82 @@ void* sec = f-&gt;f_security;
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>如果第 3 步成功但 dmesg 里仍有 denied，说明你的改动“绕过了检查”而不是“通过了检查”——这两种在检测方眼里是完全不同的信号。</div></aside>
+<h2>一次 open 被拒之前，内核已经问过五遍</h2>
+<p>dmesg 里滚出一行 <code>avc: denied</code>，用户态只拿到一个轻描淡写的 <code>EACCES</code>。把镜头拉到 EL1：DAC 先按 uid/gid/mode 过了一遍，然后 LSM 钩子从 <code>current_cred</code> 取出主体域，从 <code>inode</code> 的安全 blob 取出客体类型，补上 class 与权限集合，最后在 AVC 缓存里查一次。<strong>五个要素排成一列，缺一个都判不出来</strong>——而日志里那一行，只是这列走完之后留下的尾注。</p>
+<p>也正因为判定发生在 EL1，用户态能做的只有“换一个身份去问”，内核态却能看见“问的是什么、按哪条规则判的、判定结果缓存在哪”。<code>f_security</code>、<code>FD__USE</code>、<code>SO_PEERSEC</code> 这些扩展点，本质上都是在这条判定链上补一次检查或换一个取值。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_selinux">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">SELinux：一次 open 背后的五要素判定</span>
+  </div>
+  <p class="anim-sub">主体域 × 客体类型 × 类别 × 权限 → allow / deny</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_selinux/f00.png" alt="SELinux：一次 open 背后的五要素判定 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>取出进程的 SELinux 域（主体）</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 取出进程的 SELinux 域（主体）</button>
+    <button type="button" data-i="1">2. 取出目标的类型与 SID（客体）</button>
+    <button type="button" data-i="2">3. 确定操作类别与权限集合</button>
+    <button type="button" data-i="3">4. 查 AVC 缓存与 policy 规则</button>
+    <button type="button" data-i="4">5. 命中则放行，未命中拒绝并记 avc_denied</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_selinux.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["取出进程的 SELinux 域（主体）", "取出目标的类型与 SID（客体）", "确定操作类别与权限集合", "查 AVC 缓存与 policy 规则", "命中则放行，未命中拒绝并记 avc_denied"]</script>
+<h2>一次判定的逐拍拆解</h2>
+<ol><li><strong>系统调用 → 对 inode</strong>：先走 DAC，按 <code>i_uid</code>/<code>i_gid</code> 与 mode 位判断，结果是不过就直接返回 <code>EACCES</code>，根本进不了 SELinux；很多“以为是 SELinux 的问题”其实停在这一步，日志里连一行 avc 都没有。</li><li><strong>LSM 钩子 → 对 current</strong>：从 <code>cred</code> 与 task 的 security blob 取主体 SID，得到 <code>scontext</code>（如 <code>u:r:untrusted_app:s0</code>），结果是判定有了“谁在操作”；SID 是策略编译时分配的 32 位整数，同一域在不同设备上数值可能不同。</li><li><strong>LSM 钩子 → 对 inode / file / socket</strong>：取客体 SID、类型与 <code>tclass</code>（file、dir、sock_file…），结果是判定有了“对什么操作”；<code>file-&gt;f_security</code> 存的是打开那一刻的快照，与 inode 当前的 xattr 并不总是同步。</li><li><strong>AVC → 对 (ssid, tsid, tclass, requested) 四元组</strong>：先查缓存，未命中再查 policy 的 allow 规则，结果是生成 granted 位图；未命中且非 permissive 时调 <code>avc_denied</code> 写审计日志并拒绝，命中则把结果缓存下来供下次用。</li><li><strong>扩展点 → 对 f_security / FD__USE / SO_PEERSEC</strong>：在 fd 传递、跨进程 socket 取对端上下文时补一次 use 判定与长度探测，结果决定 fd 能否被对方使用、对端上下文能否被完整读出；长度语义按“先取长度、再分配、再取值”三段写，最稳。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>现场对象</th><th>内核结构</th><th>取值方式</th><th>常见误判</th></tr></thead><tbody>
+<tr><td>task SID</td><td>task_struct-&gt;security / cred</td><td>主体域 scontext</td><td>把 SID 当跨设备稳定标识</td></tr>
+<tr><td>inode SID</td><td>inode-&gt;i_security</td><td>security.selinux xattr</td><td>setxattr 后仍读旧缓存</td></tr>
+<tr><td>file SID</td><td>file-&gt;f_security</td><td>打开时快照</td><td>以为等于 inode 当前 SID</td></tr>
+<tr><td>socket SID</td><td>sk_security</td><td>SO_PEERSEC</td><td>把返回值一律当实际长度</td></tr>
+<tr><td>AVC 结论</td><td>avc_denied 日志</td><td>dmesg 四要素</td><td>只看 EACCES，忽略 permissive=1</td></tr>
+<tr><td>FD__USE</td><td>fd 使用检查点</td><td>fd 传递路径</td><td>漏检导致凭 fd 绕过判定</td></tr>
+</tbody></table></div>
+<h2>两条路线，痕迹落在不同的地方</h2>
+<p>想在内核侧让一次被拒的操作放行，通常只有两种做法。第一种是改判定结果：在 <code>avc_denied</code> 路径或 LSM 钩子里直接返回允许，见效快，但会在审计里留下“策略本应拒绝却放行了”的异常，而且 AVC 缓存里那个 granted 位图与 policy 对不上，别人重查一次就能发现。第二种是换身份干活：让操作发生在本来就有权限的域里，例如交给一个内核线程或合适的 context，判定链从头到尾自洽，代价是要额外处理 cred、fd 与目录归属。</p>
+<p>实用判别法：改动后重跑同一操作，若 <code>dmesg</code> 里仍出现新的 <code>avc: denied</code> 但调用成功了，说明走的是第一条；若日志干净、且 <code>cat /proc/self/attr/current</code> 与操作发起者的域一致，才更像第二条。<strong>“绕过了检查”和“通过了检查”在日志里长得几乎一样，在检测方眼里却是完全不同的信号</strong>。</p>
+<h2>长度语义按三段写，别猜</h2>
+<ol><li><strong>第一次调用 → 对 SO_PEERSEC / getxattr</strong>：传空缓冲区或极小长度，拿到内核给出的所需长度或实际长度，结果是知道要分配多大；不同版本这里返回的含义不同，必须当作“提示值”而不是直接拿来用。</li><li><strong>你 → 对缓冲区</strong>：按提示值加上余量分配，并把末位预留给结束符，结果是不管返回的是实际长度还是所需长度都装得下；按第一次返回值原样分配，恰好会在截断版本上少一个字节。</li><li><strong>第二次调用 → 对同一对象</strong>：用足量缓冲区再取一次，并核对返回长度不超过分配量，结果是拿到完整上下文串；两次返回不一致且第二次被截断，就说明第一次的语义是“所需长度”，要按这一支处理。</li></ol>
+<h2>可复现实验：制造一次拒绝，把四要素凑齐</h2>
+<div class="code">
+<div class="code-title">从 getenforce 到 fdinfo 的完整现场</div>
+<pre><code># 1. 确认策略状态与当前域
+getenforce
+cat /proc/self/attr/current
+# 成功：输出 Enforcing 与当前 domain；失败：Disabled = 后续判定根本不会发生
+ 
+# 2. 触发一次可复现的拒绝并抓 avc 现场
+runcon u:r:untrusted_app:s0 cat /data/local/tmp/deny_me 2&gt;&amp;1
+dmesg | grep -E &#x27;avc:.*denied&#x27; | tail -n 5
+# 成功：一行里 scontext / tcontext / tclass / permissive 四要素齐全
+# 失败：只有 EACCES 而无 avc 行 = 被 DAC 拦在前面，先查 uid 与 mode
+ 
+# 3. 核对 fd 与文件身份
+ls -l /proc/self/fd | head -n 8
+cat /proc/self/fdinfo/3
+getfattr -n security.selinux /data/local/tmp/deny_me
+# 成功：fdinfo 的 flags 与 xattr 给出的 tcontext 对得上
+# 失败：xattr 为空 = 文件尚未 label，判定走的是默认类型
+ 
+# 4. 两段式取 SO_PEERSEC（先长度，再分配，再取值）
+cat /proc/self/net/unix | head -n 3
+# 成功：第一次取长度、第二次取完整串，两值一致；失败：第二次返回截断值 = 缓冲区按第一次返回值当长度了</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>真正的判据是“四要素齐全且自洽”：<code>scontext</code> 是发起者域，<code>tcontext</code> 是被访问对象类型，<code>tclass</code> 决定查哪张规则表，<code>permissive</code> 决定这条 denied 是否真的拦住了调用。只看返回值会漏掉 permissive，只看日志会误判 DAC 拦截。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>Permissive 模式下照样有 `avc: denied`，而且操作成功了</strong>。那行日志只表示“策略里没有 allow”，不表示“系统调用失败”。于是同一份日志，在 Enforcing 下代表拦截、在 Permissive 下只代表记了一笔；只盯日志或只盯返回值，会得出完全相反的结论。</div></aside>
+<p>这条判定链在别处还会再走一遍：Frida 部 F05 讲 server 与 Android SELinux 时，核心问题是 server 必须待在能 ptrace zygote 的域里，否则连 attach 都被 avc 挡住；LSPosed 部 L06 讲 Binder、FD 与 linker 账本收口时，处理的是 fd 与 Binder 引用在进程间怎么不留残影。M06 补上的，是判定发生那一刻 EL1 里的五要素与两个现场。</p>
 </article>
 <div class="pager"><a href="m05-inherit.html"><span class="dir">上一讲</span>M05 硬件断点 Hook 与 Perf 生命周期</a><a href="m07-oem.html" style="text-align:right"><span class="dir">下一讲</span>M07 Android Chrome 多进程多开</a></div>
 </main>

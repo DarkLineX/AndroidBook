@@ -196,6 +196,46 @@ kmalloc 区:       [小对象]</code></pre>
 p = module_alloc(size);  REG(RES_MEM, p, vfree_wrap);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>把 .kpm 拖进 EL1 的那只手</h2>
+<p>串口线接着，dmesg 一行行往上滚。你敲下装载命令的那一刻，用户态的 loader 正把 ELF 里的 PT_LOAD 一段段搬进内核地址空间：先申请页、再拷贝、再逐项改重定位，最后把 init 的地址写进一个调用桩。此刻你写下的每一行代码都跑在 EL1，页表是内核的页表，栈是内核的栈，指针错一次就直接 panic——没有 vermagic 替你挡版本，没有模块引用计数替你挡卸载，也没有人为你兜底。</p>
+<p>标准 .ko 走的是 <code>init_module</code>：内核自己验签名、查 vermagic、建 <code>struct module</code>、挂 sysfs、维护依赖图。KPM 走的是另一条路：这些活全部由 loader 和模块自己承担。好处是能装进不开放模块加载的内核，代价是<strong>每一个你没做的检查，都变成一个没人替你做的检查</strong>。</p>
+<h2>装载五拍：谁把什么写到哪里</h2>
+<ol><li><strong>loader → 对 .kpm 文件</strong>：读出 <code>Elf64_Ehdr</code> 与程序头表，逐项记下 <code>p_vaddr</code>、<code>p_filesz</code>、<code>p_memsz</code>、<code>p_flags</code>，结果是一张待映射清单；只读段与可执行段必须分开建权限，否则后面改代码页会踩 W^X。</li><li><strong>loader → 对内核</strong>：通过已植入的超级调用申请 <code>module_alloc</code> 区间，结果拿到一段 EL1 可执行的虚拟地址；ARM64 上这段地址通常落在 <code>VMALLOC</code> 附近，与 <code>B</code> 指令的 ±128MB 跳转范围要一起核算。</li><li><strong>loader → 对每个 PT_LOAD 段</strong>：按 <code>p_filesz</code> 拷贝文件内容，再把 <code>p_memsz - p_filesz</code> 的尾部整段清零，结果是 .bss 里的静态变量从 0 开始；漏掉清零，未初始化全局量会带着脏数据进 init。</li><li><strong>loader → 对重定位表</strong>：拿 <code>kallsyms_lookup_name</code> 或导出符号表解析每个未定义符号，把 <code>R_AARCH64_ABS64</code>、<code>R_AARCH64_CALL26</code>、<code>R_AARCH64_ADR_PREL_PG_HI21</code> 逐项改写，结果是外部调用指向真实内核地址；<code>CALL26</code> 超出 ±128MB 时必须插 veneer 中转，否则链接期看着正常、运行期跳飞。</li><li><strong>loader → 对模块入口</strong>：把 init 地址写进调用桩并触发，结果是模块开始注册 hook、建 proc 节点、起 timer；init 返回非零立刻按倒序回滚，已经映射的段一并释放。</li></ol>
+<h2>卸载是比装载更危险的那一半</h2>
+<p>装载失败顶多是回滚，卸载失败是整个内核跟着塌。原因在于“卸载”这个动作没有原子性：hook 入口刚被还原的那个瞬间，可能正有一个 CPU 停在 trampoline 里执行，另一个 CPU 刚从 TLB 里取到旧映射。所以卸载不是“把装载倒着做一遍”，而是分出一条明确的停流—等待—回收三段路径。</p>
+<ol><li><strong>模块 → 对 hook 入口</strong>：用一次原子写入把跳转槽换回原字节，结果是后续所有调用走原路径，不再有新的执行流进入 trampoline；先在旧代码上“开口”再摘钩子，会留下一个短暂无处可跳的窗口。</li><li><strong>模块 → 对所有 CPU</strong>：<code>stop_machine</code> 或一次 RCU 宽限期，等每个核都报告已离开被改代码段，结果是“在途执行”清零；这一步省掉，后面 <code>vfree</code> 回收的就是别人脚下的那块地。</li><li><strong>模块 → 对资源登记表</strong>：按登记的逆序逐行调注销函数，结果是 timer、workqueue、perf event、hook 点、链表节点、内存依次归位；倒序的原因是后申请的资源往往依赖先申请的资源。</li><li><strong>模块 → 对 module_alloc 区间</strong>：最后才 <code>vfree</code> 并把模块从管理链表摘掉，结果是内核里不再留任何指向已释放地址的指针；提前释放会在下一次中断里表现为一个莫名其妙的 <code>Unable to handle kernel paging request</code>。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>资源</th><th>申请动作</th><th>注销动作</th><th>漏登记的后果</th></tr></thead><tbody>
+<tr><td>timer</td><td>timer_setup + mod_timer</td><td>del_timer_sync</td><td>回调踩已释放内存，oops 延迟几分钟才出现</td></tr>
+<tr><td>workqueue</td><td>schedule_work</td><td>cancel_work_sync</td><td>work 仍在队列里，use-after-free</td></tr>
+<tr><td>perf event</td><td>register_user_hw_breakpoint</td><td>unregister_hw_breakpoint</td><td>调试槽位永久占用，后续注册 -ENOSPC</td></tr>
+<tr><td>hook 点</td><td>改跳转槽 / text_poke</td><td>原子写回原字节</td><td>跳到已回收的 trampoline</td></tr>
+<tr><td>内核内存</td><td>module_alloc / vmalloc</td><td>vfree</td><td>/proc/vmallocinfo 残留段</td></tr>
+</tbody></table></div>
+<h2>最小可复现实验：装一次、卸一次、数一遍</h2>
+<div class="code">
+<div class="code-title">装载—观测—卸载的对账脚本</div>
+<pre><code># 0. 记录实验前基线（原值要记下来，实验结束改回）
+cat /proc/sys/kernel/kptr_restrict
+cat /proc/vmallocinfo | grep -c demo
+ 
+# 1. 装载最小模块：只做映射 + 一条 init 打印 + 资源表登记
+insmod /data/local/tmp/demo.kpm
+dmesg | tail -n 20
+# 成功：出现 init 完成、重定位项数与登记资源数相等的两行日志
+# 失败：返回 -ENOEXEC = ELF 头/段权限不对；返回 -EINVAL = 有未解析重定位项
+ 
+# 2. 卸载并核对是否真的收干净
+rmmod demo
+dmesg | tail -n 20
+cat /proc/vmallocinfo | grep -c demo
+# 成功：释放行数等于 init 时登记行数，且上面计数回到 0
+# 失败：计数非 0 = 资源表漏了一项；日志停在半途 = 卡在 del_timer_sync</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>把这段脚本存成 <code>check_m01.sh</code>，每次改 loader 都跑一遍。真正的判据不是“能装上”，而是<strong>装—卸循环跑十次之后，`/proc/vmallocinfo` 与基线完全一致</strong>；只要有一次计数漂移，就说明某条异常路径上少了一次注销。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：卸载比装载危险得多。装载失败只是回滚，卸载时若有一个 CPU 还停在 trampoline 里，<code>vfree</code> 之后那次取指就会跳进已回收的页——崩的是整个内核，不是你的模块。所以“倒序注销”不是代码整洁问题，而是唯一能让所有在途执行流先落地的顺序。</div></aside>
+<p>这套“登记表 + 倒序注销”的思路并不只属于内核：Frida 部 F04 讲 server 里 Device / Session / Script 三层对象树时，Session 没 detach 就一直占着目标进程；LSPosed 部 L06 讲 Binder、FD 与 linker 账本收口时，要求每项注册都有对应的注销。对象从 Session 换成 timer、从 Script 换成 perf event，账本的形状一模一样。</p>
 </article>
 <div class="pager"><a href="f11-maps.html"><span class="dir">上一讲</span>F11 当前工程隐藏与兼容处理总表</a><a href="m02-maps.html" style="text-align:right"><span class="dir">下一讲</span>M02 内核观察面与基础检测处理</a></div>
 </main>

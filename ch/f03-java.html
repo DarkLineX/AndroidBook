@@ -212,6 +212,43 @@ T.$init.overload().implementation = function () {
 });</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>现场：类明明在，为什么找不到</h2>
+<p>脚本一跑就抛 <code>Error: java.lang.ClassNotFoundException: com.foo.Secret</code>。可你翻 logcat，明明看到这个插件类在两百毫秒前被 dex 加载过；用 <code>frida -U -n</code> 晚一点附加上去，同样的 <code>Java.use</code> 又能成功。更邪门的一种是：不抛异常、不崩、hook 也“挂上了”，但回调永远不触发，日志里安静得像什么都没发生。</p>
+<p>两种现象指向同一个误会：我们以为 <code>Java.perform</code> 是“执行我的代码”，其实它是“<strong>等到能执行我的代码</strong>”。它保证两件事——JavaVM 存在、当前线程能拿到 <code>JNIEnv</code>；第三件事“目标类已经被正确的 ClassLoader 加载”，它一概不管。而“找到同名但不同源的类”恰恰不报错，只会让 hook 落在一个永远不会被调用的副本上。</p>
+<h2>把一次 attach 拆成六拍</h2>
+<ol><li><strong>agent 的 Java 运行时 → 对 libart.so → 枚举模块、定位 JNI_GetCreatedJavaVMs 与 JavaVM 实例</strong> → 结果：拿到 VM 句柄；若 ART 还没起来，就把回调挂起，一个字节都不执行。</li><li><strong>agent → 对当前这条 JS 线程 → AttachCurrentThread 取得 JNIEnv 指针</strong> → 结果：一条原本不属于 ART 的 native 线程被登记成 Java 线程，从此可以合法调 JNI；代价是它顺带带上了系统默认的 ClassLoader，而不是 App 的 PathClassLoader。</li><li><strong>agent → 对 VM → 通过 JNI 解析 ActivityThread 与 LoadedApk</strong> → 结果：拿到当前进程的 Application 上下文、包名，以及查找应用 ClassLoader 的入口。</li><li><strong>agent → 对 pending VM ops 队列 → 把你的 fn 追加进去并订阅就绪通知</strong> → 结果：Java.perform 立即返回，调用栈回到顶层；此刻 fn 还没跑，这正是 F02 里 <code>top</code> 先打印的原因。</li><li><strong>ART → 对 agent → 在 ClassLoader 可用（通常在 handleBindApplication 之后）时触发通知</strong> → 结果：队列被 drain，你的回调在 JS 线程上执行，<code>Java.use</code> 终于有了可解析类的环境。</li><li><strong>你的回调 → 对 Java.use → FindClass 解析类、生成 wrapper、改 ArtMethod 入口</strong> → 结果：hook 生效；若目标类属于插件自己的加载器，这一拍解析到的是“另一份同名类”，不报错也不触发。</li></ol>
+<h2>复现：把三个加载器摆到台面上</h2>
+<p>插件化 App 里最有效的排查动作不是加 <code>setTimeout</code>，而是<strong>先把所有 ClassLoader 枚举出来，再逐个试一遍</strong>。下面这段脚本会把“默认加载器能不能找到”和“哪个加载器里真的有”分别打出来；注意它会临时改 <code>Java.classFactory.loader</code>，验证完要记得改回去。</p>
+<div class="code">
+<div class="code-title">loaders.js：枚举加载器并逐个试</div>
+<pre><code>// loaders.js —— 先枚举，再逐个试
+Java.perform(function () {
+  Java.enumerateClassLoaders({
+    onMatch: function (loader) {
+      Java.classFactory.loader = loader;
+      try {
+        const C = Java.use(&#x27;com.foo.Secret&#x27;);
+        send({via: String(loader), ok: true});
+      } catch (e) {
+        send({via: String(loader), ok: false, err: String(e)});
+      }
+    },
+    onComplete: function () { send({done: true}); }
+  });
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：收到 <code>done: true</code>，且至少有一条 <code>ok: true</code>；把那条 <code>via</code> 记进笔记，后续脚本固定用 <code>Java.classFactory.loader = &lt;那个 loader&gt;</code> 再 <code>Java.use</code>。<strong>算失败</strong>：<code>onMatch</code> 一次都没触发，说明当前进程没有 ART，<code>Java.*</code> 整体不可用；<code>onComplete</code> 没来而所有项都 <code>err</code>，是注入太早、ART 尚未就绪，应该把动作挪到<code>Application.onCreate</code> 或 <code>ClassLoader.loadClass</code> 命中目标名之后；全部 <code>ok: false</code> 但类名拼写无误，就是类还没被任何加载器加载——这时候等时间没用，得等加载事件。</p>
+<div class="tbl"><table>
+<thead><tr><th>关键对象</th><th>谁提供</th><th>拿不到的后果</th><th>典型现场</th></tr></thead><tbody>
+<tr><td>JavaVM 句柄</td><td>libart.so 的导出符号</td><td>perform 回调永不执行</td><td>spawn 太早</td></tr>
+<tr><td>JNIEnv*</td><td>AttachCurrentThread</td><td>任何 Java.* 调用直接崩</td><td>纯 native 线程</td></tr>
+<tr><td>ActivityThread</td><td>ART 堆中的单例</td><td>拿不到 Application 与包名</td><td>未 bindApplication</td></tr>
+<tr><td>ClassLoader</td><td>LoadedApk / 插件框架</td><td>Java.use 抛 ClassNotFoundException</td><td>多加载器</td></tr>
+<tr><td>ArtMethod</td><td>目标类被加载之后</td><td>hook 挂在另一份同名类上</td><td>不报错也不触发</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<code>AttachCurrentThread</code> 给 JS 线程发的是一张“临时身份证”，它附带的 ClassLoader 是<strong>系统默认</strong>那个，不是 App 的 PathClassLoader。于是插件化场景里 <code>Java.use</code> 常常“找到了类”——名字一模一样、wrapper 也建好了、ArtMethod 也改了，只是改的是另一个加载器里那份从没被调用过的副本。这类失败不抛异常、不崩溃、不写日志，比直接报错难查十倍。</div></aside>
+<p>“先等 VM、再枚举加载器、最后才动 ArtMethod”这个顺序，在 LSPosed 部 <strong>L02 LSPlant Java Hook 原理</strong> 与 <strong>L04 模块 ClassLoader 与 DEX 生命周期</strong> 里会被原样复用：LSPlant 同样要先拿到正确的 ClassLoader 才能改 ArtMethod，L04 则把“模块 DEX 归哪个加载器管”做成了显式生命周期；KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 观察 maps 时，也会把多出来的 DEX 映射当作 ClassLoader 数量的旁证，从 EL1 侧把这个结论再验一遍。</p>
 </article>
 <div class="pager"><a href="f02-gumjs.html"><span class="dir">上一讲</span>F02 Frida 第一个脚本运行时机</a><a href="f04-webservice.html" style="text-align:right"><span class="dir">下一讲</span>F04 Frida server IPC 逻辑</a></div>
 </main>

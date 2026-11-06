@@ -180,6 +180,68 @@ module counter : 42
 <tr><td>fd 数在基线 ±10%</td><td>是</td><td>有泄漏或有残留</td></tr>
 <tr><td>Binder 服务数与基线一致</td><td>相等</td><td>有残留注册</td></tr>
 </tbody></table></div>
+<h2>四本账，讲了一夜也没对上</h2>
+<p>框架的隐藏逻辑全部跑完，日志干干净净，字符串抹了，加载器也归位了。可检测库还是报了阳性。把 <code>/proc/self</code> 摊开看才明白：<code>service list</code> 里多了一个没在 AOSP 清单上的 Binder 服务名，<code>/proc/self/fd</code> 里躺着一个指向已删除文件的 fd，<code>dl_iterate_phdr</code> 数出来的 so 比内部计数器少一个，而 <code>link_map</code> 双向链表的 <code>prev</code> 还指着刚被摘掉的节点。<strong>四本账各讲各的故事</strong>，只要有一本对不上，整体就不自洽。</p>
+<p>这就是&#x27;收口&#x27;这个词的来历：隐藏不是一个开关，而是一致性工程。Binder 驱动记着谁注册过服务，内核记着每个 fd，linker 记着 <code>solist</code> 与 <code>sonext</code>，框架自己还记着一份 module counter。你改的不是某一个值，而是<strong>四个不同所有者手里的账页</strong>，它们必须同时翻到同一页。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_binder">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Binder：一次跨进程调用走完整条路</span>
+  </div>
+  <p class="anim-sub">Proxy → 驱动 → Stub → Server，再沿原路返回</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_binder/f00.png" alt="Binder：一次跨进程调用走完整条路 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>Client 调 Proxy，参数写进 Parcel</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. Client 调 Proxy，参数写进 Parcel</button>
+    <button type="button" data-i="1">2. ioctl 发 BC_TRANSACTION，数据进内核</button>
+    <button type="button" data-i="2">3. 驱动按 handle 找到目标 BBinder</button>
+    <button type="button" data-i="3">4. 目标进程线程池取事务，Stub.onTransact 解包</button>
+    <button type="button" data-i="4">5. 结果经 BR_REPLY 回到 Proxy，调用返回</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_binder.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["Client 调 Proxy，参数写进 Parcel", "ioctl 发 BC_TRANSACTION，数据进内核", "驱动按 handle 找到目标 BBinder", "目标进程线程池取事务，Stub.onTransact 解包", "结果经 BR_REPLY 回到 Proxy，调用返回"]</script>
+<h2>四本账各自归谁管</h2>
+<ol><li><strong>框架 → ServiceManager</strong>：初始化时可能注册一个内部服务或持有代理；收口时要 <code>unlinkToDeath</code> 并丢弃 BpBinder 引用；结果是服务注册表与进程内代理计数同时归零。</li><li><strong>框架 → Binder 驱动的 death recipient</strong>：如果只丢代理不注销死亡通知，对端销毁时回调会打到一个已释放的对象；结果是必须把通知从驱动的 <code>death recipients</code> 链表里一并摘掉。</li><li><strong>框架 → mmap / FD 表</strong>：每块匿名映射配一个 fd（或 <code>memfd</code>），<code>close(fd)</code> 与 <code>munmap</code> 必须成对；结果是 <code>/proc/self/fd</code> 里既不留孤儿 fd，也不留没有 back-file 的匿名段。</li><li><strong>linker → solist / sonext / link_map</strong>：<code>dlclose</code> 会走 <code>soinfo</code> 的卸载流程，手工摘节点要同时修 <code>prev-&gt;next</code> 与 <code>next-&gt;prev</code>；结果是正向遍历、反向遍历都能走通。</li><li><strong>框架 → module counter</strong>：每次加载增减计数，收口后应与正向遍历结果一致；结果是三向核对能互相印证，不留&#x27;只有内部状态知道&#x27;的差额。</li><li><strong>校验器 → 全部账本</strong>：正向计数、反向计数、内部计数三者相等，且 fd 数与映射数之差符合预期；结果是一次可重复的收口断言，而不是靠肉眼看日志。</li></ol>
+<p>第 2 拍常被跳过。死亡通知是驱动侧持有的引用，它的生命周期跟你的 Java 对象毫无关系：对端进程一死，驱动照着链表回调过来，此时对象若已释放，就是一次典型的 use-after-free。所以 <code>bridge detach</code> 的完整语义是&#x27;摘代理 + 摘通知 + 减引用&#x27;，三步缺一不可。</p>
+<h2>收口动作的三道缝</h2>
+<ul><li><strong>Binder 缝</strong>：<code>service list</code> 与 <code>dumpsys</code> 是外部视角，进程内 <code>BpBinder</code> 引用计数是内部视角；两边都为零才算干净，只清一边会留一个&#x27;查得到但没有持有者&#x27;的幽灵服务。</li><li><strong>FD 缝</strong>：<code>mmap</code> 之后即便 <code>close(fd)</code>，映射依然有效；反过来 <code>munmap</code> 了而 fd 没关，<code>/proc/self/fd</code> 里会留一个指向已删除路径的句柄。两个方向都要走。</li><li><strong>linker 缝</strong>：<code>solist</code> 单向链、<code>sonext</code> 尾指针、<code>link_map</code> 双向链是三份独立视图；改一处不改另外两处，遍历时要么漏节点要么踩野指针。</li><li><strong>窗口缝</strong>：所有摘链操作必须落在单线程窗口（挂起其它线程或持 linker 锁），否则另一个线程正在 <code>dlopen</code> 就会看到半截链表。</li><li><strong>回滚缝</strong>：任何一步失败都要能恢复原状；&#x27;改到一半崩了&#x27;比&#x27;没改&#x27;更糟，因为账本永久不一致。</li></ul>
+<p>这五道缝的排查顺序有讲究：<strong>先查外部视角，再查内部状态</strong>。<code>service list</code>、<code>/proc/self/fd</code>、<code>dl_iterate_phdr</code> 都不需要框架配合，能先给你一个客观事实；等这三样都干净了，再去看内部计数器。反过来做，很容易被一份滞后的内部状态带偏。</p>
+<h2>可复现：把三向核对做成一条命令</h2>
+<div class="code">
+<div class="code-title">收口后的现场核对</div>
+<pre><code># 1. Binder 外部视角：应看不到内部服务名
+adb shell service list | grep -iE &#x27;lspd|bridge&#x27; || echo binder_clean
+# 2. FD 视角：留下来的 fd 应能解释，且没有指向已删除路径的
+adb shell ls -l /proc/[PID]/fd | grep -i deleted || echo fd_clean
+# 3. linker 正向视角：与内部计数器比对
+adb shell cat /proc/[PID]/maps | grep -c &#x27;\.so&#x27;
+# 4. 反向视角 + 内部计数（框架导出一个诊断接口即可）
+adb logcat -s Ledger:V | grep -E &#x27;forward|backward|counter&#x27;
+# 5. 三向断言：三个数字相等算成功，任一不等算收口失败
+#    assert forward == backward == counter</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：<code>binder_clean</code>、<code>fd_clean</code> 两条都打印出来，<code>forward</code> / <code>backward</code> / <code>counter</code> 三个数字完全相等，且连续跑五轮不漂移。<strong>看到什么算失败</strong>：三者不等——<code>forward &gt; backward</code> 说明 <code>link_map</code> 的 <code>prev</code> 没修；<code>counter &gt; forward</code> 说明计数忘了减；<code>service list</code> 命中而进程内已无引用，说明死亡通知没注销。第 3 步的 <code>grep -c</code> 只是粗筛，精确版应在进程内用 <code>dl_iterate_phdr</code> 回调逐个计数；命令里反斜杠要在 Python 字符串里写成 <code>\\</code>。</p>
+<div class="tbl"><table>
+<thead><tr><th>账本</th><th>所有者</th><th>外部查法</th><th>内部查法</th><th>收口遗漏的典型表现</th></tr></thead><tbody>
+<tr><td>Binder</td><td>ServiceManager / 驱动</td><td>service list、dumpsys</td><td>BpBinder 引用计数、death recipient</td><td>服务名还在但无持有者 / 回调打野指针</td></tr>
+<tr><td>FD</td><td>内核 files_struct</td><td>/proc/self/fd、fdinfo</td><td>epoll 集合、mmap 记录</td><td>指向 deleted 的 fd、映射无 fd</td></tr>
+<tr><td>linker</td><td>linker 的 soinfo</td><td>dl_iterate_phdr、maps</td><td>solist / sonext / link_map</td><td>正反遍历数量不等、摘链后崩溃</td></tr>
+<tr><td>module counter</td><td>框架自身</td><td>无（需导出诊断）</td><td>加载 / 卸载计数</td><td>计数比实际 so 多，长期漂移</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>摘链表节点时，&#x27;正向遍历没问题&#x27;几乎不能说明任何事</strong>。只改 <code>next</code> 会让正向遍历顺利走完，而 <code>prev</code> 仍指着已释放节点——<code>dl_iterate_phdr</code> 或反向回溯时才踩雷，表现是&#x27;今天没事、明天崩&#x27;。这也是为什么本章坚持三向验证：两个方向加一个计数，才能把半截链表逼出来。</div></aside>
+<p>把四本账与第四部 M02 的只读观测面对读，会发现 M02 统计的是&#x27;匿名可执行映射&#x27;，本章统计的是&#x27;所有账页是否对齐&#x27;——同一批 <code>/proc</code> 接口，一个用来发现异常，一个用来证明自洽。第三部 F09 自定义 linker 那套自维护 <code>solist</code> 的做法，正是本章第 4 拍的前置知识；第二部 K04 讲 <code>fd → file → inode</code> 的引用链时，说清了为什么 <code>close(fd)</code> 之后 <code>mmap</code> 还能活着。训练营 T03 的&#x27;隐藏 → 检测 → 改进&#x27;循环里，最后一轮改进通常就落在这张三向核对表上。</p>
 </article>
 <div class="pager"><a href="l05-native.html"><span class="dir">上一讲</span>L05 标识泛化与字符串源头治理</a><a href="l07-generated.html" style="text-align:right"><span class="dir">下一讲</span>L07 Android 16 ART / JVMTI 根因修复</a></div>
 </main>

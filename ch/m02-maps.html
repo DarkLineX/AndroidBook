@@ -196,6 +196,49 @@ pr_info(&quot;anon exec mappings: %d\n&quot;, n);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>写成“统计”而不是“判定”，是为了先拿到数据分布。有了分布，才知道阈值该定在哪。</div></aside>
+<h2>把探针放到 proc 的上游</h2>
+<p>检测线程正一行行读自己的 <code>/proc/self/maps</code>，把每个 r-xp 段的 CRC 记下来；另一条线程翻着 <code>map_files</code> 核对路径，再看一眼 <code>TracerPid</code>。这些动作在用户态看起来天衣无缝。把视角降到 EL1：你能看到它读之前内核遍历的 <code>mm-&gt;mmap</code> 链表，能看到 VMA 背后真实的 <code>vm_file</code> 与 <code>inode</code>，也能看到它自己看不到的 <code>task-&gt;ptrace</code> 与 per-task 的调试状态。<strong>观测面比被观测者高一层，这就是内核态最实在的优势</strong>。</p>
+<p>而且这层优势几乎免费：读不会改变对象，不会制造“被改过”的痕迹，也不会让目标进程崩。先把六个面各采一份快照，确认异常落在哪一面，再决定要不要动手——顺序反过来，最容易在错误的方向上改出一堆难以回退的状态。</p>
+<h2>一次 maps 读取，六个可截点</h2>
+<ol><li><strong>检测线程 → 对 /proc/self/maps</strong>：发起 <code>open</code>，proc 层为它建 <code>seq_file</code> 并绑到该 pid 的 <code>mm</code>，结果是接下来每次 <code>read</code> 都从这张 VMA 链表生成文本；注意 <code>seq_file</code> 分段输出，一次读到的可能只是半张表。</li><li><strong>内核 → 对 mm-&gt;mmap 链表</strong>：逐项取 <code>vm_start</code>、<code>vm_end</code>、<code>vm_flags</code>、<code>vm_file</code>、<code>vm_pgoff</code>，结果是拼出 <code>/proc/pid/maps</code> 的每一行；在这里读 <code>vm_file</code> 是否为 NULL，就能把匿名可执行段与文件映射段分开，这是用户态文本里最容易被伪装的一列。</li><li><strong>你的只读 kprobe → 对 show_map_vma 一类生成函数</strong>：记录入参与返回的行内容而不修改，结果是提前知道“检测方即将看到什么”；回调里不能睡眠、不能分配大内存、不能长时间持锁。</li><li><strong>检测线程 → 对 /proc/self/map_files</strong>：用映射区间名反查 fd 与 <code>dentry</code>，结果是拿到“路径文本对应的真实文件”；若这里给出的 inode 与 maps 行里的路径/dev 对不上，就是路径被伪造的直接证据。</li><li><strong>内核 → 对 mountinfo 与 statx</strong>：给出挂载树、<code>s_dev</code> 与 <code>i_ino</code>，结果是给每条映射补上“文件身份”；dev+inode 比路径字符串稳定得多，也是交叉校验的锚点。</li><li><strong>检测线程 → 对 syscall table、TracerPid、netlink/Binder 状态</strong>：比对入口地址、非零的 tracer 与异常连接，结果得出“是否被替换、是否被调试、是否被代理”的结论；你的观测点就放在它取数之前。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>观测面</th><th>内核里的真实数据源</th><th>用户态可见性</th><th>异常信号</th></tr></thead><tbody>
+<tr><td>maps / smaps</td><td>mm-&gt;mmap 链表与 rss_stat</td><td>可见</td><td>匿名可执行段、PSS 突增</td></tr>
+<tr><td>map_files</td><td>vm_file-&gt;f_path 对应 dentry</td><td>可见但文本易伪装</td><td>路径与 inode 不符</td></tr>
+<tr><td>mountinfo / statx</td><td>mount namespace、s_dev、i_ino</td><td>可见</td><td>dev+inode 与路径冲突</td></tr>
+<tr><td>syscall table</td><td>sys_call_table 或跳转表</td><td>间接</td><td>表项落在非内核文本区</td></tr>
+<tr><td>调试状态</td><td>task-&gt;ptrace、TracerPid、ptrace_scope</td><td>可见</td><td>TracerPid 非零</td></tr>
+<tr><td>USB / VPN / netlink / Binder</td><td>net ns、sk、binder_proc</td><td>部分可见</td><td>异常连接与代理</td></tr>
+</tbody></table></div>
+<h2>只读观测也要按规矩来</h2>
+<p>很多人以为“只读”就等于零代价，其实不然。<code>seq_file</code> 的 <code>start/stop</code> 之间、kprobe 的回调里、中断上下文里，都有“不能睡眠”这条硬约束；在高频遍历的 VMA 路径上打一条 printk，可能把一次几毫秒的 maps 读取拖成几十毫秒，进而让基于超时的检测换个分支。观测代码本身会改变时序，所以第一步永远是<strong>先记差异，再动手改</strong>，而且差异要在同一台机器同一套用例上复现三次才算数。</p>
+<h2>把一次差异做成可复现的三拍</h2>
+<ol><li><strong>你 → 对干净环境</strong>：同一台机器、同一套用例跑三次，记录六个观测面的基线值，结果是得到一张带波动范围的对照表；没有基线，后面所有“异常”都只是感觉。</li><li><strong>你 → 对修改环境</strong>：只改一个变量再跑三次，把差异落到具体某一面某一行，结果是能说出“是 maps 的匿名段多了两条”而不是“内存不太对”。</li><li><strong>你 → 对结论</strong>：换一台同型号设备复跑，差异仍在同一位置才算成立；只在单台出现的差异，多半是时序或缓存噪声。</li></ol>
+<h2>可复现实验：抓一次读取，验证两条路径自洽</h2>
+<div class="code">
+<div class="code-title">只读观测与交叉校验</div>
+<pre><code># 1. 确认符号可解析（记下原值，实验后恢复）
+cat /proc/sys/kernel/kptr_restrict
+cat /proc/kallsyms | grep -E &#x27; show_map_vma| proc_pid_maps_op| do_syscall_64&#x27;
+# 成功：三个符号都有非零地址；失败：地址全 0 = kptr_restrict 生效，先按原值调整
+ 
+# 2. 挂只读 kprobe，触发一次目标读取
+insmod /data/local/tmp/observe.kpm pid=$PID
+cat /proc/$PID/maps &gt; /dev/null
+ls -l /proc/$PID/map_files | head -n 5
+cat /proc/$PID/status | grep -E &#x27;TracerPid|VmRSS&#x27;
+dmesg | tail -n 30
+# 成功：日志给出 VMA 条数、每个 r-xp 段的 vm_file 是否为空、TracerPid
+# 失败：日志为空 = kprobe 没挂上；出现 oops = 回调里做了睡眠操作
+ 
+# 3. 交叉校验：同一段在两条路径上必须一致
+cat /proc/$PID/maps | grep -E &#x27;r-xp&#x27; | head -n 3
+stat -Lc &#x27;%d %i&#x27; /proc/$PID/map_files/$(awk &#x27;NR==1{print $1}&#x27; &lt;&lt;&lt; $(cat /proc/$PID/maps)) 2&gt;/dev/null
+# 成功：dev+inode 与 maps 行的设备号、偏移自洽；失败：不一致 = 路径被改写过</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：只读观测并不等于没有痕迹。你没改任何字段，但 kprobe 注册本身会进 <code>/proc/kallsyms</code> 可见的跳转槽、会改代码页、会带来可测量的时延；更麻烦的是，seq_file 回调里一次不当的打印就能让高频 maps 遍历卡住。<strong>“我只看看”在内核态从来不是一句免责声明</strong>。</div></aside>
+<p>把“两条枚举路径是否自洽”这句话记牢，它会在后面反复出现：Frida 部 F10 讲线程结构体处理时，检测方同时走 <code>/proc/self/task</code> 与 libc 线程链表，两边数量对不上就是最强信号；LSPosed 部 L09 讲侧信道与结构差分检测，同样是用交叉校验代替单点判断。M02 的六个只读面，正是给这种校验提供上游事实的地方。</p>
 </article>
 <div class="pager"><a href="m01-kpm.html"><span class="dir">上一讲</span>M01 KPM 模块设计、装载与生命周期</a><a href="m03-trampoline.html" style="text-align:right"><span class="dir">下一讲</span>M03 ARM64 指令 Hook 与 Text Shadow</a></div>
 </main>

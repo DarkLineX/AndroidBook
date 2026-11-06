@@ -180,6 +180,77 @@ for op in code:
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>写一遍这个，你对 VMP 的“恐惧感”会消失一大半——因为它真的就只是“取指、译码、执行”。</div></aside>
+<h2>反编译窗口吐出三千行 switch</h2>
+<p>你打开一个被 VMP 保护过的函数，反编译器转了四十秒，吐出来一个三千行的 <code>switch</code>，里面几百个 <code>case</code> 全在给同一个变量赋值，然后再跳回循环开头。没有 <code>add</code>，没有 <code>bl</code>，没有任何一句像业务代码的句子。第一反应是「这没法读」——但换个角度想：这三千行其实是一台很小的计算机，它正在一丝不苟地执行别人写好的程序。你缺的不是耐心，是一套能把「机器在干什么」翻译回「人写了什么」的语言。那套语言就是编译原理。</p>
+<p>把编辑器分成两半：左边放一句最普通不过的源码 <code>a = b + 1;</code>，右边放你从样本里抠出来的 dispatcher。二期这条主线要做的，就是让左边那句话一步一步变形，直到你能指着右边某个 <code>case</code> 说「这一支对应的是那个加号」。工具会过期，样本会换代，但这条变形链不会变。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_vmp">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">VMP：一段指令是怎么被“解释”出来的</span>
+  </div>
+  <p class="anim-sub">dispatcher 循环 + handler 表，五帧看懂自定义字节码</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_vmp/f00.png" alt="VMP：一段指令是怎么被“解释”出来的 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>pc 指向自定义字节码，取出当前 opcode</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. pc 指向自定义字节码，取出当前 opcode</button>
+    <button type="button" data-i="1">2. 用 opcode 索引 handler 表，拿到处理函数</button>
+    <button type="button" data-i="2">3. 执行 handler，用虚拟寄存器模拟一条语义</button>
+    <button type="button" data-i="3">4. 更新 pc 与虚拟上下文（栈、寄存器、标志）</button>
+    <button type="button" data-i="4">5. 回到 dispatcher 继续循环，直到 EXIT</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_vmp.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["pc 指向自定义字节码，取出当前 opcode", "用 opcode 索引 handler 表，拿到处理函数", "执行 handler，用虚拟寄存器模拟一条语义", "更新 pc 与虚拟上下文（栈、寄存器、标志）", "回到 dispatcher 继续循环，直到 EXIT"]</script>
+<h2>一句源码走完正向编译链</h2>
+<ol><li><strong>词法分析器</strong> → 对 <strong>字符流 `a = b + 1;`</strong> → 切成 token（<code>ID(a)</code> <code>ASSIGN</code> <code>ID(b)</code> <code>PLUS</code> <code>NUM(1)</code> <code>SEMI</code>）→ 结果是丢掉了空格和换行，只留下带类型的记号序列。</li><li><strong>语法分析器</strong> → 对 <strong>token 序列</strong> → 按优先级把 <code>b + 1</code> 先收成一个表达式节点，再挂到赋值节点下 → 结果是一棵 AST，树根是 <code>Assign</code>，左子是 <code>a</code>，右子是 <code>Add(b, 1)</code>。</li><li><strong>IR 生成</strong> → 对 <strong>AST</strong> → 后序遍历，给每个中间结果分配临时变量 → 结果是三地址码 <code>t0 = b + 1</code> 和 <code>a = t0</code>，控制流第一次变成线性的。</li><li><strong>SSA 改写</strong> → 对 <strong>三地址码</strong> → 给每次定义换一个新版本号（<code>b_1</code>、<code>t0_1</code>、<code>a_1</code>）→ 结果是每个名字只被赋一次值，常量传播和死代码消除可以直接跑。</li><li><strong>优化器</strong> → 对 <strong>SSA</strong> → 若 <code>b</code> 是编译期常量就折叠、若 <code>a</code> 之后没被用就整条删掉 → 结果是 IR 变短，但语义完全不变，这也解释了为什么反编译出来的代码常常「不像人写的」。</li><li><strong>后端</strong> → 对 <strong>IR</strong> → 做寄存器分配、选指令、排基本块 → 结果是几条 ARM64 指令，CFG 里的边变成 <code>b.eq</code> / <code>b</code> 这样的跳转。</li></ol>
+<h2>VMP 把这条链倒着放给你看</h2>
+<ul><li><strong>壳的打包器</strong> → 对 <strong>原生指令</strong> → 不走后端，而是按自己的 opcode 表把每条指令翻成自定义字节码 → 结果是你熟悉的 <code>add</code> 在文件里彻底消失，只剩一串数字。</li><li><strong>dispatcher</strong> → 对 <strong>字节码流</strong> → 用 <code>pc</code> 取一个 opcode、查 <code>handler_table[op]</code> → 结果是把「该执行哪条语义」变成一次表查找，反编译器看到的就只剩那个巨大的 <code>switch</code>。</li><li><strong>某个 handler</strong> → 对 <strong>虚拟寄存器数组</strong> → 模拟一条真实语义（加法、跳转、取字段）→ 结果是语义还在，只是藏在一个不起眼的小函数里，而且往往被拆成好几个片段。</li><li><strong>dispatcher 尾部</strong> → 对 <strong>vctx</strong> → 写回 <code>next_pc</code>、虚拟栈和标志位再回到循环头 → 结果是控制流不再体现为 CFG 的边，而体现为状态变量的值，这也是平坦化看起来那么别扭的根源。</li><li><strong>你</strong> → 对 <strong>handler 表</strong> → 逐条执行、记录虚拟寄存器变化、把每条 opcode 的语义写回 IR → 结果是自定义字节码被翻译回三地址码，前面那半边编辑器终于能对上了。</li></ul>
+<h2>可复现实验：二十行写一个玩具 IR 生成器</h2>
+<div class="code">
+<div class="code-title">真的能跑的 python（把左边那句话变成右边那种三地址码）</div>
+<pre><code>import re
+ 
+def to_ir(src):
+    # 只处理形如 a = b + 1; 的赋值，够用来对齐 dispatcher
+    m = re.match(r&#x27;\s*(\w+)\s*=\s*(\w+|\d+)\s*\+\s*(\w+|\d+)\s*;&#x27;, src)
+    if not m: return []
+    dst, x, y = m.groups()
+    return [&#x27;t0 = &#x27; + x + &#x27; + &#x27; + y, dst + &#x27; = t0&#x27;]
+ 
+def fold(ir):
+    out = []
+    for ln in ir:
+        r, e = [s.strip() for s in ln.split(&#x27;=&#x27;)]
+        a, b = e.split(&#x27;+&#x27;)
+        out.append(r + &#x27; = &#x27; + str(int(a) + int(b)) if a.isdigit() and b.isdigit() else ln)
+    return out
+ 
+print(to_ir(&#x27;a = b + 1;&#x27;))
+print(fold(to_ir(&#x27;c = 2 + 3;&#x27;)))</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：第一行打印 <code>[&#x27;t0 = b + 1&#x27;, &#x27;a = t0&#x27;]</code>，第二行打印 <code>[&#x27;t0 = 5&#x27;, &#x27;c = t0&#x27;]</code>——前者是 IR 生成，后者是常量折叠，两个最基础的编译器动作你已经亲手跑通了。看到什么算失败：正则返回空列表，说明输入格式没对上（多了空格、少了分号、用了乘号），先把样本规整成这一句再跑；别急着扩展语法，这一步的目的是建立「源码 → 中间表示」的肌肉记忆，不是造一个完整编译器。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>输入</th><th>产物</th><th>在 VMP 样本里对应什么</th></tr></thead><tbody>
+<tr><td>词法 / 语法</td><td>源码字符流</td><td>AST</td><td>你读不懂的字节码流之前的「原本意图」</td></tr>
+<tr><td>IR 生成</td><td>AST</td><td>三地址码</td><td>handler 逐条还原后该写成的形式</td></tr>
+<tr><td>SSA / 优化</td><td>三地址码</td><td>化简后的 IR</td><td>解释壳里那些冗余 case 为什么存在</td></tr>
+<tr><td>CFG / 支配</td><td>IR</td><td>基本块图</td><td>被状态变量打散、需要重建的控制流</td></tr>
+<tr><td>后端 / VMP</td><td>IR</td><td>机器码或字节码</td><td>dispatcher 与 handler_table</td></tr>
+<tr><td>逆向主线</td><td>handler 语义</td><td>重新生成的 IR</td><td>你能指着 case 说出它对应哪个加号</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>VMP 不是加密，是一次编译</strong>——只不过目标指令集是作者自己编的、文档只有他手里的那张表。既然是编译，就一定遵守编译的规律：有指令集、有寄存器、有控制流、有优化痕迹。你不必等一个专门的脱壳工具，只要能把 handler 语义翻回 IR，剩下的问题就退化成了普通的反编译问题。</div></aside>
+<p>把这句「它是一次编译」带到 P02：那边讲的控制流平坦化、不透明谓词、指令替换，本质上都是在这条变形链上人为加噪声。先知道正向长什么样，才知道哪些是噪声、哪些是语义。而 T02 里那套「不读代码、先抓输入输出」的做法，正是同一个抽象能力换到算法分析上的用法：都不靠硬啃，都靠先建模型。</p>
 </article>
 <div class="pager"><a href="d03.html"><span class="dir">上一讲</span>D03 Promon 类方案的对抗思路</a><a href="p02.html" style="text-align:right"><span class="dir">下一讲</span>P02 混淆与反混淆的基本盘</a></div>
 </main>

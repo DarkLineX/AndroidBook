@@ -190,6 +190,61 @@ fastboot reboot</code></pre>
 <p>新手常问：既然都在内核里了，为什么不直接把 <code>open</code> 的 syscall 换掉？答案有三层。</p>
 <ol><li><strong>性能</strong>：syscall 是所有进程的高频路径，换掉它意味着每次调用都要多走一层。</li><li><strong>风险</strong>：一旦实现有 bug，整个系统立刻不可用（连 shell 都起不来）。</li><li><strong>暴露</strong>：syscall 表是最经典的检测点，几乎所有内核完整性检查都会比对它。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>结论：能在一个“低频、必经、且不被比对”的位置动手，就不要动高频路径。这是内核工程的第一条实践原则。</div></aside>
+<h2>把 su 敲下去之后的一百毫秒</h2>
+<figure class="anim" data-delay="820" data-n="4" data-key="a_apatch">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">APatch：改一个镜像，怎么换来 uid=0</span>
+  </div>
+  <p class="anim-sub">四步走：解包 → 打桩 → 装模块 → 改 cred</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_apatch/f00.png" alt="APatch：改一个镜像，怎么换来 uid=0 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 4</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>把 boot.img 拆成各段，取出原始内核</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 把 boot.img 拆成各段，取出原始内核</button>
+    <button type="button" data-i="1">2. 在内核里定位调用点，写入跳转槽</button>
+    <button type="button" data-i="2">3. loader 把 .kpm 映射、重定位并运行</button>
+    <button type="button" data-i="3">4. 模块在 EL1 改写目标进程 cred，uid 归零</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_apatch.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["把 boot.img 拆成各段，取出原始内核", "在内核里定位调用点，写入跳转槽", "loader 把 .kpm 映射、重定位并运行", "模块在 EL1 改写目标进程 cred，uid 归零"]</script>
+<p>想象你正拿着一台刚解锁的机器，屏幕上停着一个终端，<code>$</code> 提示符一闪一闪。你敲下 <code>su</code>，回车。不到一百毫秒，提示符变成了 <code>#</code>。这一百毫秒里没有新文件被写进 <code>/system</code>，也没有哪个守护进程被拉起——真正变的，是内核里某一个进程的<strong>几十个字节</strong>。把镜头放慢，跟着这几十个字节走一遍，APatch 的全部原理就在里面了。</p>
+<p>先把「拿到 root」这句口语拆成内核能听懂的话：每个进程的 <code>task_struct</code> 里挂着一个 <code>cred</code>，<code>cred</code> 里写着 uid。所谓提权，就是让<strong>这个 uid 字段从 2000 变成 0</strong>。麻烦在于用户态根本碰不到 <code>cred</code>——那是内核内存。于是所有 root 方案本质上都在回答同一个问题：怎么让一段跑在内核态（EL1）的代码，替你去改那几个字节。</p>
+<h2>跟着一次提权请求走一遍</h2>
+<ol><li><strong>你在终端敲 `su`</strong> → 对 <code>su</code> 这个二进制 → 发起一次执行 → 结果：一个新进程被 fork 出来，uid 仍是 2000，什么都干不了。</li><li><strong>`su` 找到用户态守护进程 `apd`</strong> → 对 APatch 的 daemon → 通过本地 socket 递上自己的 pid 和想要的身份 → 结果：<code>apd</code> 校验调用方是否落在你允许的超管名单里，不在就直接拒绝。</li><li><strong>`apd` 发出一次 supercall</strong> → 对内核 → 走 APatch 预留的专用调用通道（一个特定编号的 syscall，内核侧的 KPM 早在这个入口上装了钩子）→ 结果：CPU 从 EL0 陷到 EL1，进入了 KPM 的代码。</li><li><strong>KPM 找到目标 `task_struct`</strong> → 对当前进程的 <code>cred</code> → 申请一份副本，把 uid/gid/fsuid/fsgid 全改成 0，补齐 capability 位图，并把 SELinux 的 secid 切到允许的域 → 结果：一份「uid=0」的新身份被原子地挂回进程。</li><li><strong>内核返回用户态</strong> → 对刚才那个 <code>su</code> 进程 → 从系统调用正常返回 → 结果：<code>getuid()</code> 现在是 0，<code>#</code> 提示符出现，一百毫秒结束。</li></ol>
+<p>注意第 4 步改的是<strong>副本</strong>不是原结构：<code>cred</code> 在内核里是引用计数、写时复制的共享对象，直接改原结构会波及所有共享它的线程。规范做法是 <code>prepare_creds()</code> 取副本、改字段、再用 <code>commit_creds()</code> 换上去——这也是内核态代码敢动手却不把系统搞崩的原因。</p>
+<h2>KPM 是怎么住进内核的</h2>
+<ol><li><strong>patch boot.img 时</strong> → 对内核镜像 → 在稳定的调用点上留一个 hook 槽位，并把 KPM loader 一并塞进镜像 → 结果：开机后内核自带一个「能被叫醒的入口」。</li><li><strong>开机、用户态 `apd` 起来后</strong> → 对模块目录下的 <code>.kpm</code> 文件 → 读进内存、再通过 supercall 把这段字节交给内核 → 结果：一段模块代码进入了内核地址空间。</li><li><strong>内核侧重定位</strong> → 对模块里的未解析符号 → 拿内核符号表逐个填上真实地址 → 结果：模块终于能调用 <code>prepare_creds</code>、<code>commit_creds</code> 这些内核函数了。</li><li><strong>跑模块的 init</strong> → 对那个预留的 hook 槽位 → 注册提权回调与 supercall 处理函数 → 结果：从这一刻起，前面那条提权链路才真正接通。</li></ol>
+<p>所以顺序是反直觉的：<strong>不是先有 root 再装模块，而是先让内核带上一个入口，再靠这个入口把模块喂进去，最后模块才把 root 交出来</strong>。开机到 <code>apd</code> 就绪之间的那几秒 <code>su</code> 是无效的，因为槽位还空着。</p>
+<h2>动手：亲眼看见那几十个字节</h2>
+<div class="code">
+<div class="code-title">一次提权前后的对照（adb shell）</div>
+<pre><code>adb shell id                                  # 基线：uid=2000(shell)
+adb shell su -c id                            # 提权后：uid=0(root)
+adb shell su -c &#x27;cat /proc/self/status&#x27;       # 看 Uid / Gid / CapEff 四行
+adb shell su -c &#x27;getprop ro.boot.verifiedbootstate&#x27;  # 顺手记下 boot 状态</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到 `uid=0(root)` 且 `CapEff` 变成一长串非 0 的十六进制，算成功</strong>。如果 <code>su</code> 直接回 <code>not allowed</code>，说明超管名单没放行或 supercall 没接通，多半是 KPM 没加载；如果 <code>id</code> 已经是 <code>uid=0</code>、访问某个 <code>/data</code> 目录却仍报 <code>Permission denied</code>，别急着怀疑提权失败——那是 SELinux 域没切对，正是下面这张表要讲的事。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>表面猜测</th><th>真实原因</th></tr></thead><tbody>
+<tr><td>su 回 not allowed</td><td>没 root</td><td>调用方不在 apd 名单，KPM 根本没被调用</td></tr>
+<tr><td>uid=0 但读目录被拒</td><td>提权只成功一半</td><td>SELinux secid 仍是受限域，capability 管不到它</td></tr>
+<tr><td>重启后前几秒 su 失效</td><td>模块坏了</td><td>apd 未就绪，内核 hook 槽位还空着</td></tr>
+<tr><td>三绿里 STRONG 掉档</td><td>隐藏没做好</td><td>boot 被改、vbmeta 状态已定，与 cred 无关</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>`uid=0` 并不等于「什么都能干」</strong>。Linux 里除了 uid 还有 capability 位图，Android 上还压着一层 SELinux；只改 uid 不改 secid，你会得到一个「是 root 却被 SELinux 拦住」的怪进程。内核态 root 之所以干脆，是因为它能把 <code>cred</code>、capability、secid 三样一次性对齐。</div></aside>
+<p>记住这条「用户态请求 → 内核槽位 → 改写 cred」的链路。第 03 章会告诉你：正因为你动了 boot.img、改了 vbmeta，<code>verifiedBootState</code> 再也回不到 GREEN，三绿的 STRONG 档就此掉档——<strong>提权能力是内核给的，可信证明却是启动链给的，两者根本不在同一层</strong>。第四部讲 KPM 生命周期时，会把本章一笔带过的重定位、init 与槽位注册逐行展开。</p>
 </article>
 <div class="pager"><span></span><a href="02-abl.html" style="text-align:right"><span class="dir">下一讲</span>02 Android 手机启动过程</a></div>
 </main>

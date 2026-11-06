@@ -161,6 +161,42 @@
 <tr><td>映射</td><td>内存映射 / 符号映射 / 端口映射</td><td>看域</td></tr>
 <tr><td>代理</td><td>Binder 代理 / 网络代理 / 调试代理</td><td>看协议</td></tr>
 </tbody></table></div>
+<h2>读 issue 时撞见一个不认识的缩写</h2>
+<p>你在读一份英文 issue，句子是 <code>the entrypoint was patched but the caller still inlines the original</code>。每个单词都认识，连起来却拿不准：这里的 <code>entrypoint</code> 是 ELF 的 <code>e_entry</code>，还是 ART 里 <code>ArtMethod</code> 那个跳转地址？前面那张大术语表给了 22 个词条的一句话解释，B.1 和 B.5 又点过「一词多义」的坑。这一页要练的是现场怎么自己判：不靠背，靠看它旁边的动词和它所在的层。</p>
+<p>把 AOSP 源码窗口开在旁边。术语不是靠词典定义的，是靠「谁在用它、用它做了什么」定义的。一个词只要能回答「它描述的是结构、动作，还是状态」，八成的歧义就自动消失了。</p>
+<h2>一个词换三个上下文，逐拍看</h2>
+<ol><li><strong>linker</strong> → 对 <strong>`e_entry`</strong> → 读 ELF header 里的入口地址并跳过去 → 结果这里的 entrypoint 描述的是一个<strong>结构字段</strong>，动作是「读取」。</li><li><strong>ART</strong> → 对 <strong>`ArtMethod` 的 entrypoint</strong> → 把该方法Quick 编译后的代码地址写进去 → 结果同一个词描述的是<strong>运行时指针</strong>，动作是「替换」，所以才会牵扯 <code>kAccNative</code> 与 deopt。</li><li><strong>壳</strong> → 对 <strong>检测函数的 entrypoint</strong> → 先备份再改，之后做 CRC 比对 → 结果这个词出现在<strong>完整性语境</strong>，动作是「校验」，跟前面两种完全不同。</li><li><strong>你</strong> → 对 <strong>句子里的动词</strong> → 看到 <code>patched</code> 与 <code>inlines</code>，立刻把语境锁到 ART → 结果是判断出该去查 JIT 内联，而不是去翻 ELF header。</li><li><strong>你</strong> → 对 <strong>源码</strong> → <code>grep</code> 一下这个词在 AOSP 里出现的位置 → 结果是拿到真实定义，比任何二手解释都可靠。</li></ol>
+<h2>按「结构 / 动作 / 状态」给术语分筐</h2>
+<ul><li><strong>结构类</strong>：VMA、PTE、dexElements、handler_table、task_struct——它们回答「东西长在哪」，旁边常跟 <code>read</code>、<code>map</code>、<code>offset</code>。</li><li><strong>动作类</strong>：hook、patch、deopt、relocate、attest——它们回答「谁改了谁」，旁边常跟 <code>before/after</code>、<code>backup</code>、<code>restore</code>。</li><li><strong>状态类</strong>：verifiedBootState、TracerPid、risk 等级、Enforcing——它们回答「现在是什么情况」，旁边常跟 <code>is</code>、<code>get</code>、<code>compare</code>。</li><li><strong>易混提醒</strong>：<code>patch</code> 在二进制语境是改文件、在代码语境是改源码、在热修复语境是运行时替换；先看宾语再定动作。</li><li><strong>易混提醒</strong>：<code>sandbox</code> 在 SELinux 语境是域、在 App 语境是 uid 隔离、在分析语境是隔离虚拟机；先看层级再定范围。</li></ul>
+<h2>可复现实验：去源码里查一个词的真实定义</h2>
+<div class="code">
+<div class="code-title">在 AOSP  checkout 里跑（把词换成你撞见的那个）</div>
+<pre><code># 1. 先看它出现在哪些层，别急着看第一处
+grep -rn &#x27;entrypoint&#x27; art/runtime/ bionic/linker/ | head -30
+ 
+# 2. 看定义而不是看注释：注释可能是旧的
+grep -rn -A4 &#x27;entry_point_from_quick_compiled_code_&#x27; art/runtime/art_method.h
+ 
+# 3. 再看谁改它，确认这是动作还是结构
+grep -rn &#x27;SetEntryPoint&#x27; art/runtime/ | head -20
+ 
+# 4. 记录一句话：谁 → 对谁 → 做了什么 → 结果
+echo &#x27;ART → ArtMethod → 写 quick code 地址 → 调用时不再解释字节码&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：第 2 步能定位到一个真实的字段声明，第 3 步能找到至少一个写它的函数，于是你写下的那句「谁 → 对谁 → 做了什么 → 结果」有源码支撑。看到什么算失败：<code>grep</code> 只有注释、没有定义，或者命中全在 <code>test/</code> 与过时分支里——那说明这个词在当前版本已经被改名，换用符号名或就近的结构体名再搜一次，别拿旧注释下结论。</p>
+<div class="tbl"><table>
+<thead><tr><th>术语</th><th>常被误当成</th><th>真实所指</th><th>一眼分辨的线索</th></tr></thead><tbody>
+<tr><td>entrypoint</td><td>ELF e_entry</td><td>ART 的方法跳转地址（视语境）</td><td>旁边有 inlines / deopt 就是 ART</td></tr>
+<tr><td>hook</td><td>git hook / 事件回调</td><td>运行时拦截并转调</td><td>旁边有 backup / trampoline</td></tr>
+<tr><td>patch</td><td>代码补丁</td><td>改二进制字节或文件</td><td>旁边有 offset / checksum</td></tr>
+<tr><td>sandbox</td><td>分析沙箱</td><td>SELinux 域或 uid 隔离</td><td>旁边有 scontext / uid</td></tr>
+<tr><td>mapping</td><td>端口映射</td><td>一段虚拟内存区间</td><td>旁边有 r-xp / /proc/PID/maps</td></tr>
+<tr><td>proxy</td><td>网络代理</td><td>Binder 的 Proxy 端</td><td>旁边有 Parcel / onTransact</td></tr>
+<tr><td>attest</td><td>本地签名校验</td><td>TEE 出具的硬件证明</td><td>旁边有 verifiedBootState</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>缩写本身几乎不携带信息，携带信息的是它旁边的动词</strong>。<code>entrypoint</code> 三个字母既可以是结构、也可以是指针、也可以是校验对象；但 <code>patched</code>、<code>inlines</code>、<code>compared</code> 一出现，语境就锁死了。所以遇到生词先别查词典，先把整句的动词圈出来——这比背二十条释义快，而且不会背错版本。</div></aside>
+<p>这套「看动词定层」的办法和 A01 那张速查卡是互补的：卡按症状分层，术语表按句子定层。等到了 A03，你会把两者一起用上——搭环境时读的是版本号与状态词，排错时读的是动作词与错误码。</p>
 </article>
 <div class="pager"><a href="a01.html"><span class="dir">上一讲</span>A01 附录 A · 全书速查表</a><a href="a03.html" style="text-align:right"><span class="dir">下一讲</span>A03 附录 C · 学习路线与实验环境</a></div>
 </main>

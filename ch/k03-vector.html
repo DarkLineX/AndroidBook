@@ -204,6 +204,77 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 <h2>3.11 实战：用信号做“反调试”</h2>
 <ol><li>注册一个 SIGTRAP 处理函数。</li><li>如果调试器在单步，SIGTRAP 会被调试器先收到，你的处理函数不会被调用。</li><li>于是“处理函数没被调用”就成了“正在被调试”的证据。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这是非常经典的反调试手法，也很容易被反向利用：hook 掉信号注册，让处理函数“总是被调用”。</div></aside>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_syscall">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">一条 svc 指令，穿越 EL0 → EL1 → EL0</span>
+  </div>
+  <p class="anim-sub">异常向量、pt_regs、系统调用表，五帧串起来</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_syscall/f00.png" alt="一条 svc 指令，穿越 EL0 → EL1 → EL0 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>用户态执行 svc #0，x8 里放调用号</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 用户态执行 svc #0，x8 里放调用号</button>
+    <button type="button" data-i="1">2. CPU 切到 EL1，跳向量表低 EL 同步入口</button>
+    <button type="button" data-i="2">3. 内核把寄存器保存成 pt_regs</button>
+    <button type="button" data-i="3">4. 按 x8 索引 sys_call_table 并调用</button>
+    <button type="button" data-i="4">5. eret 恢复现场，回到用户态继续执行</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_syscall.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["用户态执行 svc #0，x8 里放调用号", "CPU 切到 EL1，跳向量表低 EL 同步入口", "内核把寄存器保存成 pt_regs", "按 x8 索引 sys_call_table 并调用", "eret 恢复现场，回到用户态继续执行"]</script>
+<h2>把一根手指按在 svc 指令上</h2>
+<p>这一条指令之前，代码在 EL0，用的是 <code>SP_EL0</code>；这一条指令之后，同一个进程已经站在 EL1，用 <code>SP_EL1</code>，寄存器现场被整整齐齐压进内核栈。中间没有跳转、没有函数调用，只有 CPU 自己把异常级别抬了一格。你写的所有 hook，都是在找机会往这一格台阶上塞一只脚。</p>
+<p>现场感来自一个事实：<code>svc #0</code> 指令里<strong>没有系统调用号</strong>。号在 <code>x8</code>，参数在 <code>x0</code> 到 <code>x5</code>，返回值会写回 <code>x0</code>。也就是说，一条看起来什么都没说的指令，靠约定把整个用户态的请求搬进了内核。</p>
+<h2>一条系统调用穿越内核的五拍</h2>
+<ol><li><strong>用户态</strong> 对 <strong>x8</strong> 放号：libc 把调用号写进 x8，参数依次放进 x0 到 x5，然后执行 <code>svc #0</code> → 结果：CPU 把返回地址存进 <code>ELR_EL1</code>、把 PSTATE 存进 <code>SPSR_EL1</code>，切到 <code>SP_EL1</code>。</li><li><strong>CPU</strong> 对 <strong>`VBAR_EL1`</strong> 取向量：按来自低 EL、AArch64、同步定位到偏移 <code>0x400</code> 那一项，跳进 <code>el0t_64_sync</code> → 结果：进入内核异常入口，还没碰任何 C 代码。</li><li><strong>`kernel_entry 0`</strong> 对 <strong>内核栈</strong> 铺现场：把 x0 到 x30、sp、pc、pstate 压成一个 <code>pt_regs</code> → 结果：内核从此有一份可随意读写的用户现场；hook 改参数就是改这块内存。</li><li><strong>`el0_svc` 到 `do_el0_svc`</strong> 对 <strong>`sys_call_table`</strong> 查表：拿 <code>pt_regs-&gt;regs[8]</code> 当索引调用对应实现 → 结果：目标系统调用真正跑起来，返回值写回 <code>pt_regs-&gt;regs[0]</code>。</li><li><strong>`ret_to_user`</strong> 对 <strong>挂起信号</strong> 顺便查一次账：先看 <code>TIF_SIGPENDING</code>，有信号就先搭好用户栈帧跳去 handler，否则直接 <code>eret</code> → 结果：ELR 与 SPSR 复原，进程回到 EL0，像什么都没发生过。</li></ol>
+<p>第 5 拍是很多人栽跟头的地方：信号<strong>不是</strong>在产生的那一刻被处理的，而是在每次准备返回用户态的路上被顺手检查。所以一个信号可能卡在任意两条指令之间才落地；也所以信号处理函数里只能调用异步信号安全的函数——它脚下踩的是被打断的栈，不是干净的调用栈。</p>
+<h2>同步、异步、调试：三条入口分清楚</h2>
+<ol><li><strong>外设</strong> 对 <strong>GIC</strong> 拉高一根 IRQ 线：中断是异步的，与当前正在执行的指令无关 → 结果：CPU 在指令边界接受，走 <code>VBAR_EL1</code> 偏移 <code>0x480</code> 那一项。</li><li><strong>`el0_irq`</strong> 对 <strong>`pt_regs`</strong> 同样铺一份现场，但紧接着调 <code>irq_handler</code> → 结果：中断处理跑在中断上下文里，<strong>不能睡眠、不能拿可能睡眠的锁</strong>。</li><li><strong>`MDSCR_EL1.SS` 加 `SPSR_EL1.SS`</strong> 对 <strong>每条指令</strong> 加一拍：<code>eret</code> 之后 CPU 执行完一条就再报一次调试异常 → 结果：单步不靠改代码，靠 CPU 自己停；<code>ESR_EL1.EC</code> 会显示对应的调试异常原因。</li><li><strong>断点指令 `brk`</strong> 对 <strong>当前 pc</strong> 制造同步异常：走 <code>el0t_64_sync</code> 的 debug 分支 → 结果：调试器拿到 SIGTRAP，并把 <code>pt_regs-&gt;pc</code> 回退或前移来对齐。</li><li><strong>hook 代码</strong> 对 <strong>`pt_regs` 与 `ELR_EL1`</strong> 动手：改 <code>regs[0]</code> 换参数，改 <code>pc</code> 换返回去向 → 结果：用户态看到的世界被改了，而它自己毫不知情。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>向量表偏移</th><th>触发条件</th><th>入口做了什么</th><th>能不能睡眠</th></tr></thead><tbody>
+<tr><td>0x400</td><td>低 EL、AArch64、同步：svc、brk、缺页</td><td>kernel_entry 0 后分派 el0_svc / el0_dbg / el0_da</td><td>能，系统调用路径可睡眠</td></tr>
+<tr><td>0x480</td><td>低 EL、AArch64、IRQ</td><td>kernel_entry 0 后调 irq_handler</td><td>不能</td></tr>
+<tr><td>0x600</td><td>低 EL、AArch32、同步</td><td>走 compat 入口，寄存器按 32 位映射</td><td>能</td></tr>
+<tr><td>0x200</td><td>当前 EL、SP_EL1、同步</td><td>el1h_64_sync，内核态自己出错或 brk</td><td>视具体路径而定</td></tr>
+<tr><td>0x280</td><td>当前 EL、SP_EL1、IRQ</td><td>el1h_64_irq，内核态嵌套中断</td><td>不能</td></tr>
+</tbody></table></div>
+<h2>把一次 svc 的账本翻出来</h2>
+<div class="code">
+<div class="code-title">动手：从调用号读到信号屏蔽字</div>
+<pre><code># 1. 让进程停在一个系统调用上，然后读它自己的现场
+cat /proc/self/syscall
+# 输出格式：调用号 arg0..arg5 sp pc
+# 成功：第一列是非负调用号（读这个文件用的正是 read 系列）
+# 失败：显示 running 或 0 -1 -1 =&gt; 当时不在系统调用里，用 gdb 断住再读
+ 
+# 2. 用 strace 看号是怎么被送进去的（号本身不出现在指令里）
+strace -e trace=openat,read,write -o /data/local/tmp/svc.txt cat /proc/self/status &gt;/dev/null
+grep -E &#x27;openat|read&#x27; /data/local/tmp/svc.txt | head -6
+# 成功：read 行末尾的返回值，就是写回 x0 的那个数
+# 失败：全是 ???? 或 EPERM =&gt; ptrace 被 seccomp / SELinux 挡了，先查 TracerPid
+ 
+# 3. 看挂起信号与屏蔽字，对应上面第 5 拍
+grep -E &#x27;^(SigPnd|ShdPnd|SigBlk|SigIgn|SigCgt)&#x27; /proc/self/status
+# 成功：SigCgt 里出现某一位 =&gt; 该信号注册了 handler，返回用户态时会被检查
+ 
+# 4. 对照寄存器现场（需 gdb 或内核态）
+gdb -q -batch -ex &#x27;info registers&#x27; -p 1 2&gt;/dev/null | head -5
+# 成功：读得到 pc、sp、pstate；失败多半是 ptrace_scope 或权限，换 root 再试</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>第 1 条命令最值得反复敲：<code>/proc/self/syscall</code> 把<strong>当前正在执行的那个系统调用</strong>的号、六个参数寄存器、栈指针与 pc 一口气摊开给你看。它比 strace 更接近现场，因为它读的就是内核替这个进程保存的那份 <code>pt_regs</code>。拿它和 <code>strace</code> 的输出对一遍，号在 x8、参数在 x0 到 x5 这件事就从纸面变成了事实。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>svc 是同步异常，却允许睡眠</strong>。同步与异步说的是异常和指令的关系，能不能睡眠说的是处理路径会不会主动让出 CPU。系统调用走进程上下文，可以走到 <code>schedule()</code>；IRQ 走中断上下文，一步都不能睡。把<strong>同步</strong>和<strong>不可睡眠</strong>绑在一起，是读内核代码时最常见的口误。</div></aside>
+<p>把这条结论带走：<strong>所有打断都会留下一个可改写的 `pt_regs`</strong>。第三部 F07 的 Stalker 与 F06 的默认 Hook，本质都是在用户态复刻这套保存现场、改写、恢复现场；第四部 M04 直接把 <code>MDSCR_EL1.SS</code> 打开做内核单步，M05 的硬件断点与这里的 <code>brk</code> 共用同一条调试异常入口；连 K05 的 kprobe 也是靠插入断点异常才拿到寄存器。想改现场，先找到现场在哪。</p>
 </article>
 <div class="pager"><a href="k02-vma.html"><span class="dir">上一讲</span>K02 Linux 内存管理</a><a href="k04-file.html" style="text-align:right"><span class="dir">下一讲</span>K04 VFS、文件系统与 procfs</a></div>
 </main>

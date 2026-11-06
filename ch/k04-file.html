@@ -193,6 +193,52 @@ lsof +L1 2&gt;/dev/null | head</code></pre>
 # 不一致 = 被覆盖过</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>一个长度为零的文件，读出了几千个字</h2>
+<p>在 adb shell 里敲一次 <code>cat /proc/self/maps</code>，几 KB 内容唰地铺满屏幕。可你要是顺手 <code>stat</code> 一下这个文件，会看见大小是 0。一个长度为零的文件，读出了几千个字——因为它压根不在磁盘上，也不是磁盘文件的投影。你刚才那次 <code>read</code>，是内核当场给你现写的一封信。</p>
+<p>把 VFS 想成一层总机：不管下面接的是 ext4、tmpfs、procfs 还是 binder，上面一律只认 <code>open</code>、<code>read</code>、<code>write</code>。总机把一次 <code>open</code> 拆成一串对象，每个对象各管一段寿命；而 <code>/proc</code> 就是那个最会骗人的分机——它没有块设备，没有对应磁盘块的 inode，只有一组在 <code>read</code> 时才被调用的函数。</p>
+<h2>一次 open 拆成的五拍对象链</h2>
+<ol><li><strong>用户态</strong> 对 <strong>内核</strong> 递一个路径字符串和一组 flags → 结果：<code>openat</code> 拿到 dfd 与 pathname，开始 <code>filename_lookup</code>。</li><li><strong>`pathwalk`</strong> 对 <strong>dentry 缓存</strong> 逐段走：斜杠、proc、self、文件名，逐级 hash 查找、必要时回调 <code>lookup</code> → 结果：拿到目标 <code>dentry</code> 与它的 <code>inode</code>；<code>self</code> 在这里被解析成当前读者的 pid 目录。</li><li><strong>`alloc_file`</strong> 对 <strong>`files_struct`</strong> 造一次打开实例：新建 <code>struct file</code>，填好 <code>f_op</code>、<code>f_pos</code>、<code>f_flags</code>，再从 fdtable 里挑一个最小空位 → 结果：进程手里多了一个整数 fd，指向这个 file。</li><li><strong>`vfs_read`</strong> 对 <strong>`f_op` 的 seq_file 回调</strong> 分派：procfs 节点调自己的 <code>show</code>，一次生成一页 → 结果：内核把当前进程的 VMA 现场写成文本，<code>copy_to_user</code> 送回用户缓冲区。</li><li><strong>第二次 `read`</strong> 对 <strong>`f_pos`</strong> 继续：seq_file 从上次停的位置接着生成下一页 → 结果：内容看起来是连续的，其实是两拨现算的数据拼起来的；中途数据变了，两页就对不上。</li></ol>
+<p>第 2 拍里 <code>/proc/self</code> 是个魔法符号链接：它不指向固定的 pid，而是在<strong>每次被解析时</strong>指向正在解析它的那个进程。所以两个进程同时 <code>cat /proc/self/maps</code>，拿到的是各自的映射表；同一个进程里 <code>/proc/self/fd/N</code> 与 <code>/proc/&lt;pid&gt;/fd/N</code> 也永远等价。这条性质是很多自查脚本的地基，也是很多<strong>我明明隐藏了却还能看见</strong>的根源——你隐藏的是别人的目录，不是读者自己的。</p>
+<h2>mount namespace 是怎么把内容偷换掉的</h2>
+<ol><li><strong>`clone(CLONE_NEWNS)`</strong> 对 <strong>mount namespace</strong> 复制一份挂载树 → 结果：新 namespace 里挂什么、卸什么，外面完全看不见。</li><li><strong>`mount --bind`</strong> 对 <strong>某个路径</strong> 盖一层：把另一个文件或目录挂到目标 dentry 上 → 结果：这个 namespace 里读该路径拿到新内容，其它 namespace 仍读原件。</li><li><strong>`statx`</strong> 对 <strong>覆盖后的 inode</strong> 取身份：<code>st_dev</code>、<code>st_ino</code> 仍来自原来那套对象，或被 bind 源改写 → 结果：内容与身份出现一处可比对的不一致。</li><li><strong>`/proc/self/mountinfo`</strong> 对 <strong>挂载树</strong> 如实汇报：每条记录带 mount id、parent id、设备号、root、挂载点与可选标签 → 结果：只要没主动过滤，bind 记录会原样躺在里面。</li><li><strong>检测方</strong> 对 <strong>`map_files` 与 fd</strong> 反查：内存映射区间对应的真实来源链接 → 结果：一段声称来自系统 so 的映射，若链接指向别处，隐藏就穿了。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>观察面</th><th>读到什么</th><th>正常应看到</th><th>异常意味着</th></tr></thead><tbody>
+<tr><td>/proc/self/mountinfo</td><td>本 namespace 的全部挂载记录</td><td>系统分区只读、无多余 bind</td><td>出现指向 /data 的 bind 覆盖</td></tr>
+<tr><td>stat 的 dev 与 ino</td><td>文件的设备号与 inode 号</td><td>与官方固件里同一路径一致</td><td>内容换了但身份没换，或反之</td></tr>
+<tr><td>st_size（procfs）</td><td>文件大小</td><td>多数 /proc 文件恒为 0</td><td>为零却读出内容属正常，别拿它判空</td></tr>
+<tr><td>/proc/self/fd/</td><td>进程打开的文件链接</td><td>与 maps、lsof 能对齐</td><td>多出匿名 fd 或指向可疑路径</td></tr>
+<tr><td>/proc/self/map_files/</td><td>每段映射对应的真实文件</td><td>链接目标与 maps 里的路径一致</td><td>链接被删或指向 tmpfs 里的替身</td></tr>
+<tr><td>ls -Z</td><td>文件安全上下文</td><td>系统文件带 system_file 类型</td><td>类型与内容不匹配（接 K08）</td></tr>
+</tbody></table></div>
+<h2>三句话验证你读的是不是真的那个文件</h2>
+<div class="code">
+<div class="code-title">动手：尺寸、身份、挂载树交叉比对</div>
+<pre><code># 1. 尺寸与内容的悖论：先证明 procfs 是现算的
+stat -c &#x27;%s %n&#x27; /proc/self/maps &amp;&amp; wc -c &lt; /proc/self/maps
+# 成功：stat 给 0，wc 给几千 =&gt; 内容来自 read 回调，不是磁盘块
+# 失败：stat 非 0 =&gt; 你看的不是 procfs，检查是否被 bind 成了普通文件
+ 
+# 2. 身份比对：dev 加 inode 加大小
+stat -c &#x27;%d %i %s %n&#x27; /system/lib64/libexample.so
+# 成功：与固件里同一路径的 dev 与 ino 一致 =&gt; 没被换
+# 失败：内容变了但 dev 与 ino 没变 =&gt; 覆盖者只改了内容；两者都变 =&gt; 换成了替身文件
+ 
+# 3. 挂载树与 fd 一起看
+grep -i bind /proc/self/mountinfo | head -20
+ls -l /proc/self/fd/ | head -20
+readlink /proc/self/fd/0
+# 成功：mountinfo 无多余 bind，fd 链接与预期一致
+# 失败：出现指向 /data/local/tmp 的 bind，或 fd 指向 deleted 文件 =&gt; 有替换痕迹
+ 
+# 4. 映射来源反查（需 root 或 ptrace 权限）
+ls -l /proc/self/map_files/ | head -10
+# 成功：每段链接目标与 maps 里的路径一一对应
+# 失败：出现 deleted 或链接落到匿名 tmpfs =&gt; 有人在运行时换了文件</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>四条命令要<strong>一起</strong>看才有意义：单看 <code>stat</code> 只能证明身份没变，单看 <code>mountinfo</code> 只能证明当前 namespace 干净。真正的证据是<strong>身份、内容、挂载树三者之间出现不能同时成立的关系</strong>。这也是 seq_file 分段读的副作用：如果数据源在两次 <code>read</code> 之间被换掉，前半页和后半页会自相矛盾——那种不一致本身就是线索。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>/proc 里文件大小是 0，却不是空文件；而 st_ino 一样，内容也未必一样</strong>。procfs 的 inode 是内核造出来的门牌号，<code>read</code> 时才现写内容；反过来，<code>mount --bind</code> 能让门牌号不变而内容全变。于是用大小判断有没有内容、用 inode 判断是不是同一个文件，在 Android 上都不可靠——可靠的是把身份、内容、挂载树交叉比对。</div></aside>
+<p>把这条结论带走：<strong>隐藏一个文件，改的是某个 namespace 里的一次路径解析，不是改文件本身</strong>。第四部 M02 把 <code>/proc</code>、<code>/sys</code> 当成内核观察面逐项收口时，用的就是这里这张表；第三部 F09 自定义 linker 要绕开 <code>map_files</code> 与 fd 的交叉校验，靠的也是对这条对象链的理解；第五部 L06 把 Binder、FD、linker 三本账一起收口，本质上就是在回答谁打开过什么、现在还指不指向它。</p>
 </article>
 <div class="pager"><a href="k03-vector.html"><span class="dir">上一讲</span>K03 ARM64 异常、中断与信号</a><a href="k05-printk.html" style="text-align:right"><span class="dir">下一讲</span>K05 Linux 内核调试与追踪</a></div>
 </main>

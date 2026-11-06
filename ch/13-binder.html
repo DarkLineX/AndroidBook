@@ -165,6 +165,67 @@ u4  work_source_uid
 <button class="copy" type="button">复制</button>
 </div>
 <p>抓 Binder 调用时，看到 <code>interface token</code> 就能知道“调的是哪个接口”，看到 <code>code</code> 就知道“哪个方法”。这两个字段是逆向 Binder 通信的钥匙。</p>
+<h2>一句话问出去，四个角色接过来</h2>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_binder">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Binder：一次跨进程调用走完整条路</span>
+  </div>
+  <p class="anim-sub">Proxy → 驱动 → Stub → Server，再沿原路返回</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_binder/f00.png" alt="Binder：一次跨进程调用走完整条路 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>Client 调 Proxy，参数写进 Parcel</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. Client 调 Proxy，参数写进 Parcel</button>
+    <button type="button" data-i="1">2. ioctl 发 BC_TRANSACTION，数据进内核</button>
+    <button type="button" data-i="2">3. 驱动按 handle 找到目标 BBinder</button>
+    <button type="button" data-i="3">4. 目标进程线程池取事务，Stub.onTransact 解包</button>
+    <button type="button" data-i="4">5. 结果经 BR_REPLY 回到 Proxy，调用返回</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_binder.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["Client 调 Proxy，参数写进 Parcel", "ioctl 发 BC_TRANSACTION，数据进内核", "驱动按 handle 找到目标 BBinder", "目标进程线程池取事务，Stub.onTransact 解包", "结果经 BR_REPLY 回到 Proxy，调用返回"]</script>
+<p>App 里那行 <code>getPackageInfo(...)</code> 看着像一次普通函数调用，其实一次都没在本进程里执行。把这条调用按成慢动作：参数先被一格格塞进 Parcel，然后一次 <code>ioctl(BINDER_WRITE_READ)</code> 把整包数据交给内核驱动；驱动按 handle 找到 system_server 里的那个 Binder 节点，把事务丢进它的线程池，某个线程被唤醒、反序列化、真正去查包信息，再把结果沿原路写回来。<strong>一次「本地调用」，实际上是四个角色接力跑完的一次往返</strong>。</p>
+<p>这个结构决定了 Android 里一件很根本的事：<strong>所有「系统说了算」的状态，都不在你自己的进程里</strong>。文件视图可以藏，属性的显示值可以改，但只要 <code>PackageManager</code> 那边还登记着，App 一问就能问出来。隐藏方案最后崩在哪，往往就崩在这一层没对上。</p>
+<h2>跟着一个 Parcel 走完一趟往返</h2>
+<ol><li><strong>App 侧代理</strong> → 对 <code>BPackageManager</code> 的代理对象 → 把 interface token、方法 code、参数依次 <code>writeString</code>/<code>writeInt</code> 进 Parcel → 结果：一次调用被压成一段扁平字节。</li><li><strong>libbinder</strong> → 对 <code>/dev/binder</code> → 把 Parcel 包进 <code>binder_transaction_data</code>，发 <code>ioctl(BINDER_WRITE_READ)</code> → 结果：数据从用户态拷进内核，调用线程开始等回复。</li><li><strong>Binder 驱动</strong> → 对 handle → 查本进程的 <code>binder_ref</code>，找到目标 <code>binder_node</code> 与 <code>binder_proc</code> → 结果：确定该把事务投递给哪个进程的哪条 todo 队列。</li><li><strong>驱动 → system_server 线程池</strong> → 对目标的一个空闲 binder 线程 → 唤醒它，把事务数据映射到它的用户空间 → 结果：等待中的线程拿到一份 Parcel。</li><li><strong>服务端桩 `onTransact`</strong> → 对 Parcel → 按 code 分派、调真正的 <code>PackageManagerService</code> 实现 → 结果：包信息被查出来，写进 reply Parcel。</li><li><strong>驱动回程</strong> → 对发起方 → 把 reply 拷回它的用户空间、唤醒调用线程 → 结果：App 侧代理从 Parcel 里读出 <code>PackageInfo</code>，那行普通函数终于返回。</li></ol>
+<h2>动手：抓一次真实的 Binder 往返</h2>
+<div class="code">
+<div class="code-title">用 dumpsys 看服务，用 trace 看 ioctl</div>
+<pre><code># 1) 先确认服务在册、接口长什么样
+adb shell service list | grep -i package
+adb shell dumpsys package com.target.app | head -40
+ 
+# 2) 抓一次调用（另开终端触发目标 App 的包查询）
+frida-trace -U -i ioctl -f com.target.app
+# 在生成的 ioctl.js 里过滤 request == BINDER_WRITE_READ，打印 args[2] 前 32 字节
+ 
+# 3) 顺手核对四本账是否一致
+adb shell pm list packages | grep -i root
+adb shell &#x27;ls /data/app&#x27; | wc -l
+adb shell dumpsys activity processes | grep -i target | head -10</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>service list</code> 里能看到 <code>package</code> 这一项，<code>frida-trace</code> 在触发查询时打出一串 <code>ioctl</code> 调用，并且 <code>cmd</code> 参数对应 <code>BINDER_WRITE_READ</code>（0xc0306201）；第 3 步三个命令的结果彼此对得上——<code>pm</code> 查不到的包，<code>/data/app</code> 下没有目录，<code>dumpsys</code> 的进程列表里也没有它。<strong>失败</strong>要分开看：<code>service list</code> 里压根没有目标服务，说明名字写错或该服务被隐藏了注册；<code>frida-trace -i ioctl</code> 一次都没命中，多半是进程被 spawn 后停在门口没继续，先在 REPL 里 <code>%resume</code>；而三本账对不上（本地看不到、服务端查得到）恰恰是最有价值的「失败」——它正是隐藏没做全的直接证据，别把它当工具坏了。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>说明哪本账没对上</th><th>一条命令复核</th></tr></thead><tbody>
+<tr><td>本地 ls 干净、pm 查得到</td><td>文件视图 vs 包管理视图</td><td>pm list packages | grep -i root</td></tr>
+<tr><td>service list 里没有某服务</td><td>服务注册表被改</td><td>service list | wc -l 与基线比</td></tr>
+<tr><td>大图/大列表传着就崩</td><td>Parcel 超过单次事务上限</td><td>看 TransactionTooLargeException</td></tr>
+<tr><td>四本账全一致</td><td>隐藏闭合（或本来就没藏）</td><td>再查 dumpsys 进程与 mount</td></tr>
+<tr><td>调用卡住不返回</td><td>线程池满 / 同步 Binder 死锁</td><td>dumpsys activity processes 看线程</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>Binder 是「一次拷贝」而不是「两次拷贝」</strong>。驱动把发起方的数据映射进目标进程的地址空间，目标直接读那片映射，不必再逐字节复制一遍；单次事务约 1MB 的上限也来自这块按进程预分配的缓冲区，不是 Parcel 自己定的。所以 <code>TransactionTooLargeException</code> 的根源是缓冲区不够，把大图拆小永远比「试着压缩一下」更对症。</div></aside>
+<p>这条「App → libbinder → 驱动 → system_server」的路径，第 05 章 AMS 让 zygote fork 进程时走的就是它，第 08 章 <code>magiskd</code> 的 companion 通道也是同一套；第 03 章 TEE 的 attestation 请求同样先经 Binder 落到 keystore；第 04 章那句「四本账必须一致」，到这里才给出了每本账各自的查询接口。第三部会把本章一笔带过的 <code>binder_ref</code> / <code>binder_node</code> 与线程池调度完整展开。</p>
 </article>
 <div class="pager"><a href="12-java.html"><span class="dir">上一讲</span>12 Android Java Hook 原理</a><a href="14-dex.html" style="text-align:right"><span class="dir">下一讲</span>14 Android dex 详解</a></div>
 </main>

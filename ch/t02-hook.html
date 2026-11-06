@@ -137,6 +137,83 @@
 <ul><li>一份“输入 → 输出”的样本表（至少 5 组）。</li><li>复现脚本（含断言，能自动验证）。</li><li>一段说明：你是怎么从“不知道”到“确定”的，中间排除了哪些可能性。</li></ul>
 <h2>2.6 自测</h2>
 <ul><li>为什么“找汇聚点”比“反编译读代码”效率高？</li><li>如果签名在 native 层算，你的 hook 点应该换到哪？</li><li>“改一位看输出是否雪崩”能区分开哪两类算法？</li><li>复现脚本为什么必须带断言？</li></ul>
+<h2>你坐在机器前，手里只有一个陌生 APK</h2>
+<p>你坐在机器前，手里有一个陌生 APK、一份抓包得到的请求样本、一个开着 jadx 却全是 <code>a.b.c()</code> 的窗口。请求里有个 <code>sign=8f14e45f...</code> 的字段，长度 32，改一个参数它就全变。没有源码、没有文档、类名全是一个字母。这时候最容易掉进去的坑是硬读：从 <code>a.a()</code> 追到 <code>b.c()</code>，追三层就迷路。换个思路——算法一定要在某一刻把「算出来的值」交出去，也一定要在某一刻读进「原始输入」。你不需要读懂它，只需要站在这两个时刻上等着。</p>
+<p>桌面上开三个窗口：抓包工具、frida 终端、一个空的 Python 文件。目标写在一张便签上：拿到至少五组「输入 → 输出」，判断算法类型，用另一种语言复现并自动断言。五步法前面给过，这里要补的是「站哪等」的具体位置和「怎么证明自己没猜错」的收尾动作。</p>
+<h2>先站到算法必经的两个路口</h2>
+<ol><li><strong>你</strong> → 对 <strong>网络层</strong> → hook <code>okhttp3.Request.Builder.build</code> 或 <code>URL.openConnection</code> → 结果是拿到最终 URL 与 header，先确认 <code>sign</code> 到底挂在哪个字段、有没有时间戳一起参与。</li><li><strong>你</strong> → 对 <strong>`java.security.MessageDigest`</strong> → hook <code>update</code> 与 <code>digest</code>，把 <code>update</code> 的字节数组转 hex 打印 → 结果是摘要算法的原始输入自己报了出来，不用读任何混淆代码。</li><li><strong>你</strong> → 对 <strong>`javax.crypto.Mac`</strong> → hook <code>doFinal</code>，同时打印 <code>init</code> 时传入的 key → 结果是能分辨「纯 MD5/SHA」和「带密钥的 HMAC」，这是长度相同最容易误判的一对。</li><li><strong>你</strong> → 对 <strong>`String.equals` 或 native 的 `memcmp`</strong> → 只保留长度 16 以上的比较并打印两侧 → 结果是同时拿到「算出来的」和「期望的」，还能顺栈找到计算函数所在类。</li><li><strong>你</strong> → 对 <strong>调用栈</strong> → 在命中处打印 <code>Log.getStackTraceString(new Exception())</code> → 结果是把「一个值」定位到「一个类里的一个方法」，jadx 只需要打开这一处。</li><li><strong>你</strong> → 对 <strong>样本表</strong> → 每次改动只改一个参数、连采五组 → 结果是能看出哪些字段进了运算（改了就变）、哪些没进（改了不变），salt 的拼接位置也就浮出来了。</li></ol>
+<h2>判类型与复现，逐拍收紧</h2>
+<ul><li><strong>你</strong> → 对 <strong>输出长度</strong> → 数 hex 字符：32 位倾向于 MD5，40 位倾向于 SHA1，64 位倾向于 SHA256 → 结果先得到一个候选集合，而不是一个断言。</li><li><strong>你</strong> → 对 <strong>单个输入位</strong> → 改一个字符重跑，看输出是否雪崩 → 结果把「摘要类」和「自研编码类」分开：后者常常只变对应的一小段。</li><li><strong>你</strong> → 对 <strong>常量表</strong> → 在 so 里找 256 字节 S 盒、<code>0x67452301</code> 这类初值 → 结果是能确认 AES / SM4 / MD5 家族，也能顺带发现这是 native 实现。</li><li><strong>你</strong> → 对 <strong>Python 复现脚本</strong> → 用 <code>hashlib</code> 或 <code>hmac</code> 按猜到的拼接顺序算一遍 → 结果是对五组样本逐条断言，全绿才算数。</li><li><strong>你</strong> → 对 <strong>反例</strong> → 故意构造一组「少拼了时间戳」的输入 → 结果是断言必须失败；能主动让它失败，才说明你真的复现了而不是碰巧对上。</li></ul>
+<h2>可复现实验：让算法自己把输入报出来</h2>
+<div class="code">
+<div class="code-title">Frida 脚本：抓 MessageDigest 的输入与输出</div>
+<pre><code>Java.perform(function () {
+  const MD = Java.use(&#x27;java.security.MessageDigest&#x27;);
+  const Hex = Java.use(&#x27;java.lang.String&#x27;);
+ 
+  MD.update.overload(&#x27;[B&#x27;).implementation = function (buf) {
+    const s = Java.array(&#x27;byte&#x27;, buf);
+    send({tag: &#x27;in&#x27;, hex: bytesToHex(s)});
+    return this.update(buf);
+  };
+ 
+  MD.digest.overload().implementation = function () {
+    const r = this.digest();
+    send({tag: &#x27;out&#x27;, algo: this.getAlgorithm(), hex: bytesToHex(r)});
+    return r;
+  };
+ 
+  send({tag: &#x27;alive&#x27;});
+});
+ 
+function bytesToHex(a) {
+  let s = &#x27;&#x27;;
+  for (let i = 0; i &lt; a.length; i++) {
+    s += (&#x27;0&#x27; + (a[i] &amp; 0xff).toString(16)).slice(-2);
+  }
+  return s;
+}</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="code">
+<div class="code-title">Python 复现，带断言与反例（真的能跑）</div>
+<pre><code>import hashlib, hmac
+ 
+SAMPLES = [
+    (&#x27;ts=1700000000&amp;uid=42&#x27;, &#x27;a1b2c3d4e5f60718293a4b5c6d7e8f90&#x27;),
+    (&#x27;ts=1700000001&amp;uid=42&#x27;, &#x27;1f2e3d4c5b6a7988071625343f2e1d0c&#x27;),
+]
+ 
+def sign(raw, salt=&#x27;&#x27;):
+    return hashlib.md5((raw + salt).encode()).hexdigest()
+ 
+def hsign(raw, key=b&#x27;k&#x27;):
+    return hmac.new(key, raw.encode(), hashlib.md5).hexdigest()
+ 
+for raw, want in SAMPLES:
+    got = sign(raw)
+    print(raw, &#x27;-&gt;&#x27;, got, &#x27;expect&#x27;, want)
+    assert got == want, &#x27;结论错：拼接顺序或 salt 不对&#x27;
+ 
+# 反例：少拼一个字段，断言应当成立（即签名应当不同）
+assert sign(&#x27;ts=1700000000&#x27;) != sign(&#x27;ts=1700000000&amp;uid=42&#x27;)
+print(&#x27;ALL PASS&#x27;)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：Frida 里 <code>alive</code> 先出现，随后每次请求都成对打印 <code>in</code> 与 <code>out</code>，<code>out</code> 的 hex 与抓包里的 <code>sign</code> 完全一致；把 <code>in</code> 抄进 Python，五组样本逐条断言全绿，最后那行 <code>ALL PASS</code> 打出来。看到什么算失败：只有 <code>alive</code> 没有 <code>in</code>/<code>out</code>，说明摘要走的是 native 而不是 Java 层——改 hook <code>libc</code> 的 <code>MD5_Update</code> 或直接按 <code>memcmp</code> 找汇聚点；或者 <code>in</code> 抓到了但 Python 全红，先别急着换算法，九成是拼接顺序、编码（UTF-8 还是 GBK）、或者时间戳精度没对齐。</p>
+<div class="tbl"><table>
+<thead><tr><th>卡点</th><th>现场表现</th><th>下一步动作</th></tr></thead><tbody>
+<tr><td>只有 alive，没有输入输出</td><td>摘要在 native 层算</td><td>hook memcmp / strcmp 或 native 的 digest 导出</td></tr>
+<tr><td>in 抓到但复现全红</td><td>拼接顺序或编码不一致</td><td>打印 in 的原始字节，逐字段对齐</td></tr>
+<tr><td>长度 32 却是 HMAC</td><td>误判成纯 MD5</td><td>hook Mac.init 看有没有 key</td></tr>
+<tr><td>equals 日志刷屏</td><td>比较调用太多</td><td>按长度与字符集过滤，只留 16 位以上</td></tr>
+<tr><td>一 attach 就退出</td><td>反调试先拦了一道</td><td>先过反调试，再回来谈分析</td></tr>
+<tr><td>五组里有两组对不上</td><td>时间戳或随机数参与</td><td>把该字段固定，重采样本</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>最快定位算法的办法不是读代码，是让算法自己把输入报出来</strong>。任何摘要、任何 HMAC、任何自研编码，都必然在某一刻把原始字节交给一个函数、把结果交给一次比较。你只要站在那两个路口，混淆得再狠也绕不过去。反过来，一上来就 jadx 硬读，恰恰是把自己放进了对方最擅长拖慢你的地方。</div></aside>
+<h2>交付物清单（缺一项就不算完成）</h2>
+<ol><li><strong>样本表</strong>：至少五组「原始输入 → 签名输出」，标注每组只改了哪一个字段，附抓包原文与 Frida 的 <code>in</code>/<code>out</code> 日志片段。</li><li><strong>类型判断记录</strong>：写清你排除了哪些可能（例如「长度 32，先疑 MD5；hook 到 Mac.init 有 key，改判 HMAC-MD5」），以及每一步依据的观测。</li><li><strong>复现脚本</strong>：Python 或其他语言实现，含对五组样本的逐条断言，且必须包含一个「故意算错」的反例断言。</li><li><strong>汇聚点说明</strong>：你最终站在哪个函数上、为什么它一定被经过、如果算法挪到 native 你会换到哪。</li><li><strong>一段说明</strong>：从「不知道」到「确定」中间排除了哪些可能性，哪一步差点让你下错结论。</li></ol>
+<p>把这份「先看事实、再下结论」的记录留好。T03 里你会用同样的手法去量四个指标，只不过对象从签名值换成了 maps 条目数、线程数、FD 数；而 D01 那条采样时间线，本质上也是同一个动作——不猜它怎么想，只看它实际读了什么、什么时候读。</p>
 </article>
 <div class="pager"><a href="t01.html"><span class="dir">上一讲</span>T01 训练营一：给自写靶场 App 加一道检测，再绕过它</a><a href="t03.html" style="text-align:right"><span class="dir">下一讲</span>T03 训练营三：做一次完整的“隐藏 → 检测 → 改进”循环</a></div>
 </main>

@@ -175,6 +175,61 @@ Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code>
 <tr><td>checkPermission</td><td>按需</td><td>权限校验</td></tr>
 </tbody></table></div>
 <p>如果有人 hook 了这几个调用，就会在“启动的第一个 100ms 内”留下痕迹。这也是为什么“启动阶段”是检测与反检测的高频战场。</p>
+<h2>把镜头推到 fork 那一瞬间</h2>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_zygote">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">点一下图标，zygote 做了什么</span>
+  </div>
+  <p class="anim-sub">从 AMS 请求到 Activity 可见的五步时序</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_zygote/f00.png" alt="点一下图标，zygote 做了什么 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>Launcher 通过 Binder 请 AMS 启动 Activity</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. Launcher 通过 Binder 请 AMS 启动 Activity</button>
+    <button type="button" data-i="1">2. AMS 发现进程不存在，socket 通知 zygote</button>
+    <button type="button" data-i="2">3. zygote 执行 fork，子进程继承预加载内容</button>
+    <button type="button" data-i="3">4. 子进程 specialize：降权、设域、设包名</button>
+    <button type="button" data-i="4">5. 进入 ActivityThread.main，Java 世界正式启动</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_zygote.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["Launcher 通过 Binder 请 AMS 启动 Activity", "AMS 发现进程不存在，socket 通知 zygote", "zygote 执行 fork，子进程继承预加载内容", "子进程 specialize：降权、设域、设包名", "进入 ActivityThread.main，Java 世界正式启动"]</script>
+<p>图标被点下去，屏幕还没来得及变。此刻 Launcher 只是把一个 Intent 递了出去；真正决定「会不会多出一个进程」的，是 system_server 里那句「这个包还没有活着的进程」。再往后几十微秒，zygote 收到一条 socket 消息，执行了一条 <code>fork</code>——从这一瞬间开始，一个新进程带着<strong>整套 framework 的类、资源和已打开的 fd</strong> 一起出生了。把这个瞬间放慢，App 启动的全部秘密都在这条 fork 的两侧。</p>
+<p>先纠正一个画法：zygote <strong>从不 exec</strong>。常规 Linux 是「fork 一个新进程，再 exec 换成另一个程序」；Android 反着来——fork 之后不换程序映像，子进程继续跑 zygote 的那份代码，只是沿着不同的分支走进 <code>RuntimeInit</code> 与 <code>ActivityThread.main()</code>，然后原地降权变成某个 App。正因为不 exec，预加载的类才能被全体 App 共享。</p>
+<p>这里还有个容易被忽略的经济账：那些预加载的类与资源页，在 zygote 里是<strong>共享的只读页</strong>，fork 时内核只把它们在新进程的页表里再指一遍，并不真的复制内存——靠的是写时复制。所以几十个 App 同时跑，framework 的代码在物理内存里大体只有一份。等到某个 App 往自己的堆上写对象，那一页才单独变成它的私有副本。这也解释了为什么 zygote 预加载的东西必须尽量只读：一旦有人在 zygote 里改了可写数据，后续所有 fork 出去的进程都会带着这份改动出生，改动面会被放大到全机。</p>
+<h2>一次冷启动，逐拍数出来</h2>
+<ol><li><strong>Launcher</strong> → 对 AMS 的 Binder 代理 → 发 <code>startActivity</code>，带上 Intent 与 ActivityInfo → 结果：请求落到 system_server，AMS 开始查进程表。</li><li><strong>AMS</strong> → 对 <code>ProcessRecord</code> 表 → 查 <code>com.target.app</code> 是否已有活进程 → 结果：查不到，决定走冷启动，把 uid/gid/seinfo/nice 等参数打包成一条 zygote 请求。</li><li><strong>AMS</strong> → 对 <code>/dev/socket/zygote</code> → 通过本地 socket 写入参数行 → 结果：zygote 的 <code>ZygoteServer</code> 从 select 循环里被唤醒，读到一条完整的 fork 请求。</li><li><strong>zygote</strong> → 对自身 → 调用 <code>fork()</code> → 结果：子进程诞生，继承预加载的类、资源与 fd，此刻 Uid 仍然是 0，身份还没变成 App。</li><li><strong>子进程</strong> → 对自己 → 跑 specialize：setresuid/setgid、<code>setcon</code>、切 mount namespace、清 capability、改进程名 → 结果：uid 变成 <code>u0_aNNN</code>，正式成为 App 沙箱里的进程。</li><li><strong>子进程</strong> → 对 <code>ActivityThread.main()</code> → 建主线程 Looper、进入消息循环 → 结果：一个能收消息的 Java 主线程活了。</li><li><strong>子进程</strong> → 对 AMS → <code>attachApplication</code> 把 <code>ApplicationThread</code> 的 Binder 代理交过去 → 结果：AMS 从此有了回调这个进程的通道。</li><li><strong>AMS → 子进程</strong> → 回调 <code>bindApplication</code>、再 <code>scheduleLaunchActivity</code> → 结果：Application 被创建，Activity 走完 onCreate/onResume，第一帧画出来。</li></ol>
+<h2>动手：把冷启动的这三拍量出来</h2>
+<div class="code">
+<div class="code-title">强制冷启动并抓证据</div>
+<pre><code>adb shell am force-stop com.target.app                    # 保证下次是冷启动
+adb shell am start -W -n com.target.app/.MainActivity     # -W 会等启动完成并打时间
+adb logcat -d -s ActivityManager:I | grep &#x27;Start proc&#x27;     # 找 fork 出来的那一行
+adb shell &#x27;cat /proc/$(pidof com.target.app)/status&#x27; | grep -E &#x27;^(Name|Uid|PPid):&#x27;
+adb shell ps -A -o PID,PPID,NAME | grep zygote             # 对照父进程是哪一路 zygote</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到 `Status: ok`、`LaunchState: COLD`、`TotalTime` 有具体毫秒数，并且 logcat 里出现 `Start proc &lt;pid&gt;:com.target.app/u0aNNN for activity ...`，算成功</strong>——最后那行就是 fork 完成的直接证据，而 <code>status</code> 里的 <code>PPid</code> 应该指向 <code>zygote64</code>（或 32 位应用的 <code>zygote</code>）。<strong>失败有两种</strong>：出现 <code>Warning: Activity not started, its current task has been brought to the front</code>，说明进程本来就在、根本没发生 fork，这次测的是热启动，要补 <code>am force-stop</code>；出现 <code>Error type 3</code>，是 Activity 类名写错或没导出，跟 zygote 无关，别往启动链上找原因。顺带一提：<code>Start proc</code> 那行里的 <code>u0aNNN</code> 就是 specialize 之后的新 uid，不是 zygote 的 0。</p>
+<div class="tbl"><table>
+<thead><tr><th>观测到的现象</th><th>说明发生了什么</th><th>该往哪一拍找</th></tr></thead><tbody>
+<tr><td>logcat 有 Start proc、TotalTime 大</td><td>完整冷启动</td><td>fork → specialize → bindApplication</td></tr>
+<tr><td>TotalTime 很小、无 Start proc</td><td>热启动，只重建 Activity</td><td>scheduleLaunchActivity 之后</td></tr>
+<tr><td>PPid 不是 zygote</td><td>进程来自别的父（isolated / 子进程）</td><td>查 AMS 的进程记录</td></tr>
+<tr><td>status 里 Uid 仍是 0</td><td>抓到了 specialize 之前的极短窗口</td><td>fork 与 setresuid 之间</td></tr>
+<tr><td>Error type 3</td><td>组件解析失败，没走到 fork</td><td>Intent / AndroidManifest</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>App 进程不是「被启动」的，是「被复制」的</strong>。zygote 不 exec 任何 APK，它只是不停 fork 自己，再让副本原地改身份。这也解释了为什么往 zygote 里塞一段代码就能覆盖所有 App——你改的不是某个目标，而是所有目标的共同母版。</div></aside>
+<p>把「fork → specialize → bindApplication」这三个可插手的时机记牢。第 08 章会看到 Zygisk 正是卡在 <code>forkAndSpecialize</code> 的前后两侧做 pre / post specialize；本章用 <code>pidof</code> 抓到的那个 <code>PPid</code> 指向 zygote 的进程，到第 07 章会变成 ptrace 注入时算偏移的入口；而 <code>dexElements</code> 插 dex 这件事，会在第 14 章拆 dex 结构、以及第五部讲插件化时被反复用到。</p>
 </article>
 <div class="pager"><a href="04.html"><span class="dir">上一讲</span>04 Android root 检测</a><a href="06-open.html" style="text-align:right"><span class="dir">下一讲</span>06 Android linker 启动过程</a></div>
 </main>

@@ -184,6 +184,57 @@ ptrace(PTRACE_DETACH, pid, 0, 0)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>这条序列里的每一步都可以被观测（比如通过 seccomp 或 LSM 的审计）。所以“留痕最少”的注入器，会尽量把这串调用压缩到最短时间，甚至用一次 <code>PTRACE_SEIZE</code> + <code>PTRACE_INTERRUPT</code> 完成。</p>
+<h2>把目标进程按下暂停键的那一刻</h2>
+<p>想象一台正在跑的机器，某个 App 的主线程正在循环里取消息。你从外面按下「暂停」：内核给它补发一个 <code>SIGSTOP</code>，它停在当前那条指令上，状态从 R/S 变成 <code>T</code>，<code>/proc/&lt;pid&gt;/status</code> 里 <code>TracerPid</code> 从 0 变成你的 pid。此刻它既没死也没退出，只是把寄存器、内存、信号全部交到你手里。<strong>ptrace 的全部能力，都来自这个「暂停」状态</strong>。</p>
+<p>接下来能做的事有点反常识：读写它的内存、改它的寄存器、把 PC 拨到一段你写进去的字节上，再让它继续跑。等它执行完你的那段字节，恢复现场、断开附加，它甚至不知道自己被人借用过几十毫秒。把每一拍摊开看，谁对谁做了什么，一眼就清楚。</p>
+<h2>一次附加，寄存器是怎么被借走的</h2>
+<ol><li><strong>tracer 调 `PTRACE_ATTACH`</strong> → 对目标 pid → 发请求并附带一次 SIGSTOP → 结果：内核把 tracee 标记为被跟踪，写入 <code>TracerPid</code>，进程进入 tracing stop。</li><li><strong>tracer `waitpid`</strong> → 对内核 → 等这次 stop 事件落地 → 结果：拿到一个确定的「已暂停」时刻，此后所有 PEEK/POKE 才是安全的。</li><li><strong>tracer 读现场</strong> → 对 tracee 的寄存器组 → 在 arm64 上用 <code>PTRACE_GETREGSET</code> + <code>NT_PRSTATUS</code> 取 <code>user_pt_regs</code> → 结果：PC、SP、X0~X30 被完整备份（x86 上常见的 <code>PTRACE_GETREGS</code> 在 arm64 并不存在）。</li><li><strong>tracer 找函数地址</strong> → 对 <code>/proc/&lt;pid&gt;/maps</code> → 读出 <code>libc.so</code> 基址，加上 <code>dlopen</code> 的符号偏移 → 结果：得到一个能在目标进程里直接调用的真实地址。</li><li><strong>tracer 写内存与参数</strong> → 对 tracee 的栈或空闲页 → <code>PTRACE_POKEDATA</code> 逐字写入 so 路径与一小段 shellcode → 结果：目标进程的内存里出现了原本不属于它的字节。</li><li><strong>tracer 拨 PC 并放行</strong> → 对寄存器组 → <code>PTRACE_SETREGSET</code> 把 PC 指向 shellcode，再 <code>PTRACE_CONT</code> → 结果：tracee 在恢复执行的瞬间，跑的是别人的代码，替你调用了 <code>dlopen</code>。</li><li><strong>恢复现场</strong> → 对寄存器与断点 → 还原备份值、<code>PTRACE_DETACH</code> → 结果：<code>TracerPid</code> 归零，目标继续原逻辑，但 so 已经留在它自己的地址空间里了。</li></ol>
+<h2>动手：自己跟自己验一遍</h2>
+<div class="code">
+<div class="code-title">一个不需要 root 的最小 attach 实验（self_ptrace.c）</div>
+<pre><code>#define _GNU_SOURCE
+#include &lt;sys/ptrace.h&gt;
+#include &lt;sys/prctl.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;signal.h&gt;
+ 
+int main(void) {
+  pid_t c = fork();
+  if (c == 0) {                          // tracee：主动授权父进程
+    prctl(PR_SET_PTRACER, getppid(), 0, 0, 0);
+    pause();                            // 等被 attach
+    _exit(0);
+  }
+  if (ptrace(PTRACE_ATTACH, c, 0, 0) == -1) return 1;   // 失败看 errno
+  waitpid(c, 0, 0);                     // 等 tracee 进入 tracing stop
+  sleep(3);                             // 留出观察窗口，另开终端查 status
+  ptrace(PTRACE_DETACH, c, 0, 0);
+  kill(c, SIGKILL);
+  return 0;                             // 退出码 0 = attach 成功
+}
+ 
+# 编译运行（NDK clang，按 ABI 选 triple）：
+# aarch64-linux-android21-clang self_ptrace.c -o self_ptrace
+# adb push self_ptrace /data/local/tmp/
+# adb shell chmod +x /data/local/tmp/self_ptrace
+# adb shell /data/local/tmp/self_ptrace; echo exit=$?
+# 观察窗口内另开终端：
+# adb shell &#x27;ps -A -o PID,PPID,NAME | grep self_ptrace&#x27;
+# adb shell &#x27;cat /proc/&lt;子进程PID&gt;/status&#x27; | grep -E &#x27;^(State|TracerPid):&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>echo exit=$?</code> 打印 0，同时观察窗口里子进程显示 <code>State: t (tracing stop)</code> 与 <code>TracerPid: &lt;父进程 pid&gt;</code>，detach 后 <code>TracerPid</code> 回到 0。子进程用 <code>PR_SET_PTRACER</code> 主动授权，正好绕开 Yama <code>ptrace_scope=1</code> 的「只能附加后代」限制，且父子同域，SELinux 通常放行——这也是「App 内部自我调试可行」的真实原因。<strong>失败</strong>若退出码为 1：先 <code>adb shell cat /proc/sys/kernel/yama/ptrace_scope</code>（应为 1），再 <code>adb shell dmesg | grep avc</code> 看有没有 <code>denied { ptrace }</code>；两处都干净却仍失败，才去查 uid 与 capability。把 <code>&lt;子进程PID&gt;</code> 换成 <code>ps</code> 查到的那个 pid，别照抄尖括号。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>最可能的原因</th><th>一条命令定位</th></tr></thead><tbody>
+<tr><td>退出码 1 / Operation not permitted</td><td>Yama 或 SELinux 拦下</td><td>dmesg | grep avc；cat /proc/sys/kernel/yama/ptrace_scope</td></tr>
+<tr><td>attach: No such process</td><td>pid 写错或目标已退出</td><td>ps -A | grep &lt;包名&gt;</td></tr>
+<tr><td>State 是 T 但 TracerPid=0</td><td>普通 SIGSTOP，不是 ptrace stop</td><td>核对是否真的走了 PTRACE_ATTACH</td></tr>
+<tr><td>注入后目标永久卡住</td><td>没恢复寄存器就断了</td><td>回看第 7 拍，重放备份值</td></tr>
+<tr><td>64 位目标、32 位注入器崩溃</td><td>寄存器结构与位宽不匹配</td><td>file /proc/&lt;pid&gt;/exe；看 maps 用 lib 还是 lib64</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>tracer 一退出，内核会自动把 tracee 摘掉并放行</strong>。也就是说「注入器崩了」往往比「注入器一直挂着」更安全——目标不会被永久钉在 T 状态，<code>TracerPid</code> 自己就归零了。长期挂着附加反而最糟：目标被反复停下，状态和时序全是破绽。</div></aside>
+<p>把「暂停 → 借寄存器 → 写内存 → 拨 PC → 恢复」这条链记住。第 10 章会看到 frida-server 的注入器走的正是这条路，只是把 shellcode 换成一整个 agent；第 11 章把 <code>TracerPid</code>、<code>State=T</code>、匿名可执行段列成六个观测面，逐个对应本章留下的痕迹；第 04 章那套「先基线再差分」的判据，到了这里才有了具体的检测对象。</p>
 </article>
 <div class="pager"><a href="06-open.html"><span class="dir">上一讲</span>06 Android linker 启动过程</a><a href="08-fork.html" style="text-align:right"><span class="dir">下一讲</span>08 Android zygisk 原理</a></div>
 </main>

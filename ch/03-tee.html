@@ -246,6 +246,34 @@ verdict = all(checks)</code></pre>
 <tr><td>要 STRONG</td><td>证书替换 + 状态拦截</td><td>维护成本高，易失效</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>务实建议：先明确“业务到底需要哪一档”。绝大多数场景只需要 BASIC 或 DEVICE；为 STRONG 付出的维护成本，往往超过收益。</div></aside>
+<h2>把一次证明请求按成慢动作</h2>
+<p>App 弹出一个「验证设备」的转圈，你点下确认。几百毫秒后，一张证书被生成、被打包、被送去远端服务器，服务器回了一句「这台设备可信」。这几白毫秒里，普通世界忙得团团转，却始终没碰到最关键的那把私钥。把这段数据按成慢动作，你会看到一条清晰的界线：<strong>能被读到的都能被伪造，不能被读到的才叫证明</strong>。</p>
+<p>手机里其实有两个世界。ARM 的 TrustZone 把 CPU 切成普通世界（跑 Android）和安全世界（跑 TEE OS），两边的内存与外设访问权限相互隔离。密钥在这里面生成、在这里面签名，私钥从出生到销毁都没离开过 TEE。所以「签名」这件事本身，就成了「请求确实来自这台设备、状态确实被硬件读过」的证据。</p>
+<h2>跟着一张证书被造出来</h2>
+<ol><li><strong>App 调 Keystore</strong> → 对 <code>KeyGenParameterSpec</code> → 带上一个服务器下发的 nonce，请求生成带证明的密钥对 → 结果：请求经 Binder 落到 keystore 服务，再转成一次 TEE 调用。</li><li><strong>TEE 生成密钥对</strong> → 对安全世界内部的密钥槽 → 用硬件真随机源造出公私钥，私钥打上「永不可导出」标记 → 结果：公钥可以出来，私钥这辈子都出不来。</li><li><strong>TEE 收集设备状态</strong> → 对 boot 状态、锁状态、系统版本、补丁级别、vbmeta 摘要 → 逐项读进安全世界 → 结果：一组「当时的硬件事实」被攒齐，普通世界插不上手。</li><li><strong>TEE 签发证书</strong> → 对公钥＋这组状态＋那个 nonce → 用出厂时烧进 TEE 的 attestation 私钥签名，拼成一条证书链 → 结果：一张任何字段被改一个比特就会验签失败的证书。</li><li><strong>证书回到普通世界</strong> → 对 App → 沿 Binder 返回完整证书链 → 结果：App 拿到了全文，却改不动其中任何一个字段。</li></ol>
+<p>第 3 步是关键：状态不是 App 自己报的，是 TEE 去读的。所以绕过的两条路从一开始就分道扬镳——要么想办法让 TEE 读错（要攻破安全世界，极难），要么在<strong>证书返回的路上把它换掉</strong>（现实得多，但会留下别的不一致）。</p>
+<h2>服务器那一侧又做了什么</h2>
+<ol><li><strong>验链</strong> → 对证书链 → 从叶子一路验签名到 Google 的根证书 → 结果：链断了就整包拒掉，不看内容。</li><li><strong>对 nonce</strong> → 对扩展里的 nonce 与本次请求下发的随机串 → 逐字节比 → 结果：防止把上一次的证明重放进来。</li><li><strong>读扩展字段</strong> → 对 <code>verifiedBootState</code>、<code>deviceLocked</code>、<code>osPatchLevel</code> 等 → 逐项判定三绿档位 → 结果：STRONG 要求 GREEN 且已锁，解锁设备必然掉到 BASIC。</li><li><strong>交叉校验</strong> → 对证书里的型号、耗时分布、跨应用一致性 → 与运行时事实对照 → 结果：字段全对但关系矛盾，一样判为可疑——这是替换证书路线最难补的一环。</li></ol>
+<h2>动手：把证书里的扩展字段挖出来</h2>
+<div class="code">
+<div class="code-title">解析一张 attestation 证书（host 侧）</div>
+<pre><code>adb pull /sdcard/attest.pem attest.pem            # App 导出的证书链
+openssl x509 -in attest.pem -text -noout         # 看扩展 OID 1.3.6.1.4.1.11129.2.1.17
+openssl asn1parse -in attest.pem -inform PEM     # 逐层看 ASN.1 结构里的 tag 705/706
+openssl verify -CAfile google-root.pem attest.pem # 验链是否追到信任根</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>的标准是三条同时成立：<code>openssl verify</code> 回 <code>OK</code>、扩展里能翻出 <code>verifiedBootState</code>、且 nonce 与本次请求一致。<strong>失败</strong>时先看是哪一条断：<code>verify</code> 失败说明证书链被换过或根不对；扩展里字段齐全却与 <code>getprop</code> 读到的型号、补丁级别对不上，说明是「替换返回结果」而非真证明；<code>asn1parse</code> 里找不到 705/706 这两个 tag，多半是用了老版本格式，别误判成伪造。</p>
+<div class="tbl"><table>
+<thead><tr><th>证书里的一段</th><th>由谁写入</th><th>普通世界能改吗</th></tr></thead><tbody>
+<tr><td>公钥</td><td>TEE 硬件随机生成</td><td>能读到，不能替换（会破坏签名）</td></tr>
+<tr><td>verifiedBootState</td><td>TEE 读启动链状态</td><td>不能，改了验签失败</td></tr>
+<tr><td>osVersion / osPatchLevel</td><td>TEE 读系统属性</td><td>不能，同上</td></tr>
+<tr><td>nonce</td><td>App 传入、TEE 抄进证书</td><td>能传，但改不了已签的那份</td></tr>
+<tr><td>整条证书链</td><td>TEE 签发后返回</td><td>能在返回路径上整包替换</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>证书里最值钱的不是任何一个字段，而是「签名发生在 TEE 里」这个事实本身</strong>。普通世界能拿到证书全文、能逐字读出每个字段，就是改不动一个比特——一改，签名就对不上。所以攻击者真正动手的地方，往往不是证书内容，而是把整张证书「换掉」的那条返回路径。</div></aside>
+<p>把「TEE 只读不改、证书可整包替换」这组对立记牢。第 04 章会接着讲检测方怎么从「看结果」转向「看一致性」——既然单张证书能被换，就把证书里的型号、补丁、耗时拿去和运行时事实逐项对；第 01 章里那句「改了 boot 就丢 STRONG」，到这里才闭环：<code>verifiedBootState</code> 正是被 TEE 签进这张证书的那一项。</p>
 </article>
 <div class="pager"><a href="02-abl.html"><span class="dir">上一讲</span>02 Android 手机启动过程</a><a href="04.html" style="text-align:right"><span class="dir">下一讲</span>04 Android root 检测</a></div>
 </main>

@@ -181,6 +181,40 @@ dt = now_ns() - t0
 <tr><td>普通文件</td><td>5~30</td><td>资源、配置、dex</td></tr>
 </tbody></table></div>
 <p>注入 agent 后，典型变化是 socket +1~2、pipe +1~2、anon_inode 增加若干。单看绝对值不可靠，看“增量”才可靠。</p>
+<h2>注入完成后的第一张快照</h2>
+<p>假设 agent 已经落地、detach 也做完了，<code>TracerPid</code> 干干净净地回到 0。现在把这台进程像做 CT 一样扫一遍：maps 里多了几段、task 里多了几个名字奇怪的线程、fd 里多出一对 pipe 和一个 socket、smaps 里悄悄多了一页私有脏内存。<strong>没有任何一处写着「frida」四个字母，但每一处都在说「这里多了个东西」</strong>。注入检测真正练的，就是认出这种「多出来」的形状。</p>
+<p>新手爱写字符串扫描，因为它最容易出结果；老手更信结构，因为名字能改、字节能加密，「一个 JS 引擎必须有一块堆、必须有线程、必须能收发消息」这件事改不掉。下面把一次注入前后的差异按观测面拆开，每一拍都给出能自己跑出来的量。</p>
+<h2>逐个观测面数「多出来的东西」</h2>
+<ol><li><strong>maps</strong> → 对进程的所有映射 → 注入前记下段数与每段权限；注入后多出 agent so 的 r-x 段、以及 JS 堆所在的匿名 rw- 段 → 结果：段数、匿名可执行段数量同时偏离基线。</li><li><strong>task</strong> → 对 <code>/proc/self/task</code> → 多出 <code>gum-js-loop</code>、<code>frida-*</code> 一类的线程名，以及一个常驻的控制线程 → 结果：线程数 +3~5，且新线程的栈落在刚多出来的匿名段里。</li><li><strong>fd</strong> → 对 <code>/proc/self/fd</code> → 多出与 server 通信的 socket、JS 线程用的 pipe、以及若干 <code>/proc</code> 读取句柄 → 结果：fd 总数上升，类型分布里 anon_inode 变多。</li><li><strong>solist / link_map</strong> → 对已加载模块链表 → 多出 <code>frida-agent.so</code> 或无名项 → 结果：模块账本与 maps 里的段可以逐条对上（对不上更可疑）。</li><li><strong>smaps</strong> → 对每个映射的 <code>Private_Dirty</code> → 被 hook 过的文件页因 COW 变成私有脏页 → 结果：权限看着正常，脏页计数却涨了。</li><li><strong>时序</strong> → 对高频路径 → hook 的蹦床让单次调用多出几微秒 → 结果：一万次调用的 p95 明显右移，这是最不容易藏的一项。</li></ol>
+<h2>动手：自己拍一组前后对照</h2>
+<div class="code">
+<div class="code-title">注入前后各采一次，用 diff 说话</div>
+<pre><code>PID=$(adb shell pidof com.target.app | tr -d &#x27;\r&#x27;)
+adb shell cat /proc/$PID/maps  &gt; A_maps.txt
+adb shell cat /proc/$PID/smaps &gt; A_smaps.txt
+adb shell ls /proc/$PID/task   &gt; A_task.txt
+adb shell ls -l /proc/$PID/fd  &gt; A_fd.txt
+# 此时启动：frida -U com.target.app -l probe.js
+adb shell cat /proc/$PID/maps  &gt; B_maps.txt
+adb shell cat /proc/$PID/smaps &gt; B_smaps.txt
+adb shell ls /proc/$PID/task   &gt; B_task.txt
+adb shell ls -l /proc/$PID/fd  &gt; B_fd.txt
+diff A_maps.txt B_maps.txt | head -40
+diff A_task.txt B_task.txt
+grep -c &#x27;Private_Dirty&#x27; A_smaps.txt B_smaps.txt</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>diff A_maps.txt B_maps.txt</code> 里出现新增的 r-x / rw- 段，<code>diff A_task.txt B_task.txt</code> 多出几条线程，fd 里能看到新增的 socket 或 pipe——三处同时偏离，就是一份完整的注入证据。<strong>失败</strong>要先分清是「没注入」还是「查错层」：<code>PID</code> 取到空值说明 App 没在跑或被重启了，先补 <code>adb shell pidof</code>；四个 diff 全空，别急着下「干净」的结论，很可能是 agent 走了内存加载、账本里没有名字，得换到 smaps 的 <code>Private_Dirty</code> 与耗时分布去看；另外<strong>采集脚本自己开的 shell、`adb` 起的进程也会短暂出现在列表里</strong>，务必在页面静止后采，只认成对出现的差异。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>更可能的解释</th><th>换哪个观测面复核</th></tr></thead><tbody>
+<tr><td>maps 干净、task 多了线程</td><td>agent 走匿名内存加载</td><td>smaps 私有脏页 + 耗时 p95</td></tr>
+<tr><td>线程名全是正常的</td><td>名字被改过</td><td>看线程栈落在哪一段、TLS 布局</td></tr>
+<tr><td>四本账都对得上</td><td>只查了「名字」这一维</td><td>查数量、时序、布局的关系</td></tr>
+<tr><td>干净机也报异常</td><td>检测器自污染或采样时机</td><td>页面静止后重采基线</td></tr>
+<tr><td>带路径的段显示 (deleted)</td><td>文件加载后被 unlink</td><td>核对 back-file 是否真实存在</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>`/proc/self/maps` 里带路径的段，文件可能早就被删了</strong>。<code>memfd_create</code> 加 <code>dlopen(&#x27;/proc/self/fd/N&#x27;)</code>、或者加载完立刻 <code>unlink</code>，都能让一段匿名代码顶着一个看起来合法的路径（末尾带 <code>(deleted)</code>）。反过来，真正干净的文件映射反而是共享、只读的——<strong>判断依据不是「有没有名字」，而是「这一段该不该是私有脏页」</strong>。</div></aside>
+<p>这六个观测面会在后面被反复调用：第 09 章的 GOT / inline hook 留下的字节变化，正是本章 CRC 与 <code>Private_Dirty</code> 两项的输入；第 12 章 Java Hook 让方法变 native，会在「调用耗时分布」这一行显形；第 16 章做算法分析时遇到的反调试，多半就是拿本章这几条命令反过来查你的。第三部 F11 会把它们收成一张总表。</p>
 </article>
 <div class="pager"><a href="10-frida.html"><span class="dir">上一讲</span>10 Android frida 源码讲解</a><a href="12-java.html" style="text-align:right"><span class="dir">下一讲</span>12 Android Java Hook 原理</a></div>
 </main>

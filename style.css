@@ -66,6 +66,56 @@ figure img{display:block; width:100% !important; max-width:100%; height:auto; ma
            box-shadow:0 2px 10px rgba(16,24,40,.05)}
 figcaption{margin-top:10px; font-size:12.5px; color:var(--muted)}
 figcaption b{color:#3c4655; display:block; margin-bottom:2px}
+
+/* ── 动图演示器 ── */
+figure.anim{margin:30px 0; padding:0; border:1px solid #d6e2f5; border-radius:14px;
+            background:linear-gradient(180deg,#f7faff,#fff); overflow:hidden;
+            box-shadow:0 4px 20px rgba(37,99,235,.08); text-align:left}
+.anim-head{display:flex; align-items:center; gap:12px; padding:13px 18px 0}
+.anim-badge{background:var(--blue); color:#fff; font-size:11.5px; font-weight:700;
+            letter-spacing:.12em; padding:3px 11px; border-radius:20px}
+.anim-title{font-size:16.5px; font-weight:700; color:#101828}
+.anim-sub{margin:6px 18px 12px; font-size:13px; color:var(--muted)}
+.anim-stage{position:relative; margin:0 14px; background:#fff; border:1px solid #e3e8ef;
+            border-radius:10px; overflow:hidden; cursor:pointer}
+.anim-stage img{display:block; width:100% !important; height:auto; border:0 !important;
+                border-radius:0 !important; box-shadow:none !important}
+.anim-big{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+          width:72px; height:72px; border-radius:50%; border:0; background:rgba(37,99,235,.88);
+          color:#fff; font-size:27px; cursor:pointer; box-shadow:0 6px 22px rgba(16,24,40,.24);
+          transition:.18s; line-height:72px; text-align:center; padding-left:5px}
+.anim-big:hover{background:var(--blue); transform:translate(-50%,-50%) scale(1.07)}
+figure.anim.playing .anim-big{opacity:0; pointer-events:none}
+.anim-bar{display:flex; align-items:center; gap:9px; padding:12px 18px 6px}
+.anim-bar button{border:1px solid var(--line); background:#fff; color:#3c4655; border-radius:8px;
+                 font-family:inherit; font-size:13px; cursor:pointer; transition:.15s}
+.anim-bar button:hover{border-color:var(--blue); color:var(--blue); background:#f4f8ff}
+.anim-play{padding:6px 14px; font-weight:700; min-width:78px}
+.anim-prev,.anim-next{width:30px; height:30px; font-size:18px; line-height:1; padding:0}
+.anim-track{flex:1; height:8px; background:#e8eef7; border-radius:5px; overflow:hidden;
+            min-width:60px}
+.anim-fill{height:100%; width:0; background:linear-gradient(90deg,var(--blue),#7aa8ff);
+           border-radius:5px; transition:width .18s}
+.anim-count{font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;
+            min-width:46px; text-align:right}
+.anim-caption{margin:4px 18px 10px; padding:9px 14px; background:var(--warm);
+              border-left:3px solid var(--amber); border-radius:0 7px 7px 0; font-size:14px}
+.anim-caption b{color:var(--amber); margin-right:10px}
+.anim-steps{display:flex; flex-wrap:wrap; gap:6px; padding:0 18px 16px}
+.anim-steps button{border:1px solid #e3e8ef; background:#fff; color:#68727f; font-size:12px;
+                   font-family:inherit; padding:5px 10px; border-radius:7px; cursor:pointer;
+                   text-align:left; max-width:100%; transition:.15s}
+.anim-steps button:hover{border-color:var(--blue); color:var(--blue)}
+.anim-steps button.on{background:var(--blue); border-color:var(--blue); color:#fff}
+figure.anim noscript{padding:0 18px 16px; font-size:13px; color:var(--muted)}
+@media (max-width:1000px){
+  .anim-sub{margin-left:14px; margin-right:14px}
+  .anim-stage{margin:0 10px}
+  .anim-bar{padding-left:12px; padding-right:12px}
+  .anim-steps{padding:0 12px 14px}
+  .anim-caption{margin-left:12px; margin-right:12px}
+}
+
 .note{display:flex; gap:12px; margin:20px 0; padding:14px 18px; background:var(--warm);
       border:1px solid #f0d9a8; border-left:4px solid var(--amber); border-radius:0 9px 9px 0;
       font-size:15px}

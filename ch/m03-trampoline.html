@@ -166,6 +166,76 @@ if (should_not_inherit(child)) {
 <button class="copy" type="button">复制</button>
 </div>
 <p>Text Shadow 要在第 3 步“插一脚”：如果是目标进程、且地址在我们的 hook 范围，就给它影子页而不是普通 COW 页。</p>
+<h2>同一条虚拟地址，两套物理页</h2>
+<p>检测线程拿着 CRC 一页页读 <code>.text</code>，读到的是干净的原指令，逐字节全过；同一瞬间，CPU 从同一个虚拟地址取指，执行的却是另一张被打了桩的物理页。这不是幻觉，也不是缓存造成的错觉——页表项里的 PFN 被换掉了，<strong>“读到的内容”和“被执行的内容”从这一刻起分了家</strong>。</p>
+<p>之所以要绕这么大一圈，是因为内核与 so 的代码页通常同时具备三个属性：PTE 只读、多进程共享、且被 W^X 约束。直接改原页意味着要么临时开写权限留下窗口，要么让所有共享这个页的进程一起看到被改的字节；而多核上某一核正好在改的瞬间取指，还会读到半条指令。影子页把这三件事一次拆开。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_shadow">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Text Shadow：读到的和执行的，不是同一页</span>
+  </div>
+  <p class="anim-sub">双 PFN 把“校验视图”与“执行视图”分开</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_shadow/f00.png" alt="Text Shadow：读到的和执行的，不是同一页 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>初始状态：一个虚拟地址对应一张物理页</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 初始状态：一个虚拟地址对应一张物理页</button>
+    <button type="button" data-i="1">2. 建立双 PFN：A 存原指令，B 存打桩指令</button>
+    <button type="button" data-i="2">3. 普通读取走 PFN A，CRC 校验看到干净原页</button>
+    <button type="button" data-i="3">4. CPU 取指走 PFN B，hook 实际生效</button>
+    <button type="button" data-i="4">5. fork / mprotect / GUP / rmap 都必须同步维护两份映射</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_shadow.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["初始状态：一个虚拟地址对应一张物理页", "建立双 PFN：A 存原指令，B 存打桩指令", "普通读取走 PFN A，CRC 校验看到干净原页", "CPU 取指走 PFN B，hook 实际生效", "fork / mprotect / GUP / rmap 都必须同步维护两份映射"]</script>
+<h2>双 PFN 落地的五拍</h2>
+<ol><li><strong>模块 → 对目标进程的 mm</strong>：在 <code>mmap_read_lock</code> 下用 <code>follow_page</code> 或 <code>get_user_pages</code> 拿到虚拟地址对应的 <code>struct page</code> 与 PTE，结果得到原物理页 PFN A 及当前 prot（一般是 RO + EXEC 的共享文件页）；这一步同时记下 <code>vma</code> 与 <code>address</code>，后面补账本要用。</li><li><strong>模块 → 对伙伴系统</strong>：<code>alloc_page</code> 申请 PFN B，把 A 的 4KB 内容 <code>memcpy</code> 过去，结果是两张物理页的指令完全一致；副本必须建在内核线性映射或 <code>kmap</code> 出来的可写视图上，直接写只读映射会触发 fault。</li><li><strong>模块 → 对 B 的可写视图</strong>：在副本上写跳转槽并备份被覆盖的原指令到 trampoline，<code>flush_icache_range</code> 同步 I-Cache 与 D-Cache，结果是取指能看到新字节；ARM64 的 I/D cache 不保证硬件一致，漏了这步就会“地址对了但跑的是旧指令”。</li><li><strong>模块 → 对目标 mm 的 PTE</strong>：在 <code>mmap_write_lock</code> 下 <code>set_pte_at</code> 把 PFN 从 A 换成 B，紧接着 <code>flush_tlb_range</code>，结果是只有这个进程的这个虚拟地址取指走 B，其他进程仍指向 A；TLB 不刷，旧翻译还在，改动要等一次上下文切换才随机生效。</li><li><strong>模块 → 对 rmap / RSS / GUP 三本账</strong>：为 B 补反向映射、更新 <code>mm-&gt;rss_stat</code>、把已被 <code>FOLL_PIN</code> 的页登记为需同步，结果是 fork、页面迁移与回收路径都能找到这张页；漏一本，崩的时间点会从“立刻”推迟到“几小时后 kswapd 动它”。</li></ol>
+<h2>fork、mprotect 与 GUP 各来一脚</h2>
+<ul><li><strong>fork → 对子 PTE</strong>：<code>dup_mmap</code> 会原样复制指向 B 的页表项，结果是父子共用同一张被打桩的页；子进程退出或写时若按 COW 处理不当，父进程的 hook 会跟着失效。对策是在 fork 路径上为子进程另建影子页，或把子 PTE 指回 A 并重新登记新 mm。</li><li><strong>mprotect → 对权限位</strong>：检测方常用 <code>mprotect(PROT_READ)</code> 后再读一遍，此时若 PTE 已切回 A，CRC 通过；但它改回 <code>PROT_EXEC</code> 时必须切回 B，否则 hook 静默失效。权限变更路径要同时维护“读视图”与“执行视图”两个状态。</li><li><strong>GUP → 对已 pin 的页</strong>：<code>get_user_pages(FOLL_WRITE)</code> 拿到的 <code>struct page</code> 不受取指视图影响，结果是 DMA 或内核写落在 A、CPU 执行落在 B，两份内容从此分裂；pin 之后才换 PFN 是这类不一致最常见的原因。</li><li><strong>unmap / 回收 → 对 B 的 refcount</strong>：B 没有 <code>page-&gt;mapping</code> 与 <code>anon_vma</code> 的反向映射，kswapd 与迁移代码就不知道谁映射了它，结果是 <code>bad page</code> 或直接把还在执行的页回收掉。</li><li><strong>BTI / PAC → 对跳转目标</strong>：间接跳转落点的第一条指令必须是 <code>BTI</code> 或 <code>PACIASP</code>，trampoline 入口与被改函数的新入口都要补标记，否则一跳就触发 <code>BTI exception</code>。</li></ul>
+<div class="tbl"><table>
+<thead><tr><th>账本</th><th>对应内核结构</th><th>漏维护的表现</th><th>修复动作</th></tr></thead><tbody>
+<tr><td>TLB</td><td>mm-&gt;context.id / 各核 TLB</td><td>换 PFN 后仍执行旧页，现象随机</td><td>set_pte_at 后 flush_tlb_range</td></tr>
+<tr><td>I-Cache</td><td>无结构，纯硬件状态</td><td>PC 对了但跑旧字节</td><td>patch 后 flush_icache_range</td></tr>
+<tr><td>rmap</td><td>page-&gt;mapping / anon_vma</td><td>回收或迁移时 bad page</td><td>为影子页补反向映射</td></tr>
+<tr><td>RSS / PSS</td><td>mm-&gt;rss_stat</td><td>smaps 数值跳变，被差分检测抓</td><td>换页时同步增减计数</td></tr>
+<tr><td>GUP</td><td>page-&gt;_refcount / FOLL_PIN</td><td>DMA 写 A、CPU 执行 B</td><td>pin 前换页，或登记双页同步</td></tr>
+</tbody></table></div>
+<h2>最小可复现实验：单进程单页</h2>
+<div class="code">
+<div class="code-title">先只做一页，再逐项加回归</div>
+<pre><code># 1. 找出目标代码页（4KB 对齐的 r-xp 行）
+PID=$(pidof com.demo.app)
+cat /proc/$PID/maps | grep -E &#x27;r-xp .*libtarget.so&#x27; | head -n 1
+# 成功：看到一行起止地址都页对齐的 r-xp 映射
+# 失败：无输出 = 目标库还没加载，先触发一次业务
+ 
+# 2. 装载影子页模块，只处理这一页
+insmod /data/local/tmp/shadow.kpm pid=$PID addr=0x7f00000000 size=4096
+dmesg | tail -n 20
+# 成功：日志打印 PFN A 与 PFN B，两个值不同，且 icache/tlb flush 各一条
+# 失败：两值相同 = set_pte_at 未生效，先查 mmap_write_lock 与 PTE 权限位
+ 
+# 3. 对比两个视图
+cat /proc/$PID/maps &gt; /dev/null
+cat /proc/demo/shadow_stats
+# 成功：crc_read 走 A、exec_hits 走 B，两个计数都增长
+# 失败：CRC 读到打桩字节 = 读路径也切到了 B；两个计数同时为 0 = trampoline 没跳通
+ 
+# 4. 每次只加一项回归：fork 一次、mprotect 一次、GUP 一次
+# 成功：三项正确后 smaps 的 Rss 与基线差值在一页以内</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：换 PFN 之后要刷两样东西，而它们管的是完全无关的两件事。TLB 管“虚拟地址 → 物理页”的翻译结果，I-Cache 管已经取进流水线的指令字节；只刷一个，你会遇到“地址对了但跑的是旧指令”这种重启一次就消失、复现三天都抓不到的鬼故事。</div></aside>
+<p>把视角拉开：Frida 部 F07 讲 Stalker 时，做法是<strong>不改原代码、把执行流整体搬进翻译后的 slab</strong>；LSPosed 部 L03 讲多模块回调与去优化时，处理的是“入口被换掉之后原方法还能不能回来”。M03 是同一主题的第三种解法——只换一张物理页，让校验视图与执行视图解耦。三章放在一起看，就是“如何改控制流而不改被校验的事实”这一条主线的三个切面。</p>
 </article>
 <div class="pager"><a href="m02-maps.html"><span class="dir">上一讲</span>M02 内核观察面与基础检测处理</a><a href="m04-cpu.html" style="text-align:right"><span class="dir">下一讲</span>M04 ARM64 内核单步 Trace</a></div>
 </main>

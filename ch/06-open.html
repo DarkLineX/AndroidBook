@@ -170,6 +170,66 @@ addr   = base + lookup(symtab, strtab, &quot;target_func&quot;);</code></pre>
 <tr><td>PT_DYNAMIC</td><td>r--</td><td>动态链接信息</td></tr>
 </tbody></table></div>
 <p>注意 <code>PT_GNU_RELRO</code>：它让“重定位完成后”的一段区域变成只读。所以想在 GOT 上做手脚，往往要先把 RELRO 保护的那一页改回来——这本身就是一个可以被检测到的动作。</p>
+<h2>把 dlopen 拆成一帧一帧</h2>
+<figure class="anim" data-delay="820" data-n="6" data-key="a_linker">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">一个 so 从 open 到 JNI_OnLoad</span>
+  </div>
+  <p class="anim-sub">六步走完，native 方法才真正可被 Java 调用</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_linker/f00.png" alt="一个 so 从 open 到 JNI_OnLoad 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 6</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>dlopen 先查 solist，避免重复加载</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. dlopen 先查 solist，避免重复加载</button>
+    <button type="button" data-i="1">2. 解析 ELF 头，读出 PT_LOAD 与依赖</button>
+    <button type="button" data-i="2">3. 按段 mmap，建立内存映射</button>
+    <button type="button" data-i="3">4. 重定位：把真实地址填进 GOT / PLT</button>
+    <button type="button" data-i="4">5. 执行 init_array 里的构造函数</button>
+    <button type="button" data-i="5">6. 调用 JNI_OnLoad，注册 native 方法</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_linker.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["dlopen 先查 solist，避免重复加载", "解析 ELF 头，读出 PT_LOAD 与依赖", "按段 mmap，建立内存映射", "重定位：把真实地址填进 GOT / PLT", "执行 init_array 里的构造函数", "调用 JNI_OnLoad，注册 native 方法"]</script>
+<p>App 里那行 <code>System.loadLibrary</code> 看起来只是一句声明。把它按成逐帧回放：Java 层先去找 so 到底躺在哪个目录，然后一次调用穿过 JNI 掉进 bionic linker；linker 打开文件、只读几十个字节的 ELF 头，接着连续发起若干次 <code>mmap</code>，把磁盘上的段一页页铺进内存；再回头把依赖一个个拉进来、把表项一个个填好、把构造函数一个个跑完，最后才轮到 <code>JNI_OnLoad</code>。整个过程中，<strong>没有一帧是「加载完了」——只有一长串必须按顺序做完的动作</strong>。</p>
+<p>为什么要盯这么细？因为每一步都有可观测的副作用：mmap 会在 <code>/proc/self/maps</code> 里留段，依赖加载会在 <code>solist</code> 里留节点，重定位会改 GOT 页，构造函数会跑你的 <code>init_array</code>。注入与检测的战场，就铺在这条链上。</p>
+<h2>从 loadLibrary 到 JNI_OnLoad 的八拍</h2>
+<ol><li><strong>`Runtime.nativeLoad`</strong> → 对 ClassLoader → 查出 <code>nativeLibraryDirs</code>（如 <code>/data/app/.../lib/arm64</code>）→ 结果：拼出 <code>libfoo.so</code> 的完整路径，交给 linker。</li><li><strong>linker 查缓存</strong> → 对全局 <code>solist</code> → 按 soname 比对已加载节点 → 结果：命中就只加引用计数、直接返回，后面的步骤一拍都不跑；未命中才继续。</li><li><strong>读 ELF 头与 program header</strong> → 对打开的文件 → 读 <code>e_ident</code>、校验 machine 与 class、取出所有 <code>PT_LOAD</code> → 结果：知道要映射几段、每段多大、什么权限。</li><li><strong>映射段</strong> → 对 <code>mmap</code> → 按 <code>p_offset</code>/<code>p_vaddr</code>/<code>p_filesz</code>/<code>p_memsz</code> 分别建 r-x、r--、rw- 映射，多出来的 <code>p_memsz</code> 部分（.bss）匿名补零 → 结果：文件字节第一次变成进程里的可执行页。</li><li><strong>递归加载 `DT_NEEDED`</strong> → 对每个依赖名 → 走同一套查找与映射 → 结果：libc、liblog、libm 等依次入列，并按依赖关系排出初始化顺序（依赖先跑）。</li><li><strong>符号解析与重定位</strong> → 对 <code>.rela.dyn</code> / <code>.rela.plt</code> / <code>DT_ANDROID_RELA</code> → 处理 <code>R_AARCH64_RELATIVE</code>（基址加偏移）、<code>GLOB_DAT</code> 与 <code>JUMP_SLOT</code>（查符号填 GOT），用 GNU hash 找定义 → 结果：代码里所有外部地址变成真实地址。</li><li><strong>跑构造函数</strong> → 对 <code>DT_INIT</code> 与 <code>DT_INIT_ARRAY</code> → 按数组顺序逐个调用 → 结果：全局对象被构造、自检代码被触发；这一步在 <code>JNI_OnLoad</code> <strong>之前</strong>。</li><li><strong>调 `JNI_OnLoad`</strong> → 对 <code>JavaVM*</code> → 由它 <code>RegisterNatives</code> 登记 native 方法并返回 <code>JNI_VERSION_1_6</code> → 结果：Java 侧的 <code>native</code> 方法终于有了可跳转的实现，<code>dlopen</code> 返回句柄。</li></ol>
+<h2>动手：把这条链打印出来</h2>
+<div class="code">
+<div class="code-title">离线看结构 + 设备上看日志</div>
+<pre><code># host：先看清楚这个 so 到底要什么
+readelf -dW libfoo.so | grep -E &#x27;SONAME|NEEDED|INIT|ANDROID_REL&#x27;
+readelf -SW libfoo.so | grep -E &#x27;init_array|got|rela.dyn&#x27;
+ 
+# device：打开 bionic linker 的调试日志再启动 App
+adb shell setprop debug.ld.all dlopen,dlsym
+adb shell am force-stop com.target.app
+adb shell am start -n com.target.app/.MainActivity
+adb logcat -d -s linker:V | head -60
+adb shell setprop debug.ld.all &#x27;&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：logcat 里能看到 <code>find_libraries</code> 列出 <code>libfoo.so</code> 及其 <code>DT_NEEDED</code>、随后出现 <code>calling constructors</code> / <code>JNI_OnLoad</code> 相关记录，且目标 native 方法调用不抛异常。<strong>失败</strong>要按报错文案分流，这三种完全不同：<code>dlopen failed: library ... not found</code> 是<strong>依赖没找到</strong>（读 <code>DT_NEEDED</code>，补打包）；<code>dlopen failed: cannot locate symbol ...</code> 是<strong>重定位阶段缺符号</strong>（so 找得到，定义找不到，多半是版本不匹配）；<code>JNI_OnLoad returned bad version</code> 是<strong>最后一拍返回值不对</strong>。把 <code>debug.ld.all</code> 用完清空，否则日志会一直刷。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>断在哪一拍</th><th>一条定位命令</th></tr></thead><tbody>
+<tr><td>library not found</td><td>第 5 拍：递归加载依赖</td><td>readelf -dW libfoo.so | grep NEEDED</td></tr>
+<tr><td>cannot locate symbol</td><td>第 6 拍：符号解析</td><td>nm -D libbar.so | grep xxx</td></tr>
+<tr><td>wrong ELF class / machine</td><td>第 3 拍：ELF 头校验</td><td>file libfoo.so</td></tr>
+<tr><td>加载成功但 native 方法报 NoSuchMethod</td><td>第 8 拍：没 RegisterNatives</td><td>查 JNI_OnLoad 是否被调用</td></tr>
+<tr><td>dlopen 两次，构造函数只跑一次</td><td>第 2 拍：命中 solist 缓存</td><td>看引用计数，属正常行为</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>同一个 so 被 `dlopen` 两次，构造函数只会跑一次</strong>。linker 靠 <code>solist</code> 缓存＋引用计数把第二次调用变成「加一，返回同一个句柄」。所以「加载成功」并不等于「走完了整条链」，而报错里点名的那个库，往往也不是你亲手 load 的那个——它是被 <code>DT_NEEDED</code> 递归拖进来的某一环。</div></aside>
+<p>这条「mmap → 依赖 → 重定位 → init_array → JNI_OnLoad」的顺序，第 09 章会直接拿来选 hook 位置：GOT hook 改的是第 6 拍填好的表项，inline hook 改的是第 4 拍映射出来的代码页；第 11 章查 <code>solist</code> 里空 soname 的节点，查的正是第 2 拍留下的账本；第三部讲自定义 linker 时，会把本章这八拍全部自己实现一遍。</p>
 </article>
 <div class="pager"><a href="05-zygote.html"><span class="dir">上一讲</span>05 Android App 启动过程</a><a href="07-ptrace.html" style="text-align:right"><span class="dir">下一讲</span>07 Android ptrace 原理</a></div>
 </main>

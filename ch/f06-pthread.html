@@ -180,6 +180,40 @@ ls /proc/self/task | wc -l
 # 3. 模块列表是否与 maps 一致</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>现场：空脚本留下的脚印</h2>
+<p>你写了一个只有一行 <code>console.log(&#x27;empty&#x27;)</code> 的脚本，什么 hook 都没挂，打算先确认通道通不通。注入前后一对比却愣住了：<code>/proc/self/task</code> 平白多了三条线程，maps 里多了两段匿名可执行页，<code>cat /proc/self/status | grep TracerPid</code> 在注入瞬间非 0，连 SIGSEGV 的处理函数指针都不再指向 libc 的默认实现了。</p>
+<p>这些都不是你的脚本干的。<strong>agent 一落地，Gum 就先给自己铺好整套基础设施</strong>：记线程、记模块、接管信号、盯退出、守子进程。对检测方来说这是天大的便宜——它完全不需要知道你 hook 了什么，只要发现“多出来了”，就够立案。换句话说，真正决定痕迹的是“加载了什么运行时”，不是“运行了什么代码”。</p>
+<h2>把空脚本的启动拆成七拍</h2>
+<ol><li><strong>agent 初始化 → 对 pthread_create / pthread_setname_np → 拦下所有线程创建</strong> → 结果：Gum 的 pthread registry 为每个线程建节点，<code>/proc/self/task</code> 同时多出 JS 线程与 pool 线程。</li><li><strong>agent → 对 linker 的 dlopen / android_dlopen_ext 与 solist → 登记模块</strong> → 结果：module registry 与系统 linker 账本变成两份可以互相核对的清单，差一项就是线索。</li><li><strong>agent → 对 sigaction → 接管 SIGSEGV / SIGABRT / SIGBUS 等</strong> → 结果：崩溃能被转成 JS 异常或规整的 tombstone，但 signal handler 的地址不再属于 libc。</li><li><strong>agent → 对 atexit / exit / _exit → 装 ExitMonitor</strong> → 结果：进程退出时有机会卸载 agent 并 flush 未发完的消息，代价是退出路径被多包了一层。</li><li><strong>host 若启用 child gating → 对 fork / vfork / execve / posix_spawn → 装钩子</strong> → 结果：子进程一出生就被暂停等待注入，fork 的返回路径被改写，时序上多出一段可测的停顿。</li><li><strong>agent → 对 GLib 主循环与线程池 → 建 gmain 上下文</strong> → 结果：多出固定命名的线程，以及若干 pipe / socket FD，名字和数量都相当稳定。</li><li><strong>你的空脚本 → 对 JS 线程 → 只执行一句 console.log</strong> → 结果：前六拍一个不少地全部发生完，脚印早已铺好；写三百行复杂 hook 与写这一行，痕迹完全一样。</li></ol>
+<h2>复现：空脚本的差分实验</h2>
+<p>做一次“注入前 / 注入后”的差分，比读十页源码都直观。关键是两次采样必须对准<strong>同一个 PID</strong>、并且在 App 处于同一状态下采；否则你会得到一份空 diff，然后错误地得出“没有痕迹”的结论。</p>
+<div class="code">
+<div class="code-title">基线、注入、再采样</div>
+<pre><code># 1) 未注入基线（先确认 PID 稳定）
+frida-ps -U
+adb shell &#x27;cat /proc/$(pidof com.example.app)/task/*/comm&#x27; | sort &gt; base.txt
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | grep &#x27;r-xp&#x27; | grep -v &#x27;/&#x27; | wc -l
+ 
+# 2) empty.js 内容只有一行：console.log(&#x27;empty&#x27;)
+frida -U -f com.example.app -l empty.js
+ 
+# 3) 注入后再采一次，对比
+adb shell &#x27;cat /proc/$(pidof com.example.app)/task/*/comm&#x27; | sort &gt; after.txt
+diff base.txt after.txt
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | grep &#x27;r-xp&#x27; | grep -v &#x27;/&#x27; | wc -l</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功（即确认默认设施真的存在）</strong>：<code>diff</code> 里多出 <code>gum-js-loop</code>、<code>pool-frida</code>、<code>gmain</code> 之类的行；匿名可执行页数从基线的 3 段涨到 5～6 段；注入瞬间 <code>TracerPid</code> 非 0。<strong>算失败（实验本身没做对）</strong>：两次采样差分为空——多半是第二次采样时 App 已退出，或 <code>pidof</code> 取到了另一个进程；先用 <code>frida-ps -U</code> 锁定 PID，再在 REPL 保持会话期间采样。还有一种“假成功”：把 <code>%resume</code> 之前和之后混着采，线程数会差得离谱，那测的是启动阶段，不是默认 hook。</p>
+<div class="tbl"><table>
+<thead><tr><th>默认设施</th><th>注册动作</th><th>留下的痕迹</th><th>关掉之后失去什么</th></tr></thead><tbody>
+<tr><td>pthread registry</td><td>hook pthread_create</td><td>线程数 +3、名字成串</td><td>无法 pause / resume 线程</td></tr>
+<tr><td>module registry</td><td>hook dlopen / 读 solist</td><td>两份账本可对账</td><td>Process.findModuleByName 失效</td></tr>
+<tr><td>sigaction 接管</td><td>替换信号 handler</td><td>handler 地址不在 libc</td><td>崩溃直接死，无 JS 异常</td></tr>
+<tr><td>ExitMonitor</td><td>hook exit / atexit</td><td>退出路径多一层</td><td>断连时消息整批丢失</td></tr>
+<tr><td>child gating</td><td>hook fork / execve</td><td>子进程短暂停顿</td><td>子进程完全脱管</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>你写得越少，这些痕迹越显眼</strong>。因为它们与脚本复杂度无关，是 agent 的固定开销；一个三百行的复杂 hook 和一句 <code>console.log</code> 留下的基础设施一模一样。于是“把脚本写得干净”对隐藏毫无帮助，甚至更糟——检测方看到满地脚印却抓不到任何业务 hook，反而更容易断定“这是有人在探路”。真正该动的是“加载了什么”，不是“写了什么”。</div></aside>
+<p>把“能力即痕迹”这张表带过去：KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 会把线程数、maps 匿名段、FD 高水位全部列成只读观测面，逐项给出异常表现；LSPosed 部 <strong>L09 侧信道与结构差分检测</strong> 更进一步，直接把结论写成“不看有没有特征，看结构是否合理”——那正是本章这笔固定开销无处可藏的根本原因。</p>
 </article>
 <div class="pager"><a href="f05-patch.html"><span class="dir">上一讲</span>F05 Frida server 与 Android SELinux</a><a href="f07-follow.html" style="text-align:right"><span class="dir">下一讲</span>F07 Frida Stalker 原理与修复</a></div>
 </main>

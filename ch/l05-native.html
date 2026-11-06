@@ -196,6 +196,42 @@ grep -r &#x27;lsposed&#x27; smali/ | head
 # 有输出 = 还有明文特征</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>检测库在 .rodata 里翻到了一个名字</h2>
+<p><code>libshield.so</code> 被加载后做的第一件事不是查内存，而是拿一张关键词表在自己的只读数据段和 <code>/proc/self/maps</code> 上扫一遍：<code>lsposed</code>、<code>xposed</code>、<code>de.robv</code>、<code>lspd.dex</code>、<code>xposed_init</code>。它甚至不需要知道框架有没有运行——只要这个字符串曾经被编译进产物，或者 <code>AndroidManifest.xml</code> 里还留着 <code>xposedmodule</code> 这个 meta-data，就足够给出一个布尔值。名字是最便宜的特征，所以也是最先被用滥的特征。</p>
+<p>很多人的第一反应是&#x27;运行时把字符串抹掉&#x27;。但那等于承认它曾经存在：DEX 的 <code>string_ids</code> 已经排好序、CRC 已经算过，<code>maps</code> 里的文件页可以被 <code>mincore</code>/堆转储抓住，崩溃日志里的常量池还留着一份。<strong>治名字要治在它出生之前</strong>——在编译、打包、生成 smali 这些阶段，就让那个字面量压根不出现。</p>
+<h2>五处会留下名字的地方</h2>
+<ol><li><strong>native 编译器 → .rodata</strong>：C/C++ 里的字面量进只读数据段，<code>strings lib.so</code> 一秒看光；结果是哪怕代码路径永远不执行，名字也躺在文件里。</li><li><strong>DEX 编译器 → string_ids</strong>：smali 的 <code>const-string</code> 把字面量登记进全局字符串表；结果是改一处引用要连带改索引、排序与校验和，硬改字符串反而制造新差分。</li><li><strong>类名 → 包前缀</strong>：<code>org.lsposed.*</code>、<code>de.robv.android.xposed.*</code> 这类前缀在反射枚举、栈回溯、类加载日志里反复出现；结果是类名本身就是签名。</li><li><strong>打包器 → 入口元数据</strong>：<code>assets/xposed_init</code> 与清单里的 <code>xposedmodule</code> / <code>xposedminversion</code> meta-data；结果是 <code>aapt dump xmltree</code> 不用解包 dex 就能认出来。</li><li><strong>JNI → RegisterNatives 名字表</strong>：<code>JNINativeMethod</code> 里的 <code>name</code> / <code>signature</code> 是编译期常量；结果是 <code>dlsym</code> 与动态注册表都能查到对应关系。</li></ol>
+<p>五处的共同点是<strong>都发生在运行之前</strong>。所以治理手段不该是&#x27;擦除&#x27;，而是&#x27;替换承载方式&#x27;：语义用枚举或哈希承载，名字在需要时才由间接表拼出来，入口描述合并进合法清单项，JNI 名字与逻辑彻底解耦。改的是结构，不是字面。</p>
+<h2>把治理提前到生成阶段</h2>
+<ul><li>native 侧把 <code>static const char* TAG = &#x27;lsposed&#x27;</code> 换成 <code>enum { K_BRIDGE = 0x5a3c }</code>，需要字符串时经 <code>constexpr</code> 异或表在编译期还原——产物里不出现原字面量。</li><li>DEX 侧在 IR 重写阶段把 <code>const-string</code> 改成&#x27;字符数组 + <code>new String</code>&#x27;，或直接删掉该常量并改用方法索引分派；注意同步重算 <code>string_ids</code> 排序与 DEX 校验和。</li><li>类前缀用 R8/ProGuard 的 <code>-adaptclassstrings</code> 与重命名规则一并改掉，别只改类名忘了改 <code>Class.forName</code> 里的字面量。</li><li>入口元数据并进合法的 <code>assets</code> 配置项，去掉专用文件名；清单里专用 meta-data 改为通用键值。</li><li><code>RegisterNatives</code> 的 <code>name</code> 用运行时拼接生成，让名字表与逻辑函数之间不存在静态对应。</li><li>最后跑一次全量扫描：so、dex、smali、manifest、resources 五处一起搜，任何一处命中都算回归失败。</li></ul>
+<p>第 2 步最容易被做错。有人只把 <code>const-string</code> 的内容换掉，却忘了 DEX 的 <code>string_ids</code> 必须按 UTF-16 码点排序、且 <code>map_off</code> 与 Adler32 校验和随之变化。结果名字是没了，但字符串表的顺序和 CRC 变成了一个更稳定的新指纹。改 IR 要连着改元数据，这是&#x27;源头治理&#x27;与&#x27;运行时打补丁&#x27;的分水岭。</p>
+<h2>可复现：把 APK 与 so 拆开搜一遍</h2>
+<div class="code">
+<div class="code-title">发布前的五处扫描脚本</div>
+<pre><code># 1. native 常量：应无输出；有一行就算治理失败
+strings -a lib/arm64-v8a/libbridge.so | grep -iE &#x27;lsposed|xposed|lspd&#x27;
+# 2. smali 里的字面量与类名前缀
+grep -rniE &#x27;lsposed|xposed_init|de/robv&#x27; smali/ || echo clean
+# 3. DEX 字符串表（改 IR 后要连排序一起验）
+dexdump -f classes.dex | grep -iE &#x27;lsposed|xposed&#x27; || echo clean
+# 4. 清单里的专用 meta-data
+aapt dump xmltree app.apk AndroidManifest.xml | grep -i xposed || echo clean
+# 5. JNI 名字表与导出符号
+readelf -Ws lib/arm64-v8a/libbridge.so | grep -iE &#x27;lsp|xposed&#x27; || echo clean
+# 6. 对照：治理前的产物留一份，确认上面五条当时都能命中</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：五条命令全部输出 <code>clean</code>（或无匹配），且第 6 步的治理前产物五条都能命中——这说明扫描器本身是有效的，不是 grep 写错了。<strong>看到什么算失败</strong>：<code>strings</code> 干净了，但 <code>dexdump</code> 或 <code>xmltree</code> 还命中，说明治理只做了一层；或者五条全干净、APK 却启动即<code>INSTALL_FAILED_INVALID_APK</code>，那是改 <code>string_ids</code> 时没重算校验和。把这条脚本塞进 CI，每次打包自动跑，比事后人工翻产物体感可靠得多。</p>
+<div class="tbl"><table>
+<thead><tr><th>载体</th><th>暴露位置</th><th>源头治理手段</th><th>只改字面的残余风险</th></tr></thead><tbody>
+<tr><td>native 常量</td><td>.rodata / 符号表</td><td>枚举 + constexpr 异或表</td><td>异或表本身成新特征</td></tr>
+<tr><td>DEX 字面量</td><td>string_ids / const-string</td><td>改 IR 并重算排序与校验和</td><td>CRC 与 map_off 变化</td></tr>
+<tr><td>类前缀</td><td>类名、栈、反射结果</td><td>重命名 + adaptclassstrings</td><td>字符串引用未同步改名</td></tr>
+<tr><td>入口元数据</td><td>assets / manifest</td><td>并入通用配置项</td><td>专用键名残留</td></tr>
+<tr><td>JNI 名字表</td><td>JNINativeMethod / dlsym</td><td>运行时拼接、名字与逻辑解耦</td><td>拼接算法可被复现</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>把 `const-string` 的内容换成一个中性词，往往比留着原词更容易被抓</strong>。因为它会破坏 DEX 字符串表的排序、长度分布与校验和，制造出一个&#x27;本不该存在&#x27;的结构差分。标识泛化的目标不是&#x27;让名字变普通&#x27;，而是&#x27;让这一类名字压根不参与产物的结构&#x27;——这正是二期编译原理 → VMP 主线要补的那一层抽象能力。</div></aside>
+<p>把这张表与第三部 F11 的隐藏与兼容处理总表对读，会发现 F11 处理的是&#x27;运行时的痕迹&#x27;，本章处理的是&#x27;编译期的痕迹&#x27;，两者拼起来才是完整的一条产物流。第二部 K04 讲 inode 与 back-file 时提到的&#x27;文件页可被反复观测&#x27;，解释了为什么 file-backed 的字符串擦不掉；训练营 T01 让学员先造一道关键词检测再绕过它，绕过之后回头跑本章第 6 步的对照，才会真正明白什么叫&#x27;治在出生之前&#x27;。</p>
 </article>
 <div class="pager"><a href="l04-sharedmemory.html"><span class="dir">上一讲</span>L04 模块 ClassLoader 与 DEX 生命周期</a><a href="l06-bridge.html" style="text-align:right"><span class="dir">下一讲</span>L06 Binder、FD 与 linker 账本收口</a></div>
 </main>

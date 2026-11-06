@@ -185,6 +185,47 @@ sym = lookup_symbol(regs-&gt;pc);
 pr_info(&quot;%s+0x%lx\n&quot;, sym-&gt;name, regs-&gt;pc - sym-&gt;addr);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>让 CPU 每走一条指令就回头一次</h2>
+<p>把断点下在目标函数入口，往 <code>MDSCR_EL1</code> 里写一个位，<code>eret</code> 返回。接下来 CPU 每执行一条指令就抛一次同步调试异常：PC 一次前进 4 字节，<code>sp</code> 偶尔抖一下，<code>x0</code> 在某条 <code>ldr</code> 之后忽然变成一个新指针。你手里的 per-CPU 环形缓冲开始以每秒几十万条的速度灌水，而内核其它部分完全不知道自己正在被逐条数着走。</p>
+<p>这就是 ARM64 的软件单步：它不是模拟器，不翻译指令，也不改代码页。硬件在异常返回后的第一条指令执行完自动产生 <code>single-step exception</code>，你的 handler 只负责记一条记录、再把 <code>SPSR_EL1.SS</code> 重新置上。代价也直接——每条指令一次 EL1 往返，观测窗口稍大一点，系统就慢得不像同一台机器。</p>
+<h2>从函数入口到可读轨迹的五拍</h2>
+<ol><li><strong>kprobe → 对目标函数入口</strong>：命中后读出当前 CPU id，用 <code>smp_call_function_single</code> 把后续开关钉在同一个核上，结果是调试寄存器状态不随调度漂移；<code>DBGBVR/DBGBCR</code> 与 <code>MDSCR_EL1</code> 都是 per-CPU 的，任务一迁移，另一核上什么都没开。</li><li><strong>异常入口 → 对 MDSCR_EL1</strong>：先 <code>read_sysreg(mdscr_el1)</code> 读回真实值，再按位或上 <code>SS</code> 与 <code>KDE</code>，结果是保留 Linux arm64 启动时已置的 <code>MDE|KDE</code> 与其它位；凭假设整寄存器写 1，会顺手关掉别人正在用的调试配置。</li><li><strong>异常入口 → 对 SPSR_EL1</strong>：在异常栈帧里置 <code>SS</code>（bit 21），结果是 <code>eret</code> 之后执行一条指令就再次陷入；这个位每次异常返回都会被消费，所以 step handler 里必须逐次重设，只设一次只会走一条。</li><li><strong>step handler → 对 pt_regs</strong>：只取 <code>pc</code>、<code>sp</code>、时间戳与必要寄存器写进 per-CPU 无锁环形缓冲，结果是异常上下文里不睡眠、不分配、不 printk；缓冲满就 <code>schedule_work</code> 换出另一半，绝不就地落盘。</li><li><strong>workqueue → 对换出的缓冲</strong>：结合 <code>kallsyms</code> 把每个 pc 映射成“函数 + 偏移”，结果是一份可读轨迹；离开目标函数时清 <code>SS</code> 并恢复 <code>MDSCR_EL1</code> 原值，单步到此结束。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>开关 / 位</th><th>位置</th><th>谁负责设置</th><th>漏掉的后果</th></tr></thead><tbody>
+<tr><td>MDSCR_EL1.SS (bit 0)</td><td>调试控制寄存器</td><td>异常入口按位或</td><td>根本不产生单步异常</td></tr>
+<tr><td>MDSCR_EL1.KDE (bit 13)</td><td>内核态调试使能</td><td>arch_hw_breakpoint_init 已置</td><td>内核态调试事件被屏蔽</td></tr>
+<tr><td>MDSCR_EL1.MDE (bit 15)</td><td>断点事件使能</td><td>内核启动已置</td><td>硬件断点不进异常</td></tr>
+<tr><td>SPSR_EL1.SS (bit 21)</td><td>异常栈帧</td><td>每次 eret 前重设</td><td>只走一条就停，或完全不触发</td></tr>
+<tr><td>DAIF 屏蔽位</td><td>PSTATE</td><td>异常入口硬件自动</td><td>调试异常被延后甚至丢失</td></tr>
+<tr><td>CPU 亲和性</td><td>per-CPU 调试寄存器</td><td>kprobe 入口钉核</td><td>任务迁移后轨迹断成两截</td></tr>
+</tbody></table></div>
+<h2>异常上下文里碰不得的三样东西</h2>
+<ul><li><strong>睡眠类操作</strong>：<code>kmalloc(GFP_KERNEL)</code>、<code>mutex_lock</code>、<code>msleep</code> 在调试异常上下文里都可能调度出去，结果是 hard lockup 或直接 panic；缓冲要预分配，锁只能用自旋锁且不能久持。</li><li><strong>printk 刷屏</strong>：每条指令打一行会把串口变成瓶颈，结果是单步本身被日志拖慢一个数量级，轨迹里的时序全废；只在缓冲切换时打一条汇总。</li><li><strong>跨 CPU 共享写</strong>：多核同时写同一个全局游标会撕裂记录，结果是轨迹出现乱序 pc；改用 per-CPU 环形缓冲，workqueue 里再合并，才能保住顺序。</li></ul>
+<h2>可复现实验：定点 200 条，看 PC 是否每次 +4</h2>
+<div class="code">
+<div class="code-title">开启、采样、关闭的三段对账</div>
+<pre><code># 1. 确认内核带有 HW debug 支持
+zcat /proc/config.gz | grep -E &#x27;CONFIG_HAVE_HW_BREAKPOINT|CONFIG_PERF_EVENTS&#x27;
+cat /proc/kallsyms | grep -E &#x27; single_step_handler| do_debug_exception| arch_hw_breakpoint_init&#x27;
+# 成功：配置为 y 且三个符号都能解析；失败：=n 或缺符号 = 该内核裁掉了调试支持
+ 
+# 2. 只在目标函数内单步，且钉在 CPU2（掩码 0x4）
+insmod /data/local/tmp/step.kpm sym=target_func limit=200 cpu=2
+taskset 0x4 sh -c &#x27;echo run &gt; /proc/demo/trigger&#x27;
+dmesg | tail -n 30
+# 成功：pc 序列相邻差值恒为 4（ARM64 定长指令），轨迹里出现 target_func+0x.. 的符号化行
+# 失败：pc 恒定不变 = SPSR.SS 没逐次重设；pc 跳到别的核 = 亲和性没钉住
+ 
+# 3. 关闭并核对缓冲
+echo 0 &gt; /proc/demo/step
+cat /proc/demo/stats
+# 成功：count 等于 200、dropped 为 0、mdscr_restored 为 1
+# 失败：dropped 非 0 = 缓冲太小或 workqueue 调度太慢；mdscr_restored 为 0 = 漏了恢复原值</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>判据要落在数字上，而不是落在“感觉变慢了”上。<code>count</code> 与 <code>limit</code> 相等说明开关在正确位置关闭，<code>dropped=0</code> 说明双缓冲扛住了峰值，<code>mdscr_restored=1</code> 说明你没有把调试寄存器留给下一个使用者。三项缺一项，这份轨迹都不能拿来做结论。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：单步改变的不是 CPU 速度，而是<strong>被观测那段代码的行为</strong>。每条指令一次异常往返，会让超时判断、自旋等待、加密轮数、心跳间隔走上完全不同的分支；你辛辛苦苦记下来的轨迹，恰恰是没被观测时不会发生那条路径。所以“先用 kprobe 粗定位，再对一小段开单步”不是省事技巧，而是让结论还成立的唯一办法。</div></aside>
+<p>Frida 部 F07 讲 Stalker 时，用“逐块翻译 + 事件投递”把开销摊到基本块上；LSPosed 部 L09 讲侧信道与结构差分检测时，明确把“时序形变”当成一类可抓的信号。M04 正好夹在两者之间：它给出最细的精度，也给出最明显的形变——读懂这三章，就读懂了“观测者效应”在用户态与内核态各长什么样。</p>
 </article>
 <div class="pager"><a href="m03-trampoline.html"><span class="dir">上一讲</span>M03 ARM64 指令 Hook 与 Text Shadow</a><a href="m05-inherit.html" style="text-align:right"><span class="dir">下一讲</span>M05 硬件断点 Hook 与 Perf 生命周期</a></div>
 </main>

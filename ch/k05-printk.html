@@ -187,6 +187,66 @@ echo function &gt; current_tracer</code></pre>
 </div>
 <h2>5.10 实战：定位“谁在频繁打开文件”</h2>
 <ol><li>开 <code>function_graph</code>，过滤 <code>do_sys_open</code>。</li><li>跑一段时间，读 trace。</li><li>看调用的父节点（谁调的）与频率。</li><li>如果需要进程信息，配合 <code>set_ftrace_pid</code>。</li></ol>
+<h2>凌晨三点，只剩黑匣子还活着</h2>
+<p>一台设备重启了，你什么都来不及抓，只有 <code>/sys/fs/pstore/console-ramoops-0</code> 里躺着最后半屏内核日志，末尾是那句熟悉又讨厌的 <code>Unable to handle kernel paging request</code>。pstore 把这块内存留到了下一次开机——它是内核留给自己的黑匣子。先能看见，才谈得上改；而看见这件事，本身有六种代价完全不同的做法。</p>
+<p>别把追踪想成打印日志。ftrace 的 function tracer 是把每个函数入口那几条 <code>nop</code> 或 <code>fentry</code> 指令<strong>现场改成一次跳转</strong>；kprobe 是把目标地址的第一条指令换成断点，让 CPU 主动撞进来。它们都是往正在跑的 CPU 里插一脚，和 K03 那套异常入口用的是同一套硬件。</p>
+<h2>从一条 nop 到一个断点，五拍插完桩</h2>
+<ol><li><strong>编译期的 `-pg` 或 `-fpatchable-function-entry`</strong> 对 <strong>每个函数入口</strong> 预留几个字节的 <code>nop</code> → 结果：内核镜像里天然留了可改写位置，不开追踪时几乎零开销。</li><li><strong>`echo function &gt; current_tracer`</strong> 对 <strong>这些 nop</strong> 做批量 patch：把选中函数的入口改成跳到 ftrace trampoline → 结果：每次进函数先记一条，trampoline 再跳回原逻辑。</li><li><strong>`function_graph`</strong> 对 <strong>返回地址</strong> 也动手：入口时把 <code>return_to_handler</code> 塞进栈上的返回槽 → 结果：函数返回时也被拦一次，于是能画出调用层级与耗时。</li><li><strong>写 `kprobe_events`</strong> 对 <strong>目标地址</strong> 写入断点指令 → 结果：CPU 执行到这里触发异常，<code>pre_handler</code> 拿到 <code>pt_regs</code>，可按 x0、x1 读参数。</li><li><strong>kretprobe</strong> 对 <strong>返回点</strong> 再插一脚：先劫持返回地址，函数返回后 <code>post_handler</code> 读 <code>regs[0]</code> → 结果：参数和返回值都到手；代价是每命中一次多吃一到两次异常。</li></ol>
+<p>第 4 拍有个真实的坑：老资料里的 <code>do_sys_open</code> 在新内核已经改名成 <code>do_sys_openat2</code>。照抄只会得到一个 <code>-ENOENT</code>。正确做法是<strong>先拿运行内核的符号表确认名字</strong>——这正好接上 K07 那套地址与符号的功夫：</p>
+<div class="code">
+<div class="code-title">先确认符号名，再挂探针</div>
+<pre><code># 1. 别猜函数名：从当前运行内核的符号表里查
+grep -E &#x27; (do_sys_openat2|do_sys_open|__arm64_sys_openat)$&#x27; /proc/kallsyms
+# 成功：至少命中一行且地址非全 0 =&gt; 用这个名字写 kprobe_events
+# 失败：地址一列全是 0 =&gt; kptr_restrict 生效，先处理它再读
+# 失败：三行都没有 =&gt; 该内核已裁剪，改挂静态 tracepoint（syscalls:sys_enter_openat）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<h2>一条从调用链走到崩溃现场的排查顺序</h2>
+<ol><li><strong>`dmesg -T` 与 pstore</strong> 对 <strong>时间线</strong> 先定阶段：看 panic 前的 Call trace → 结果：知道问题出在启动、装载还是运行期。</li><li><strong>`function_graph`</strong> 对 <strong>调用关系</strong> 画层级：确认是谁调了目标函数 → 结果：把可疑面从整个内核收窄到一条路径。</li><li><strong>kprobe 与 kretprobe</strong> 对 <strong>参数与返回值</strong> 取值：确认数值是否和预期一致 → 结果：把怀疑变成可复述的具体数据。</li><li><strong>`perf stat`</strong> 对 <strong>开销</strong> 量化：看每命中一次多花多少指令与周期 → 结果：判断这个探针能不能长期开着。</li><li><strong>关探针并回归</strong> 对 <strong>同一组用例</strong> 重跑一遍 → 结果：确认刚才看到的行为不是观测本身造出来的。</li></ol>
+<div class="code">
+<div class="code-title">动手：从调用链走到崩溃现场</div>
+<pre><code># 1. 重启后唯一还活着的日志
+dmesg -T | tail -40
+ls /sys/fs/pstore/ &amp;&amp; head -30 /sys/fs/pstore/console-ramoops-0
+# 成功：能看到 panic 前的 Call trace =&gt; 定位到阶段
+# 失败：目录为空 =&gt; 没配 CONFIG_PSTORE_RAM，或这次是硬复位不是 panic
+ 
+# 2. 用 function_graph 确认谁调了谁
+cd /sys/kernel/tracing   # 老内核在 /sys/kernel/debug/tracing
+echo function_graph &gt; current_tracer
+echo 1 &gt; tracing_on
+cat trace | head -30
+# 成功：出现带花括号与耗时微秒数的层级调用块
+# 失败：trace 为空 =&gt; tracing_on 之前是 0，或 set_graph_function 写了不存在的符号
+ 
+# 3. 抓返回值（名字先按上面查过）
+echo &#x27;r:myret do_sys_openat2 $retval&#x27; &gt;&gt; kprobe_events
+echo 1 &gt; events/kprobes/myret/enable
+cat trace_pipe | head -10
+# 成功：每行带返回箭头与返回值；失败：报 No such device =&gt; 退回静态 tracepoint
+ 
+# 4. 量化能不能长期开
+perf stat -a sleep 3 2&gt;&amp;1 | tail -8
+# 成功：拿到 instructions 与 cycles；失败：提示 PMU 被占用就先停掉别的 perf 会话
+ 
+# 5. 收尾：用完一定关干净
+echo 0 &gt; tracing_on &amp;&amp; echo nop &gt; current_tracer
+# 成功：cat current_tracer 显示 nop；失败：仍显示 function_graph =&gt; 回归用例会跑在被改过的内核上</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>手段</th><th>拿得到什么</th><th>开销量级</th><th>与异常入口的共用点</th><th>适合什么时候开</th></tr></thead><tbody>
+<tr><td>printk / dmesg</td><td>自由文本与时间戳</td><td>每条日志一次格式化，最慢</td><td>无，可睡眠上下文里也能打</td><td>早期启动、panic 前</td></tr>
+<tr><td>ftrace function</td><td>谁进了哪个函数</td><td>每函数一次跳转</td><td>不改异常入口，改函数入口指令</td><td>路径确认</td></tr>
+<tr><td>function_graph</td><td>调用层级加耗时</td><td>入口与返回各一次</td><td>劫持返回地址，思路同 ret_to_user</td><td>找上层调用者</td></tr>
+<tr><td>tracepoint</td><td>静态埋点的结构化字段</td><td>一个 static key 判断</td><td>无</td><td>长期常驻观测</td></tr>
+<tr><td>kprobe / kretprobe</td><td>任意 pt_regs、参数、返回值</td><td>每命中一到两次异常</td><td>断点异常与单步，和 M04 抢调试资源</td><td>短时定点取证</td></tr>
+<tr><td>perf / PMU</td><td>采样、cycles、指令数</td><td>硬件计数，几乎不影响路径</td><td>可用硬件断点做采样源</td><td>量化开销</td></tr>
+<tr><td>pstore</td><td>重启后仍存活的日志</td><td>只在 panic 路径写一次</td><td>无</td><td>崩溃取证</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>观测本身会改变被观测的东西</strong>。printk 慢到足以把一个竞态窗口填上，于是你一加打印 bug 就消失；kprobe 每命中一次要吃一次断点异常，和单步 trace 抢同一套调试寄存器；ftrace 把函数入口的 <code>nop</code> 改成跳转，改的正是 M03 想 patch 的那几个字节。所以顺序必须是先粗后细、开完就关，而不是六种一起打开——一起开的时候，你看到的已经是它们合力造出来的新系统了。</div></aside>
+<p>把这条结论带走：<strong>每种追踪手段都在往异常入口或函数入口插一脚，而插一脚就有代价、就有痕迹</strong>。第四部 M02 做内核观察面收口时，第一件事就是翻这张表把 ftrace、kprobe、perf 的状态逐项归位；M05 讲硬件断点与 Perf 生命周期，更是直接和 kretprobe 抢同一批 debug 寄存器；第五部 L10 的验证矩阵要求开追踪与关追踪各跑一组对照，原因也在这——你得证明功能不是被观测本身撑起来的。</p>
 </article>
 <div class="pager"><a href="k04-file.html"><span class="dir">上一讲</span>K04 VFS、文件系统与 procfs</a><a href="k06-image.html" style="text-align:right"><span class="dir">下一讲</span>K06 BTF、vmlinux 与内核类型</a></div>
 </main>

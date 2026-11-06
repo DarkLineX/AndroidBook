@@ -196,6 +196,83 @@ setenforce 1          # 切回 enforcing</code></pre>
 <p>选择依据很简单：如果目标是“把功能跑通”，第一条路够用；如果目标是“不被发现”，第二条才是正解。</p>
 <h2>8.9 本章自测</h2>
 <ul><li>DAC 与 MAC 的根本区别是什么？为什么 root 绕不过 MAC？</li><li><code>scontext</code> / <code>tcontext</code> / <code>tclass</code> 分别指什么？</li><li>看到 <code>permissive=1</code> 的 avc 日志，说明什么？为什么不能当作已解决？</li><li>同一个 uid 的两个进程，权限为什么可能完全不同？</li><li>如果只能选一条路处理“被 SELinux 拒绝”，你会怎么选？依据是什么？</li></ul>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_selinux">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">SELinux：一次 open 背后的五要素判定</span>
+  </div>
+  <p class="anim-sub">主体域 × 客体类型 × 类别 × 权限 → allow / deny</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_selinux/f00.png" alt="SELinux：一次 open 背后的五要素判定 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>取出进程的 SELinux 域（主体）</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 取出进程的 SELinux 域（主体）</button>
+    <button type="button" data-i="1">2. 取出目标的类型与 SID（客体）</button>
+    <button type="button" data-i="2">3. 确定操作类别与权限集合</button>
+    <button type="button" data-i="3">4. 查 AVC 缓存与 policy 规则</button>
+    <button type="button" data-i="4">5. 命中则放行，未命中拒绝并记 avc_denied</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_selinux.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["取出进程的 SELinux 域（主体）", "取出目标的类型与 SID（客体）", "确定操作类别与权限集合", "查 AVC 缓存与 policy 规则", "命中则放行，未命中拒绝并记 avc_denied"]</script>
+<h2>root 已经到手，第二道门还是没开</h2>
+<p>你已经拿到 root 了。<code>id</code> 打印 <code>uid=0</code>，<code>su</code> 能起，改 <code>/system</code> 里的文件却还是一句冷冰冰的 <code>Permission denied</code>。你把权限位 <code>chmod 777</code>、把属主改成 root，再试一次——还是不行。这时候该明白：赢下第一场的是 DAC，而第二场的裁判根本不看 uid。它在旁边翻一本策略表，只问两件事：你处在哪个域，你要碰的东西是什么类型。</p>
+<p>把 SELinux 想成一个从不被收买的门卫：DAC 管你是谁，MAC 管你被允许做什么。root 能让第一道门形同虚设，却连第二道门的表格都翻不到——因为那张表在内核里，判定发生在每一次 <code>open</code>、每一次 <code>ptrace</code>、每一次 binder 调用的路径上，谁都绕不开。</p>
+<h2>一次 open 背后的五要素判定</h2>
+<ol><li><strong>用户态</strong> 对 <strong>内核</strong> 发起 <code>openat(path, O_RDONLY)</code> → 结果：先走 pathwalk，拿到目标 <code>dentry</code> 与 <code>inode</code>。</li><li><strong>DAC</strong> 对 <strong>inode 的 mode 与当前 `cred`</strong> 比对：uid、gid、权限位 → 结果：uid=0 直接通过；这一关 root 永远赢。</li><li><strong>LSM hook `security_file_open`</strong> 对 <strong>主体 SID 与客体 SID</strong> 取值：从 <code>cred</code> 里拿进程 domain，从 inode 的 <code>security.selinux</code> 扩展属性里拿文件 type → 结果：凑齐 <code>scontext</code>、<code>tcontext</code>、<code>tclass=file</code>、<code>perm=read</code> 四要素。</li><li><strong>AVC</strong> 对 <strong>缓存</strong> 查一次：命中就直接返回决策；未命中则进策略库按 TE 规则求值，再把结果写回缓存 → 结果：允许就继续，拒绝就走 <code>avc_denied</code>。</li><li><strong>`avc_denied`</strong> 对 <strong>audit 与返回值</strong> 双写：enforcing 时给调用方 <code>-EACCES</code> 并打一条 <code>avc: denied</code>；permissive 时只打日志、照样放行 → 结果：日志长得一模一样，功能却一个失败一个成功。</li></ol>
+<p>第 3 拍里最容易被忽略的是 <code>tclass</code>。同样是 read，<code>file:read</code>、<code>dir:read</code>、<code>process:read</code>、<code>binder:call</code> 是完全不同的规则条目；写 allow 规则时少写一个 class，规则就不会命中。而第 5 拍解释了为什么排查 SELinux 问题<strong>必须先 `getenforce`</strong>：不看模式，<code>avc: denied</code> 这行日志根本读不出结论。</p>
+<h2>zygote 怎么把同一个 uid 分进不同权限</h2>
+<ol><li><strong>zygote</strong> 对 <strong>新 App 进程</strong> 调 <code>selinux_android_setcontext</code>：按签名、包名、seinfo 算出目标域 → 结果：同一个模板 fork 出来的进程，被分到 <code>untrusted_app</code> 或 <code>platform_app</code>，权限差一大截。</li><li><strong>`ps -AZ`</strong> 对 <strong>每个进程</strong> 显示 <code>u:r:&lt;domain&gt;:s0</code> 加可选 category → 结果：一眼看出 root 了但仍在受限域里这个最常见的困惑。</li><li><strong>MLS/MCS 的 category</strong> 对 <strong>同域不同 App</strong> 再做隔离：level 里的 <code>c512,c768</code> 不同，即使 domain 相同也互相读不到 → 结果：这解释了为什么两个 <code>untrusted_app</code> 进程不能互看彼此的 <code>/data/data</code>。</li><li><strong>改策略路线</strong> 对 <strong>策略文件或 `/sys/fs/selinux/load`</strong> 加 allow、换更宽的域 → 结果：见效快，但策略版本号、文件哈希、avc 日志集体消失本身都是痕迹。</li><li><strong>换路径路线</strong> 对 <strong>动作发生的位置</strong> 做迁移：把操作挪到本来就有权限的进程，或挪到内核态 → 结果：判定没被改，痕迹少得多，代价是工程复杂度上去了。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>avc: denied 字段</th><th>读法</th><th>排查时拿它做什么</th></tr></thead><tbody>
+<tr><td>{ ptrace }</td><td>被拒绝的权限集合</td><td>决定 allow 规则里写哪个 perm</td></tr>
+<tr><td>scontext=u:r:untrusted_app:s0</td><td>主体域，谁发起</td><td>确认发起方，判断是不是该换域</td></tr>
+<tr><td>tcontext=u:r:zygote:s0</td><td>客体类型，对谁</td><td>定位目标类型，别把 target 写错</td></tr>
+<tr><td>tclass=process</td><td>客体类别</td><td>决定规则里的 class，process 与 file 不通用</td></tr>
+<tr><td>permissive=0</td><td>0 是真拒绝，1 是只记录</td><td>先据此判断功能失败到底是不是它造成的</td></tr>
+<tr><td>comm=app_process</td><td>进程名</td><td>和 ps -AZ 对上，确认域与进程的一致性</td></tr>
+<tr><td>pid=1234</td><td>发起方 pid</td><td>回 /proc/&lt;pid&gt;/attr/current 复查当前上下文</td></tr>
+</tbody></table></div>
+<h2>把一次拒绝从日志里完整还原出来</h2>
+<div class="code">
+<div class="code-title">动手：先定模式，再凑齐四要素</div>
+<pre><code># 1. 先定模式：不看这行，后面的日志都读不出结论
+getenforce &amp;&amp; cat /sys/fs/selinux/enforce
+# 成功：Enforcing 与 1；失败：Permissive 与 0 =&gt; 下面所有 denied 只是记录，不是拦阻
+ 
+# 2. 看自己与目标的上下文（四段 user:role:type:level）
+id -Z
+ps -AZ | head -20
+ls -Z /data/data | head -10
+cat /proc/self/attr/current
+# 成功：进程带 u:r:&lt;domain&gt;，文件带 u:object_r:&lt;type&gt;
+# 失败：报 Operation not permitted =&gt; MAC 已禁用或节点被遮
+ 
+# 3. 抓刚才那次拒绝
+dmesg | grep -E &#x27;avc:.*denied&#x27; | tail -10
+logcat -b events -d 2&gt;/dev/null | grep -i avc | tail -10
+# 成功：能凑齐 scontext / tcontext / tclass / perm / permissive 五要素
+# 失败：一条都没有 =&gt; 没触发 LSM 判定、日志被限速、或当前无审计输出
+ 
+# 4. 把四要素拼成候选规则，再回设备验证
+# allow &lt;scontext 第三段&gt; &lt;tcontext 第三段&gt;:&lt;tclass&gt; { &lt;perm&gt; };
+ls -l /sys/fs/selinux/policy &amp;&amp; getprop ro.boot.selinux 2&gt;/dev/null
+# 成功：改完再触发一次，denied 消失且功能正常
+# 失败：denied 变成另一条 =&gt; 还有第二道规则没开，别急着把域加宽</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>第 4 步最见功夫：只按眼前这一条 denied 补规则，补完往往会冒出下一条——因为一次操作通常连着好几个 LSM 检查点。正确做法是把每次新增的 denied 记成一张清单，直到清单不再增长，再回头看能不能用一条更窄的规则覆盖。一上来就把域换成最宽的，功能能通，痕迹也最重。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>permissive 模式下 `avc: denied` 照样打印，但功能是通的</strong>。于是日志里有 denied 不等于这件事被挡了，功能正常也不等于策略没问题——一旦设备切回 enforcing，昨天还跑得好好的功能会集体失灵。第二个反直觉处：SELinux 判定发生在 <strong>DAC 之后</strong>，所以 <code>chmod 777</code> 之后依然失败不是权限位没生效，而是你根本还没走到第二道门；同一个 uid 的两个进程权限不同，也不是 uid 出了错，而是它们被 zygote 分到了不同域。</div></aside>
+<p>把这条结论带走：<strong>root 只赢第一场；真正的边界写在 domain × type × class × perm 这张表里</strong>。第三部 F05 讲 Frida server 与 Android SELinux 时，第一次被拒的往往就是 <code>process:ptrace</code> 与 <code>binder:call</code>；第四部 M06 做 SELinux 与 FD 安全扩展，走的正是这里第 5 拍的换路径而不是改策略；第五部 L06 收 FD 账本时，也要靠 <code>ls -Z</code> 与 <code>/proc/&lt;pid&gt;/attr/current</code> 把谁能打开什么对齐。K04 讲的内容与身份交叉校验，到这里补上最后一段——身份里除了 dev 与 ino，还有一层安全上下文。</p>
 </article>
 <div class="pager"><a href="k07-kallsyms.html"><span class="dir">上一讲</span>K07 内核符号、KASLR 与运行地址</a><a href="f01-server.html" style="text-align:right"><span class="dir">下一讲</span>F01 Frida 整体启动、进程注入与 Zygote 门控</a></div>
 </main>

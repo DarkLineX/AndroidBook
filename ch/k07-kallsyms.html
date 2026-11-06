@@ -188,6 +188,53 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 </div>
 <h2>7.11 实战：一次“符号找不到”的排查</h2>
 <ol><li>确认符号名拼写（大小写、下划线）。</li><li>确认是否被导出（<code>grep EXPORT_SYMBOL</code> 源码）。</li><li>确认内核版本（新版可能删掉了）。</li><li>退路：用特征扫描找地址，或改用一个稳定导出的等价符号。</li></ol>
+<h2>两次开机，同一个符号给了两个地址</h2>
+<p>同一台设备，连着开两次机，两次都去 <code>grep commit_creds /proc/kallsyms</code>。第一次是 <code>ffffffc0082a1b40</code>，第二次变成 <code>ffffffc009f31b40</code>。地址每次都在跳，可你心里一点都不慌——因为你知道这两个数各自减去 <code>System.map</code> 里 <code>_text</code> 的值，得到的差完全一样。KASLR 挪的是整块地基，不是楼里的房间。</p>
+<p>把内核镜像想成一栋被整体平移的楼：链接器给每个房间标了门牌（链接地址），开机时 bootloader 在 dtb 的 <code>/chosen</code> 里塞一个 <code>kaslr-seed</code>，早期启动代码据此算出 slide，把整栋楼连同门牌一起挪走。<strong>房间与房间之间的距离，一步没变</strong>。所有定位方法，最后都站在这句话上。</p>
+<h2>一次开机里 slide 是怎么落地的</h2>
+<ol><li><strong>bootloader</strong> 对 <strong>dtb 的 `/chosen`</strong> 写 <code>kaslr-seed</code>（或由 EFI 随机源提供） → 结果：内核还没解压缩就拿到一份随机数。</li><li><strong>`kaslr_early_init`</strong> 对 <strong>随机数</strong> 取模并按段对齐：算出 <code>slide</code>，限定在 <code>CONFIG_RANDOMIZE_BASE</code> 允许的范围内 → 结果：得到一个每次开机都不同的整块偏移。</li><li><strong>早期重定位</strong> 对 <strong>所有绝对地址引用</strong> 加 slide：重定位表里的每一项被改写 → 结果：内核代码、只读数据、<code>kallsyms</code> 表整体搬到运行地址。</li><li><strong>`kallsyms`</strong> 对 <strong>压缩过的符号名表</strong> 展开：<code>kallsyms_expand_symbol</code> 用索引表与高频字符表还原名字，地址按相对基址加偏移还原 → 结果：<code>/proc/kallsyms</code> 里直接列出当前运行地址。</li><li><strong>`kptr_restrict`</strong> 对 <strong>输出</strong> 做遮挡：值 1 时非特权进程看到全 0，值 2 时连特权进程的 <code>%p</code> 也被 hash → 结果：地址被抹掉，但<strong>表里各符号的先后顺序与相对距离一点没动</strong>。</li></ol>
+<p>第 5 拍是整章的题眼：遮地址遮的是绝对值，遮不住关系。只要你能从任意一个渠道拿到<strong>一个</strong>符号的真实运行地址（一次未受保护的 <code>%px</code>、一个可读的 tracepoint、一段能读的内核内存），把它的运行地址减去 <code>System.map</code> 里的链接地址，slide 就到手；随后整张 <code>kallsyms</code> 表都能按链接地址加 slide 推出来。这也是为什么内核里 <code>printk</code> 用 <code>%p</code> 会打印成哈希值，而 <code>%px</code> 被反复强调只用于调试。</p>
+<h2>定位一个 hook 点的五步减法</h2>
+<ol><li><strong>探测层</strong> 对 <strong>`/proc/kallsyms`</strong> 取值：先看 <code>_text</code>、<code>_stext</code> 是否非零，判断地址有没有被遮 → 结果：决定走直接读，还是先想办法拿 slide。</li><li><strong>算 slide</strong> 对 <strong>System.map</strong> 做减法：用运行地址减链接地址，再拿第二个符号校验差值是否一致 → 结果：两次一致说明版本匹配；不一致说明拿错了 System.map。</li><li><strong>定位 hook 点</strong> 对 <strong>目标函数名</strong> 查表：查 <code>/proc/kallsyms</code>，或按 K06 的特征扫描在 Image 里找指令模式 → 结果：拿到可 patch 的运行地址。</li><li><strong>校验 ABI</strong> 对 <strong>KMI 与 MODVERSIONS</strong> 过一遍：<code>modinfo</code> 看 <code>vermagic</code>，<code>dmesg</code> 看报的是 <code>Unknown symbol</code> 还是 <code>disagrees about version of symbol</code> → 结果：区分名字不在与名字在但 ABI 变了这两类完全不同的失败。</li><li><strong>回退层</strong> 对 <strong>陌生内核</strong> 降级：改用稳定的相对偏移，或换一个已导出的等价符号 → 结果：工具不崩，日志里写清究竟走了哪条路。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>地址说法</th><th>从哪来</th><th>随开机变吗</th><th>典型用途</th></tr></thead><tbody>
+<tr><td>链接地址</td><td>vmlinux 与 System.map 里的静态值</td><td>不变</td><td>算 slide 的基准</td></tr>
+<tr><td>slide</td><td>kaslr-seed 加早期重定位</td><td>每次开机变</td><td>把整张符号表搬到位</td></tr>
+<tr><td>运行地址</td><td>链接地址加 slide</td><td>变</td><td>实际 patch 与下断点的地址</td></tr>
+<tr><td>相对偏移</td><td>任意两个符号或字段之间的距离</td><td>不变</td><td>跨版本定位、CO-RE 重定位</td></tr>
+<tr><td>%p 输出</td><td>printk 里的哈希指针</td><td>看不出原值</td><td>日志里被遮挡的地址</td></tr>
+<tr><td>%px 输出</td><td>printk 里的真实指针</td><td>变</td><td>调试用，也是常见泄露点</td></tr>
+</tbody></table></div>
+<h2>自己把 KASLR 的 slide 算出来</h2>
+<div class="code">
+<div class="code-title">动手：两次开机，一个减法，一张表</div>
+<pre><code># 1. 看当前符号表有没有被遮
+head -3 /proc/kallsyms &amp;&amp; cat /proc/sys/kernel/kptr_restrict
+# 成功：地址列非全 0 =&gt; 可以直接读；失败：全 0 =&gt; 先处理 kptr_restrict 再读
+ 
+# 2. 取运行地址（链接地址去 System.map 里取）
+grep -E &#x27; (_text|_stext|commit_creds|init_task)$&#x27; /proc/kallsyms
+grep -E &#x27; (_text|_stext|commit_creds|init_task)$&#x27; /data/local/tmp/System.map
+# 成功：两份表里同名符号都出现且顺序一致 =&gt; 版本匹配
+# 失败：System.map 里缺符号 =&gt; 拿错文件了，换同版本那份
+ 
+# 3. 算 slide，并用第二个符号交叉校验
+# slide = runtime(_text) - link(_text)；再验证 commit_creds 的差值是否相等
+# 成功：两个差值完全一致 =&gt; 整张表都能按 链接地址 + slide 还原
+# 失败：差值不同 =&gt; 还有别的重定位，或符号被裁剪，改走 K06 的特征扫描
+ 
+# 4. 确认随机化确实开着
+zcat /proc/config.gz | grep -E &#x27;CONFIG_RANDOMIZE_BASE|CONFIG_KALLSYMS_ALL&#x27;
+# 成功：CONFIG_RANDOMIZE_BASE=y；失败：为 n 或读不到 config.gz =&gt; 地址本就不随机
+ 
+# 5. 重启一次，再取一遍 _text
+grep &#x27; _text$&#x27; /proc/kallsyms
+# 成功：两次地址不同、但任意两符号之差不变 =&gt; 这就是本章的全部结论</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>第 3 步那句减法不要只做一次。用两个符号分别算、确认差值相等，才能排除你拿到的是别的版本 <code>System.map</code>、或者某些符号被单独裁剪过的情况。第 4 步也有实际意义：不少工程机与模拟器根本没开 <code>CONFIG_RANDOMIZE_BASE</code>，这时候地址两次开机一样，用 KASLR 去解释现象只会把自己带偏。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>KASLR 保护的是地址，保护不了结构</strong>。它把整块内核平移几 GB，却让每个函数之间的间距、每个字段在结构体里的偏移原样保留。于是最省力的定位方法从来不是破解随机数，而是找任意一个泄露出来的真实地址——拿到一个，等于拿到全部。另一处反直觉：<code>/proc/kallsyms</code> 里那些全 0 的行并不是符号不存在，只是 <code>kptr_restrict</code> 把值抹了；把这两件事搞混，会让你误判成内核裁剪了符号表。</div></aside>
+<p>把这条结论带走：<strong>地址会变，相对关系不变；符号找不到和符号版本不匹配是两种病</strong>。第四部 M01 装载 KPM 模块时的第一层能力探测、M03 定位 ARM64 指令 Hook 点前的地址换算，用的都是这里算 slide 的减法；第三部 F11 的隐藏与兼容总表要求每个地址都写成基址加偏移，也是同一个道理。上一讲 K06 的 BTF 给的是类型图里的相对偏移，这一讲给的是运行时的绝对落点——两者合起来，才是一颗陌生内核的完整地图。</p>
 </article>
 <div class="pager"><a href="k06-image.html"><span class="dir">上一讲</span>K06 BTF、vmlinux 与内核类型</a><a href="k08-domain.html" style="text-align:right"><span class="dir">下一讲</span>K08 SELinux 安全模型</a></div>
 </main>

@@ -189,6 +189,41 @@ ls -Z /data/adb           # 文件的上下文</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>第 3 步只是诊断手段，不是解决方案。把系统长期跑在 permissive 上，等于对所有 App 敞开大门。</div></aside>
+<h2>现场：root 已经到手，还是被拒</h2>
+<p><code>adb shell id</code> 打印 <code>uid=0(root)</code>，<code>ls -l /data/local/tmp/frida-server</code> 是 <code>-rwxrwxrwx</code>，文件权限挑不出一点毛病。可执行起来就是 <code>Permission denied</code>；换成 <code>frida -U -f</code> 又变成<code>Failed to attach: unable to ptrace</code>。你重装 server、换端口、重启 adbd，折腾一小时，答案却一直躺在 dmesg 里没人看。</p>
+<p>root 只是 DAC 那一关的通行证：uid 0 让文件权限位对你失去意义。可 SELinux 是 MAC，它不看“你是谁”，只看“<strong>你的域 × 目标的类型 × 动作</strong>”三元组有没有 allow 规则。所以排查顺序应该反过来：<strong>先看 avc 日志，再看文件权限</strong>。把一次拒绝拆开，你会发现失败点不止一处，而且每一处都在不同的规则里。</p>
+<h2>把一次拒绝拆成六拍</h2>
+<ol><li><strong>frida-server（如 u:r:su 之类域）→ 对目标进程（u:r:untrusted_app）→ 发起 PTRACE_ATTACH</strong> → 结果：内核先做 DAC 检查，uid 0 / CAP_SYS_PTRACE 直接通过，第一关轻松过。</li><li><strong>内核 LSM hook → 对这次 ptrace → 取出 scontext 与 tcontext</strong> → 结果：拿着两个域去 AVC 里查 <code>allow &lt;源域&gt; &lt;目标域&gt;:process ptrace</code>；这才是决定生死的一查。</li><li><strong>AVC → 对查询结果 → 未命中允许规则</strong> → 结果：调 avc_denied，往 dmesg 写一条 <code>avc: denied { ptrace }</code>，并返回 -EACCES 给系统调用。</li><li><strong>frida-server → 对系统调用返回值 → 收到 EACCES</strong> → 结果：上层包装成 <code>Failed to attach</code>，而不是文件式的 Permission denied，于是很多人去查文件权限，查错方向。</li><li><strong>server 退而求其次 → 对自己创建的 agent 文件 / pipe → 尝试 open、mmap、connect</strong> → 结果：若文件 type 被标成 frida_file 或 app_data_file 而域没被允许，又是一串 <code>{ read open map execute }</code> 拒绝。</li><li><strong>改走 zygote 门控 → 对 zygote 域 → 需要 allow &lt;域&gt; zygote:process ptrace 或 setcontext 类规则</strong> → 结果：即便 root，缺规则一样停在 specialize 之前，spawn 出来的进程永远等不到注入。</li></ol>
+<h2>复现：把 avc 抓到手再决定改什么</h2>
+<p>不要在日志之外猜规则。下面这组命令先固定现场（域、enforce 状态、文件标签），再实时盯 avc，最后跑一次注入；把新增的拒绝条目抄下来，缺哪条规则一目了然。最关键的是最后那次二分：临时切 Permissive 再跑一遍，能立刻区分 MAC 与 DAC。</p>
+<div class="code">
+<div class="code-title">抓现场、跑注入、做二分</div>
+<pre><code>adb shell id -Z                        # 看自己域：u:r:su:s0 / u:r:shell:s0
+adb shell getenforce                   # Enforcing 还是 Permissive
+adb shell ls -Z /data/local/tmp/frida-server
+ 
+# 实时盯拒绝日志（另开一个终端）
+adb shell &#x27;dmesg -w | grep avc&#x27;
+ 
+# 起 server 并注入一次
+adb shell /data/local/tmp/frida-server &amp;
+frida -U -f com.example.app -l probe.js
+ 
+# 把新增拒绝捞出来
+adb shell &#x27;dmesg | grep -i avc | tail -n 20&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：<code>getenforce</code> 为 Permissive，或整个流程跑完 dmesg 没有新增 <code>avc: denied</code>；<code>frida-ps -U</code> 能列进程，<code>probe.js</code> 的 send 正常到达。<strong>算失败</strong>：出现 <code>avc: denied { ptrace } ... tcontext=u:r:untrusted_app</code> 说明缺 process/ptrace 规则；出现 <code>{ map }</code> / <code>{ execute }</code> 针对 frida_file 说明缺文件 type 规则；<code>tcontext=u:r:zygote</code> 的那条则说明你开的 zygote 门控缺单独一条 allow，只盯着 App 域排查永远找不着它。<code>ls -Z</code> 显示文件是 <code>u:object_r:app_data_file:s0</code> 而 server 域没被允许读，也是同一类。把 <code>setenforce 0</code> 临时切 Permissive 再跑一次，若立刻成功，就能一口咬定是 MAC 而非 DAC——这是整章最省事的一次二分。</p>
+<div class="tbl"><table>
+<thead><tr><th>操作</th><th>需要的 allow 形状</th><th>拒绝日志关键字</th><th>常见误区</th></tr></thead><tbody>
+<tr><td>ptrace attach</td><td>&lt;域&gt; untrusted_app:process ptrace</td><td>{ ptrace }</td><td>以为 root 就够</td></tr>
+<tr><td>映射 agent</td><td>&lt;域&gt; frida_file:file read/open/map/execute</td><td>{ map }</td><td>只盯文件权限位</td></tr>
+<tr><td>zygote 门控</td><td>&lt;域&gt; zygote:process ptrace</td><td>tcontext=u:r:zygote</td><td>只查目标 App 域</td></tr>
+<tr><td>pipe / socket 通信</td><td>&lt;域&gt; &lt;域&gt;:fifo_file / unix_stream_socket</td><td>{ write } / { connectto }</td><td>只核对 maps</td></tr>
+<tr><td>setcontext 改寄存器</td><td>对应 process 类规则</td><td>{ setcurrent }</td><td>与 ptrace 混成一条</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：把 sepolicy 放宽反而<strong>更容易被看见</strong>。规则一改，<code>/sys/fs/selinux</code> 的 policy 版本号、avc 日志的有无、<code>getenforce</code> 的状态全都会变；而原本“被拒绝”这件事是安静的。检测方甚至不需要知道你做了什么，只要发现“一个本该被拒的动作居然成功了”，就足以判定环境被改过。所以低痕迹路线不是把门撬开，是换一条根本不经过这道门的路径。</div></aside>
+<p>“换路径而不是改判定”这个取舍，在 KPM 部 <strong>M06 SELinux 与 FD 安全扩展</strong> 会正面展开：那里给出 avc_denied 放行与“换身份干活”两条实现路线，并逐项讨论 f_security、inode/file/socket SID 与 SO_PEERSEC 的长度 ABI 陷阱；LSPosed 部 <strong>L08 Android 14 / 16 分层适配</strong> 也会撞上同一堵墙——SELinux 规则随版本收紧，同一份注入代码在新系统上要先过域这一关，旧版本能跑不代表新版本能跑。</p>
 </article>
 <div class="pager"><a href="f04-webservice.html"><span class="dir">上一讲</span>F04 Frida server IPC 逻辑</a><a href="f06-pthread.html" style="text-align:right"><span class="dir">下一讲</span>F06 Frida 默认 Hook</a></div>
 </main>

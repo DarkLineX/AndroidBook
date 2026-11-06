@@ -164,6 +164,48 @@ boolean checkSign() {
 <ul><li>靶场 App 源码（含三道检测与加固版）。</li><li>绕过脚本（含注释，说明每一步的观察依据）。</li><li>一份对照表：加固前 / 加固后，各自的有效手段与痕迹。</li><li>一段 200 字总结：你现在能说清“为什么这一招在这里有效、换个场景就无效”。</li></ul>
 <h2>1.7 自测</h2>
 <ul><li>为什么必须先确认“检测在干净环境下是通过的”？</li><li>把检测移到 native 之后，Java hook 为什么失效？</li><li>CRC 自校验本身怎么被绕过？</li><li>三道检测“交叉验证”之后，攻击者的成本上升在哪？</li></ul>
+<h2>你坐在机器前，手里有一台刚刷完的 Pixel</h2>
+<p>你坐在机器前，手里有一台刚刷完的 Pixel、一份自己写的 HelloWorld 工程、一个还空着的终端窗口。屏幕上没有别人的 App，没有看不懂的混淆，只有你能完全控制的三百行代码。这是整个训练营里最奢侈的一次：因为你能确定每一个布尔值从哪来，所以后面每一次「绕过成功」都真的能归功于你的动作，而不是运气。先把 USB 线插稳，别急着写 hook——第一件事是把这份干净状态钉死。</p>
+<p>桌上再放一张纸，画四列：环境、root 检测、调试检测、签名检测。你要在两种环境里各跑一遍，把三个布尔值抄进去；然后改签名重打包，再抄一遍。这张纸后面会变成你的交付物之一，也是唯一能证明「检测确实有效」的证据。三道检测的代码前面已经给过，这里不再重复，我们练的是把它当成一件真实产品来验收：先让它正常失败，再让它正常通过，最后才允许自己去破。</p>
+<h2>第一轮：先把干净状态钉死</h2>
+<ol><li><strong>你</strong> → 对 <strong>HelloWorld 工程</strong> → 用固定签名打出一个 baseline APK，立刻记下 <code>sha256sum</code> → 结果是后面所有「我改了什么」都有唯一参照，不会出现「好像和上次不一样」。</li><li><strong>你</strong> → 对 <strong>已 root 的测试机</strong> → <code>adb install -r baseline.apk</code> 后冷启动 → 结果是三个布尔值里至少 root 与签名两项为 false，UI 显示失败。</li><li><strong>你</strong> → 对 <strong>未 root 的模拟器 / 另一台干净机</strong> → 装同一个 baseline APK 冷启动 → 结果是三项全 true，UI 显示 OK；这一步若也失败，先回去修检测，别往下走。</li><li><strong>你</strong> → 对 <strong>baseline APK</strong> → 用任意 debug key 重签名再装 → 结果是签名项为 false、另两项不变 → 说明三道检测彼此独立，没有被同一个条件串在一起。</li><li><strong>你</strong> → 对 <strong>调试器</strong> → 用 <code>adb shell am set-debug-app</code> 或直接 attach 一次 → 结果是调试项翻成 false → 至此你手里有了一张「什么算失败」的对照卡。</li></ol>
+<h2>第二轮：动手破，逐拍记下依据</h2>
+<ul><li><strong>你</strong> → 对 <strong>进程</strong> → 用 <code>frida -U -f</code> spawn 而不是 attach → 结果是你能在 Application 初始化之前就把 hook 装好，避免检测先跑完再改。</li><li><strong>你</strong> → 对 <strong>`File.exists`</strong> → 只拦截路径以 <code>/su</code> 结尾的调用、其余原样放行 → 结果是 root 项变 true，但别的正常文件访问没被破坏，UI 其他部分照常。</li><li><strong>你</strong> → 对 <strong>`Debug.isDebuggerConnected` 与 `waitingForDebugger`</strong> → 返回 false / false → 结果是调试项变 true，同时日志里能看见你的 send 打点，证明脚本真的执行了。</li><li><strong>你</strong> → 对 <strong>签名读取链路</strong> → 先只打印 <code>signatures[0]</code> 的 sha256 不改返回值 → 结果是你先看清「期望值长什么样」，再决定改哪一层，而不是一上来就把 equals 改死。</li><li><strong>你</strong> → 对 <strong>UI</strong> → 三项全 true 后截图存档 → 结果是第一轮闭环完成；但这只是开始，接下来要亲手把它变难。</li></ul>
+<h2>可复现实验：一条命令走完 spawn 与回归</h2>
+<div class="code">
+<div class="code-title">host 端可跑的完整流程（把包名换成你自己的）</div>
+<pre><code>PKG=com.example.range
+ 
+# 1. 固定基线，记哈希，别跳过
+sha256sum app/build/outputs/apk/debug/app-debug.apk &gt; /tmp/base.sha
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+ 
+# 2. 冷启动一次，抓三个布尔值（先在 App 里用 Log.d 打出来）
+adb shell am force-stop $PKG
+adb logcat -c &amp;&amp; adb logcat -v time -s RangeCheck:V &gt; /tmp/clean.log &amp;
+adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1
+ 
+# 3. spawn 注入，脚本里只改那三个事实，不改 UI 判断
+frida -U -f $PKG -l bypass.js --no-pause &gt; /tmp/bypass.log
+ 
+# 4. 回归：把进程杀干净，不注入再跑一次，确认还是失败
+adb shell am force-stop $PKG
+adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：<code>/tmp/clean.log</code> 里三项为 false、UI 失败；<code>/tmp/bypass.log</code> 里出现你的 <code>send(&#x27;alive&#x27;)</code> 打点且三项翻成 true、UI 显示 OK；第 4 步杀掉进程后重新跑又变回失败。三段现象齐全，才算这一轮真的闭环了。看到什么算失败：<code>bypass.log</code> 里连 <code>alive</code> 都没有——那不是绕过没成功，是脚本根本没加载，回去查包名、<code>-f</code> 是否拼对、frida-server 是否与 host 版本一致；或者 UI 变 OK 但日志里三项仍有 false，说明你改的是显示层而不是检测依赖的事实，这种「成功」一分不值，必须推倒重来。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>最可能的原因</th><th>排查动作</th></tr></thead><tbody>
+<tr><td>spawn 后没有任何 send</td><td>脚本没加载 / 包名错 / 版本不匹配</td><td>先加 send(&#x27;alive&#x27;)，核对 frida-ps -U</td></tr>
+<tr><td>三项全 true 但 UI 仍失败</td><td>只改了显示层，没改事实</td><td>在检测函数返回处打点，看谁还在拦</td></tr>
+<tr><td>干净机也报失败</td><td>检测自身有 bug</td><td>先修检测，禁止在此状态下谈绕过</td></tr>
+<tr><td>绕过一次有效、二次无效</td><td>JIT 内联或结果被交叉校验</td><td>打印调用栈，确认是否走了另一份逻辑</td></tr>
+<tr><td>重签名后 root 项也变了</td><td>三道检测被写进同一个条件</td><td>拆开成独立函数，各自返回结果</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>第一轮绕过成功，往往说明检测写得太弱，而不是你技术好</strong>。真正的学习发生在第三轮——你把检测挪到 native、给检测函数加 CRC、让三处结果互相交叉验证，然后亲眼看着刚还灵光的 Java hook 全部失灵。能说清「这一招为什么在这里有效、换个场景就无效」，比多破十道弱检测有价值得多。</div></aside>
+<h2>交付物清单（缺一项就不算完成）</h2>
+<ol><li><strong>靶场源码</strong>：baseline 版与加固版各一份，两版都能编译、都能冷启动，附上各自的签名哈希。</li><li><strong>环境对照卡</strong>：干净机 / root 机 / 重签名 / 接调试器四种情况下三个布尔值的原始记录，含 logcat 原文片段。</li><li><strong>绕过脚本</strong>：带注释，每一处 hook 旁写明「观察到什么 → 所以改这里」，脚本首行必须有 <code>send(&#x27;alive&#x27;)</code>。</li><li><strong>加固前后对照表</strong>：列出加固前有效的手段、加固后失效的手段、以及每一招留下的痕迹（Java 方法被替换 / native 入口被改 / CRC 报警）。</li><li><strong>回归记录</strong>：第 4 步杀进程后重新跑的结果截图，证明确认过「不注入就失败」。</li><li><strong>一段 200 字总结</strong>：只回答一个问题——为什么这一招在这里有效、换个场景就无效。</li></ol>
+<p>把这六样东西归档好，T02 会换掉你手里那样东西：从「自己写的源码」变成「一个陌生 APK」。那时你不再有源码可依，只能靠这里练出来的「先看事实、再改事实」的习惯。再往后 T03 会把这张对照卡升级成一张必须填满数字的三组记录表——闭环还是那个闭环，只是证据从布尔值变成了可度量的指标。</p>
 </article>
 <div class="pager"><a href="p02.html"><span class="dir">上一讲</span>P02 混淆与反混淆的基本盘</a><a href="t02-hook.html" style="text-align:right"><span class="dir">下一讲</span>T02 训练营二：从一个陌生 App 里挖出一个算法</a></div>
 </main>

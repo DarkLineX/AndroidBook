@@ -191,6 +191,41 @@ script = session.create_script(&#x27;send(&quot;ok&quot;)&#x27;)
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>把这个检查做成脚本，每次动手前先跑一遍。能省掉大量“到底是环境问题还是代码问题”的纠结。</div></aside>
+<h2>现场：一次断线暴露的四层</h2>
+<p>脚本跑得好好的，日志一秒十几行。你手一抖把 USB 线拔了又插回去，终端没报错，REPL 还挂着，可 hook 再也不回调了。敲 <code>frida-ps -U</code> 又能列出进程，于是你开始怀疑脚本、怀疑 App、怀疑手机，唯独没想到问题出在“那条线”本身。</p>
+<p>Frida 的结构里有一条硬规矩：<strong>host 永远不直接和 agent 说话，agent 也永远不直接和 host 说话</strong>。frida-server 是唯一的中转站，一条 <code>send</code> 要穿过 Connection、HostSession、AgentSession、Script 四层。拔线只切断了最外面那层，可里面三层会按各自的策略级联销毁或保持——于是“没报错”和“还在工作”完全是两回事。</p>
+<h2>把一条 send 拆成八拍</h2>
+<ol><li><strong>你的 JS send(...) → 对 Script 的 message 通道 → 把对象序列化成一条 message</strong> → 结果：产生一个待发送信封，JS 线程不等回执，继续跑下一条语句。</li><li><strong>Script → 对 agent 内的 AgentSession → 投递到与 server 之间的专用 pipe / socket</strong> → 结果：数据离开目标进程，进入设备端 server 的地址空间。</li><li><strong>server 的 AgentSession → 对 HostSession → 按 session id 找到对应的 host 连接</strong> → 结果：消息被原样转发，server 不解析业务内容，只做路由。</li><li><strong>server → 对 Connection（TCP 或 USB）→ 写回 host</strong> → 结果：host 侧 <code>on_message</code> 被调用，你终于在终端看到那行日志。</li><li><strong>反向：host 的 post / rpc.exports 调用 → 对 HostSession → 打包成控制消息</strong> → 结果：server 收到一条低频指令，走的是控制面而不是上面的数据面。</li><li><strong>server → 对 AgentSession → 转发进目标进程</strong> → 结果：agent 的 JS 线程收到一个待执行任务，在下一次消息循环里处理。</li><li><strong>拔线 → 对 Connection → 内核把 socket 标记成 EOF</strong> → 结果：server 发现对端消失，按版本策略销毁 HostSession；host 的 send 已经写进旧通道，直接丢掉。</li><li><strong>server → 对 AgentSession / Script → 级联 detach 或保留 agent</strong> → 结果：可能是“hook 还挂着但消息没人收”，也可能是整个 agent 自卸载，两者终端都表现为安静。</li></ol>
+<h2>按层复现：把断在哪一层看出来</h2>
+<p>从外往内敲四条命令，每通过一条就把一层划掉。这个顺序的价值在于：它把“frida 不稳定”这种模糊抱怨，变成一个有明确失败点的二分查找。最后再用一个只发一条 send 的最小脚本，把断线后的“安静”亲手复现出来。</p>
+<div class="code">
+<div class="code-title">从外到内的四条命令 + 最小探针</div>
+<pre><code># 第 1 层：传输
+adb devices
+adb forward --list
+ 
+# 第 2 层：HostSession 是否活着
+frida-ps -U
+ 
+# 第 3 层：能否 attach 并建立 AgentSession
+frida -U -p $(pidof com.example.app) -e &#x27;send(Process.id)&#x27;
+ 
+# 第 4 层：脚本通道
+# ping.js 内容：send({at: &#x27;loaded&#x27;}); rpc.exports = { now: function () { return Date.now(); } };
+frida -U -p $(pidof com.example.app) -l ping.js</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：<code>adb devices</code> 列出设备、<code>adb forward --list</code> 有 27042 之类的转发；<code>frida-ps -U</code> 列出目标包名；<code>-e</code> 打印出 PID；<code>-l ping.js</code> 立刻收到 <code>loaded</code>，在 REPL 里调 <code>now()</code> 能拿到时间戳。<strong>算失败</strong>：<code>adb devices</code> 空或 offline 断在传输；<code>frida-ps -U</code> 报 <code>Failed to enumerate applications</code> 断在 HostSession（通常是 server 进程被杀或SELinux 拦了）；<code>-e</code> 报 <code>Failed to attach</code> 断在 AgentSession；只有前三条都过、<code>ping.js</code> 却没输出，才是 Script 层。拔线重插后重复第 4 条：若无输出且不报错，就复现了“通道已换、Session 未重建”的静默故障。</p>
+<div class="tbl"><table>
+<thead><tr><th>检查命令</th><th>正常输出</th><th>异常输出</th><th>断点所在层</th></tr></thead><tbody>
+<tr><td>adb devices</td><td>列出设备 serial</td><td>空 / offline</td><td>Connection 传输</td></tr>
+<tr><td>frida-ps -U</td><td>目标包名与 PID</td><td>Failed to enumerate</td><td>HostSession</td></tr>
+<tr><td>frida -U -p PID -e ...</td><td>打印 PID</td><td>Failed to attach</td><td>AgentSession</td></tr>
+<tr><td>-l ping.js 的 send</td><td>收到 loaded</td><td>完全无输出</td><td>Script</td></tr>
+<tr><td>拔线重插后再 send</td><td>仍持续回调</td><td>静默、无异常</td><td>Connection 已换，未重建会话</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：断线以后 host <strong>常常不报错</strong>。因为 <code>send</code> 是即发即忘的，消息写进已经关掉的通道就直接丢，没有异常会往回抛；而 hook 本身还挂在目标进程里照常触发。于是你看到的不是“报错”，是“安静”。frida 工具链里最贵的故障，从来都是没有输出的那种——它逼你反过来给每一层都加一条主动心跳，才能把沉默变成可定位的信号。</div></aside>
+<p>“所有消息必经中转、控制面与数据面分开”这条结论，到 LSPosed 部 <strong>L06 Binder、FD 与 linker 账本收口</strong> 会变成同一张账：模块与 framework 之间走的也是 Binder 事务，多出来的 socket 与 FD 同样要被逐项收口；KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 则从内核侧看 netlink / USB / VPN 连接，把“这条通道存在”本身当成一等观测信号，你在用户态怎么过滤 maps 都躲不开。</p>
 </article>
 <div class="pager"><a href="f03-java.html"><span class="dir">上一讲</span>F03 Frida Java.perform 原理</a><a href="f05-patch.html" style="text-align:right"><span class="dir">下一讲</span>F05 Frida server 与 Android SELinux</a></div>
 </main>

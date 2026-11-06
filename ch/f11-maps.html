@@ -151,6 +151,54 @@
 <tr><td>匿名可执行段</td><td>3</td><td>6</td><td>3</td><td>已处理</td></tr>
 </tbody></table></div>
 <p>看最后一列：线程数仍偏高，说明“线程清理”这一项还没做完。这就是“用数据驱动隐藏”的样子。</p>
+<h2>现场：从十七条到两条，最后两条为什么难</h2>
+<p>验收会上你把改完的包一跑，检测脚本的报警从 17 条降到 2 条。有人问“能不能降到 0”，你把三组基线摊到桌上：maps 条目已经贴回基线，匿名可执行段归零，sigaction 也恢复原样，可线程数还稳稳地高 1，FD 峰值差 2。这两条不是没做完，是不该做完。</p>
+<p>隐藏从来不是清零，是<strong>收敛</strong>。每改一处都会引入新的不自然：改了 maps，dev/inode 可能对不上；改了线程名，线程数还是多的；做了自建 linker，映射的权限组合又变得少见。于是验收的目标不是“零差异”，而是“没有任何单项特别突出”——而这件事只能靠数据判，不能靠感觉判。</p>
+<h2>把一次验收拆成七拍</h2>
+<ol><li><strong>你 → 对干净设备 → 采基线：线程数、FD 数、maps 条目、ClassLoader 数、匿名 r-xp 段、sigaction 指针</strong> → 结果：一份带机型 / 系统版本 / App 版本号的 JSON，没有这三个标签的基线等于废纸。</li><li><strong>你 → 对同一台设备 → 注入 agent 并跑同一套检测脚本</strong> → 结果：17 条报警，每条都精确对应一个可观测面，成为待办清单的初始行。</li><li><strong>你 → 对 maps → 过滤路径、把 agent 映射并进合法 so 的 padding</strong> → 结果：可疑路径消失，但 dev/inode 与伪装路径对不上，反而新增一条报警。</li><li><strong>你 → 对 linker 账本 → 用自建 mapper 或把 solist 节点平掉</strong> → 结果：账本干净了，代价是权限组合变得少见，成为下一轮要摊平的对象。</li><li><strong>你 → 对线程 → 改名、洗 start_routine、回收多余线程</strong> → 结果：名字与入口都对上了，线程数仍比基线高 1；这一项决定要不要保留一条常驻线程。</li><li><strong>你 → 对信号与 FD → 链式调用原 handler、复用或延迟创建 socket</strong> → 结果：sigaction 与 FD 两项报警归零，但延迟创建会让首次 send 的时序与基线不同。</li><li><strong>你 → 对隐藏后版本 → 再跑一遍同一脚本，把剩余项写成已知限制清单</strong> → 结果：交付物里明明白白写着“还剩 2 条、为什么留着、什么条件下会变”，而不是一句“应该看不出来了”。</li></ol>
+<h2>复现：一份能重复跑的验收脚本</h2>
+<p>把三组采样写成脚本，比手敲命令可靠得多：字段固定、时机固定、输出可直接 diff。下面这段 host 侧脚本每个字段都单独取样，跑完把三份 JSON 存起来，差异项就是下一轮的工作清单。</p>
+<div class="code">
+<div class="code-title">shell 速查 + host 侧采样脚本</div>
+<pre><code># 速查四条（占位符换成实际 PID）
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | wc -l
+adb shell &#x27;ls /proc/$(pidof com.example.app)/task&#x27; | wc -l
+adb shell &#x27;ls /proc/$(pidof com.example.app)/fd&#x27; | wc -l
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | grep &#x27;r-xp&#x27; | grep -v &#x27;/&#x27; | wc -l
+ 
+# sample.py —— 三组各跑一次，结果存成 base / injected / hidden
+import json, subprocess
+ 
+def sample(pkg):
+    pid = subprocess.check_output([&#x27;adb&#x27;, &#x27;shell&#x27;, &#x27;pidof&#x27;, pkg]).decode().strip()
+    def n(fmt):
+        cmd = fmt % pid
+        out = subprocess.check_output([&#x27;adb&#x27;, &#x27;shell&#x27;, cmd]).decode().strip()
+        return int(out.splitlines()[-1])
+    return {
+        &#x27;maps&#x27;: n(&#x27;cat /proc/%s/maps | wc -l&#x27;),
+        &#x27;threads&#x27;: n(&#x27;ls /proc/%s/task | wc -l&#x27;),
+        &#x27;fds&#x27;: n(&#x27;ls /proc/%s/fd | wc -l&#x27;),
+        &#x27;anon_rx&#x27;: n(&#x27;cat /proc/%s/maps | grep r-xp | grep -v / | wc -l&#x27;),
+    }
+ 
+base = sample(&#x27;com.example.app&#x27;)
+print(json.dumps(base, ensure_ascii=False))</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：三组的字段、采样时机、机型 / 系统 / App 版本完全一致；<code>hidden</code> 与 <code>base</code> 的差值逐项缩小，每条剩余差值都在已知限制清单里有对应说明；连续跑 3 轮，波动不超过基线噪声。<strong>算失败</strong>：<code>base</code> 那一组自己就漂移——一次在冷启动采、一次在 idle 采，差值全成了启动阶段的噪声；或者跨机型、跨系统版本比数，得到一堆无法解释的波动，最后把系统差异误判成“隐藏没做好”。还有一种典型失败：只看报警总数从 17 变 2，不看哪一项变差了——隐藏里最忌讳的就是用总分掩盖单项恶化。</p>
+<div class="tbl"><table>
+<thead><tr><th>观测项</th><th>未注入</th><th>注入</th><th>隐藏后</th><th>剩余差值</th><th>归属</th></tr></thead><tbody>
+<tr><td>maps 条目</td><td>120</td><td>129</td><td>121</td><td>+1</td><td>F09</td></tr>
+<tr><td>匿名 r-xp 段</td><td>3</td><td>6</td><td>3</td><td>0</td><td>F09</td></tr>
+<tr><td>线程数</td><td>18</td><td>25</td><td>19</td><td>+1</td><td>F08 / F10</td></tr>
+<tr><td>FD 峰值</td><td>42</td><td>51</td><td>44</td><td>+2</td><td>F04 / F06</td></tr>
+<tr><td>ClassLoader 数</td><td>4</td><td>5</td><td>4</td><td>0</td><td>F03</td></tr>
+<tr><td>sigaction 异常</td><td>0</td><td>3</td><td>0</td><td>0</td><td>F06</td></tr>
+<tr><td>报警总数</td><td>0</td><td>17</td><td>2</td><td>留 2 条</td><td>全章</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>“降到 0”往往意味着你改过头了</strong>。每一项观测都有自然波动，把线程数硬压到与基线一模一样、把 maps 条目抠成整数对齐，反而造出一个“太干净”的样本——检测方只要看方差就能发现。真正的目标不是零差异，是“没有任何单项特别突出”；所以最后两条留着并写进清单，是工程判断，不是没做完。</div></aside>
+<p>这张验收表会一路带到 LSPosed 部 <strong>L09 侧信道与结构差分检测</strong> 与 <strong>L10 验证矩阵与工程交付</strong>：L09 讲清为什么“看结构比看特征”更难对付，L10 把“验证脚本 + 基线数据 + 已知限制清单”定为交付标准；KPM 部 <strong>M02 内核观察面与基础检测处理</strong> 则是同一个验收的 EL1 版本——你在用户态过滤掉的 maps，内核从 VMA 链表里仍能原样读出来，这提醒我们：所谓“隐藏后”，永远要写清楚是相对哪一层观察者而言。</p>
 </article>
 <div class="pager"><a href="f10-bionic.html"><span class="dir">上一讲</span>F10 Frida 线程结构体处理</a><a href="m01-kpm.html" style="text-align:right"><span class="dir">下一讲</span>M01 KPM 模块设计、装载与生命周期</a></div>
 </main>

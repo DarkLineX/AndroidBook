@@ -182,6 +182,75 @@ alert = sum(v for k, v in W.items() if hit(k)) &gt;= 45</code></pre>
 <tr><td>L4</td><td>TracerPid</td><td>周期</td></tr>
 <tr><td>L5</td><td>attestation</td><td>按需</td></tr>
 </tbody></table></div>
+<h2>凌晨一点，测试机还亮着屏</h2>
+<p>测试机上刚装好加固包，logcat 滚得飞快，但没有一行写着「检测到风险」。你把 frida-server 挂上去，脚本刚 attach，界面照常进了主页面，什么都没发生。这不是壳没工作，恰恰相反：它已经把六项数据全采完、打完分，只是把处置动作压到了后面。真正的线索不在界面上，而在时间线上——某些 native 函数只在启动后的第 380 毫秒前后密集跑了一批，之后每 5 秒稀疏地跑一次。你要做的第一件事不是 hook 它返回安全，是把这个节奏量出来。</p>
+<p>把手机横放好，左边开 <code>adb logcat -v time</code>，右边开 <code>frida-trace</code> 的调用时间戳。你会看到检测不是一个开关，而是一条有呼吸的流水线：便宜的动作密集跑，昂贵的动作只在关键操作前跑一次。理解这条节奏比记住任何一条绕过技巧都管用，因为它直接决定了「哪一段窗口里做的改动不会被采样到」。前面把六层按代价排过序，这里要看的是同一套分层在真实时间轴上怎么排队、谁先动手、谁最后才结算。</p>
+<figure class="anim" data-delay="820" data-n="4" data-key="a_detect">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">隐藏与检测：一轮完整闭环</span>
+  </div>
+  <p class="anim-sub">造 → 验 → 破 → 加固，四步循环才是真正的训练</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_detect/f00.png" alt="隐藏与检测：一轮完整闭环 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 4</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>在靶场 App 里写一道具体、可证伪的检测</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 在靶场 App 里写一道具体、可证伪的检测</button>
+    <button type="button" data-i="1">2. 干净环境与修改环境各跑一遍，确认差异可复现</button>
+    <button type="button" data-i="2">3. 找出检测依赖的事实，让事实本身恢复正常</button>
+    <button type="button" data-i="3">4. 换维度交叉校验，把闭环再跑一轮并记录</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_detect.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["在靶场 App 里写一道具体、可证伪的检测", "干净环境与修改环境各跑一遍，确认差异可复现", "找出检测依赖的事实，让事实本身恢复正常", "换维度交叉校验，把闭环再跑一轮并记录"]</script>
+<h2>采样调度器先动了谁</h2>
+<ol><li><strong>调度器</strong> → 对 <strong>L1 静态项</strong>（包名、<code>su</code> 路径、系统属性、调试开关）→ 在 Application 初始化最开头读一批字符串和 <code>getprop</code> → 结果只是给内部计数器加一个很小的权重，既不写日志也不弹窗。</li><li><strong>调度器</strong> → 对 <strong>进程自身</strong>（<code>/proc/self/maps</code>、<code>/proc/self/task</code>、<code>/proc/self/fd</code>）→ 在启动后约 300~500 毫秒连续采三次 → 结果得到一份「结构基线」，后面每一轮周期采样都拿它当参照，而不是拿一个写死的常量。</li><li><strong>调度器</strong> → 对 <strong>自身代码段</strong> → 只在登录、支付、下发密钥这类关键操作前做一次 CRC → 结果是一次高置信度判定，命中就把计数器直接推过阈值。</li><li><strong>调度器</strong> → 对 <strong>证明链</strong> → 按需向 TEE 请求一次 attestation → 结果不落本地缓存，因为壳自己也怕缓存被改。</li><li><strong>调度器</strong> → 对 <strong>行为时序</strong> → 在后台按 5~30 秒间隔抽样 → 结果用来修正前几层的误报，而不是单独定罪。</li></ol>
+<h2>分数到了以后，事情才刚开始</h2>
+<ul><li><strong>汇聚器</strong> → 对 <strong>六路返回值</strong> → 按权重求和再和阈值比较 → 结果是一个内部 risk 等级，不是布尔值；等级低时什么也不做，只悄悄提高下一轮采样率。</li><li><strong>处置器</strong> → 对 <strong>risk 等级</strong> → 不立刻退出进程，而是把动作挂到「下一个关键操作」上 → 结果是用户看到的现象变成「登录偶发失败」「某个按钮点了没反应」，而不是干净利落的闪退。</li><li><strong>上报器</strong> → 对 <strong>设备指纹与命中项</strong> → 攒够一批才发 → 结果是你在本地抓包时往往看不到「一次检测就一次上报」，容易误判成检测根本没触发。</li><li><strong>规则器</strong> → 对 <strong>采样率与阈值</strong> → 收到服务端配置后热更新 → 结果是同一台机器、同一个 APK，隔一天的行为可能完全不同。</li></ul>
+<h2>把节奏量出来：一次可复现的观测</h2>
+<div class="code">
+<div class="code-title">host 端三行命令，先观测再动手</div>
+<pre><code># 1. spawn 目标，只跟踪名字里带 check / detect 的导出函数
+frida-trace -U -f com.example.protected -i &#x27;*check*&#x27; -i &#x27;*detect*&#x27;
+ 
+# 2. 另开一个终端，抓带毫秒时间戳的日志
+adb logcat -v time | grep -i protected &gt; /tmp/logcat.txt
+ 
+# 3. 把 frida 的命中按 100ms 分桶，看热点落在哪一段
+#    回传格式只要两列：ts（毫秒）与 name（符号名）</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="code">
+<div class="code-title">最小打点脚本（在生成的 trace handler 里加）</div>
+<pre><code>onEnter(log, args, state) {
+  send({ts: Date.now(), name: &#x27;check_env&#x27;});
+}
+ 
+// host 端用 python 分桶：
+//   bucket = ts // 100 * 100
+//   collections.Counter(buckets).most_common(5)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：同一台机器连跑三次，热点窗口都落在启动后 300~500 毫秒，且每次点登录之前多出一次孤立尖峰——说明你抓到的是采样节奏，而不是随机的业务调用。看到什么算失败：曲线平得像一条直线，或者每次热点位置都飘几百毫秒、又对不上任何用户操作。那多半是跟错了符号、或者壳把函数名抹掉了，先回到 <code>/proc/&lt;pid&gt;/maps</code> 里确认壳 so 的真实名字和加载地址，再重新选跟踪点。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>最可能的原因</th><th>下一步验证动作</th></tr></thead><tbody>
+<tr><td>attach 后界面照常进主页面</td><td>处置被挂到关键操作之后</td><td>去点一次登录或支付，看是否偶发失败</td></tr>
+<tr><td>trace 全空、一个命中都没有</td><td>检测在 native 且符号被抹掉</td><td>读 maps 找壳 so，改按偏移下断</td></tr>
+<tr><td>三次跑的热点窗口对不上</td><td>采样率被服务端动态调过</td><td>记录每次的规则版本与本地时间</td></tr>
+<tr><td>关键操作前多一次尖峰</td><td>CRC 或 attestation 按需触发</td><td>在尖峰前后各 dump 一次 maps 对比</td></tr>
+<tr><td>抓包看不到任何上报</td><td>上报是批量攒发</td><td>把观测窗口延长到 10 分钟再抓</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>壳明明发现了你，却故意装作没发现</strong>。立刻弹窗等于把「哪个观测面暴露了」免费告诉对手；把处置压后、把失败伪装成偶发的业务异常，才能让你在黑暗里反复试错。所以「界面正常」从来不是清白的证据，它只是还没到结算的时刻。</div></aside>
+<p>把这条时间线记进实验笔记。下一章你会发现同一套节奏也决定了脱壳窗口：回填集中在启动后那几百毫秒，采样也挤在那几百毫秒，两者重叠才是二代壳真正难啃的地方。再往后 D03 会说明，当规则可以按天热更新时，唯一能反复复用的仍然是这张时间线，而不是某一次侥幸跑通的脚本。</p>
 </article>
 <div class="pager"><a href="l10-hook.html"><span class="dir">上一讲</span>L10 验证矩阵与工程交付</a><a href="d02-vmp.html" style="text-align:right"><span class="dir">下一讲</span>D02 DexProtect 的加固结构与脱壳路径</a></div>
 </main>

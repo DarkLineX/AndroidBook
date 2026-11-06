@@ -159,6 +159,73 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <button class="copy" type="button">复制</button>
 </div>
 <p>这就是 F11 里“Gum ELF 匿名映射”那一条的来源。它的处理思路是：把 agent 拆成多段，塞进已有合法 so 的 padding 区域，或者伪装成 <code>[anon:dalvik-...]</code> 之类的系统命名。</p>
+<h2>在 host 敲下回车的那一秒</h2>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_frida">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Frida 从敲下命令到 hook 生效</span>
+  </div>
+  <p class="anim-sub">五层结构，任何一层断掉都会表现为“脚本没反应”</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_frida/f00.png" alt="Frida 从敲下命令到 hook 生效 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>frida-tools 发起 spawn / attach 请求</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. frida-tools 发起 spawn / attach 请求</button>
+    <button type="button" data-i="1">2. 设备端 frida-server 建立 HostSession</button>
+    <button type="button" data-i="2">3. ptrace 暂停目标，或由 zygote 门控抢占 fork 窗口</button>
+    <button type="button" data-i="3">4. bootstrap / loader 把 frida-agent 映射进目标</button>
+    <button type="button" data-i="4">5. agent 启动 Gum 与 JS 线程，脚本开始注册 hook</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_frida.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["frida-tools 发起 spawn / attach 请求", "设备端 frida-server 建立 HostSession", "ptrace 暂停目标，或由 zygote 门控抢占 fork 窗口", "bootstrap / loader 把 frida-agent 映射进目标", "agent 启动 Gum 与 JS 线程，脚本开始注册 hook"]</script>
+<p>终端里 <code>frida -U -f com.target.app -l a.js</code> 敲下去，到屏幕上蹦出第一行 log，大约一秒。这一秒里发生了五次换手：host 上的 Python 客户端找到设备，设备上的 <code>frida-server</code> 接下请求，注入器把一段 so 塞进刚被 spawn 出来、还停在 zygote 门口的进程，这段 so 在目标进程里起了一个 JS 引擎，最后才轮到你写的那行 <code>send(&#x27;alive&#x27;)</code>。把这一秒按帧拆开，「Device / Session / Script 三层」就不再是三个名词，而是三个具体的交接点。</p>
+<p>最容易搞错的一件事先摆在前面：<strong>你写的 JS 从来不在 host 上跑</strong>。它在目标进程的地址空间里执行，由 agent 自带的 QuickJS（部分构建用 V8）解释；<code>console.log</code> 和 <code>send</code> 只是把消息序列化后，经 server 中转运回 host 显示。这个事实决定了后面所有排查顺序。</p>
+<h2>一条命令穿过五段链路</h2>
+<ol><li><strong>`frida-tools`（host）</strong> → 对 <code>frida-core</code> 的 <code>DeviceManager</code> → 通过 USB 走 <code>adb forward tcp:27042</code>，或直接 TCP 连设备端口 → 结果：拿到一个 <code>Device</code> 句柄，能枚举进程。</li><li><strong>`Device.spawn()`</strong> → 对 <code>frida-server</code> → 发 spawn 请求与包名 → 结果：server 借 zygote 门控把目标进程创建出来并暂时挂住，等 agent 就位。</li><li><strong>注入器（server 侧）</strong> → 对目标进程 → ptrace 附加或走 spawn 时的早期注入，把 <code>frida-agent.so</code> 映射进去 → 结果：目标地址空间里多了一个模块，它的入口 <code>_frida_agent_main</code> 被调用。</li><li><strong>agent 初始化</strong> → 对自身 → 建 Gum 引擎（<code>Interceptor</code> / <code>Stalker</code> / <code>MemoryAccessMonitor</code>）、起 JS 运行时、开一条回到 server 的控制通道 → 结果：一个能执行脚本、能收发消息的运行时活了。</li><li><strong>`Session.createScript()` + `load()`</strong> → 对 JS 运行时 → 把 <code>a.js</code> 的源码编译并求值 → 结果：脚本第一句 <code>send(&#x27;alive&#x27;)</code> 执行，消息经 agent → server → host 三段中转到终端。</li><li><strong>脚本运行期</strong> → 对 <code>Interceptor.attach</code> 等 API → 转成 Gum 的插桩动作 → 结果：hook 真正挂到目标函数上，回调在目标进程里被触发。</li></ol>
+<h2>断在哪一层，症状完全不同</h2>
+<ol><li><strong>连不上设备</strong> → 对 <code>DeviceManager</code> → 报 <code>unable to connect to remote frida-server</code> → 结果：还没进到注入，先查 server 与端口转发。</li><li><strong>能枚举进程、spawn 失败</strong> → 对 <code>Device.spawn</code> → 报包名找不到或 SELinux 拒绝 → 结果：server 活着但没拿到进程，查包名与权限。</li><li><strong>能 attach、脚本没反应</strong> → 对 <code>Script.load</code> → 多半是 JS 语法错或目标类还没加载 → 结果：以脚本第一句 <code>send</code> 是否到达为分界。</li><li><strong>有 hook 但回调不触发</strong> → 对 Gum 的 <code>Interceptor</code> → 目标函数地址错、或被 JIT 内联 → 结果：脚本活着，插桩点没命中。</li></ol>
+<h2>动手：把五段链路逐段点亮</h2>
+<div class="code">
+<div class="code-title">从 server 到脚本的完整连通性验证</div>
+<pre><code># 1) 推 server 并在设备上后台运行（按 ABI 选对二进制）
+adb push frida-server-16.x-android-arm64 /data/local/tmp/fs
+adb shell chmod 755 /data/local/tmp/fs
+adb shell &#x27;nohup /data/local/tmp/fs &gt;/dev/null 2&gt;&amp;1 &amp;&#x27;
+adb forward tcp:27042 tcp:27042
+ 
+# 2) 第一段：Device 通不通
+frida-ps -U | head -20
+ 
+# 3) 第五段：脚本有没有真的在目标里跑
+# probe.js 内容：
+#   send(&#x27;alive&#x27;);
+#   console.log(&#x27;pid =&#x27;, Process.id);
+#   recv(&#x27;ping&#x27;, m =&gt; send(&#x27;pong:&#x27; + m.v));
+frida -U -f com.target.app -l probe.js
+# 进 REPL 后若停在等待态，输入 %resume 让目标继续</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：<code>frida-ps -U</code> 列出进程列表（说明 Device 层与 server 通）、host 看到 <code>alive</code> 与 <code>pid = &lt;目标 pid&gt;</code>（说明 agent、JS 运行时、消息链路全通）、在 REPL 里发 <code>ping</code> 能收到 <code>pong</code>（说明双向通道也通）。<strong>失败</strong>按报错逐层定位：<code>Failed to enumerate processes: unable to connect to remote frida-server</code> 是 server 没起来或 <code>adb forward</code> 没做，补 <code>adb shell ps -A | grep fs</code>；<code>Failed to spawn: unable to find application</code> 是包名写错，用 <code>adb shell pm list packages | grep target</code> 核对；<code>SyntaxError</code> 停在 <code>Script.load</code>，agent 其实已经进去了；而「一切正常却没有 <code>alive</code>」往往只是 spawn 后进程被暂停、脚本还没被 resume——输入 <code>%resume</code> 即可。</p>
+<div class="tbl"><table>
+<thead><tr><th>报错 / 现象</th><th>断在哪一段</th><th>一条命令定位</th></tr></thead><tbody>
+<tr><td>unable to connect to remote frida-server</td><td>host → server</td><td>adb shell ps -A | grep fs</td></tr>
+<tr><td>unable to find application</td><td>Device.spawn</td><td>pm list packages | grep target</td></tr>
+<tr><td>SyntaxError / script failed to load</td><td>Script.load</td><td>把脚本缩到只剩一行 send</td></tr>
+<tr><td>alive 没出现，但无报错</td><td>spawn 后未 resume</td><td>REPL 里输入 %resume</td></tr>
+<tr><td>server 被 kill 后脚本失联</td><td>agent 的控制通道</td><td>frida-ps -U 会立刻失败</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>脚本里的 `setTimeout` 用的是目标进程的时钟，不是 host 的</strong>。JS 完全跑在目标地址空间里，目标被暂停时你的定时器也一起冻住；同理，脚本里开的线程是目标的线程，占了目标的 <code>/proc/self/task</code>。所以「host 上看着一切正常」和「目标进程里发生了什么」，从来是两回事。</div></aside>
+<p>把「Device → Session → Script」这条交接链记住。第 09 章讲的 inline hook，在本章落地为 agent 里 <code>Gum.Interceptor</code> 的一次调用；第 11 章会把这个 agent 带来的线程、模块、匿名映射逐一列成检测项——<strong>本章在装东西，下一章专门找这些东西</strong>；第三部则会把 <code>frida-core</code>、<code>frida-gum</code>、<code>frida-gumjs</code> 三个仓库的分工逐层拆开。</p>
 </article>
 <div class="pager"><a href="09-frida.html"><span class="dir">上一讲</span>09 Android hook 原理</a><a href="11.html" style="text-align:right"><span class="dir">下一讲</span>11 Android 注入检测</a></div>
 </main>

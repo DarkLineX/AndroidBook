@@ -183,6 +183,78 @@
 // 记得在目标代码跑完后 Stalker.unfollow()</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>现场：从看见调用到看见每一条指令</h2>
+<p>你在 <code>open</code> 上挂了 Interceptor，日志漂亮地显示它被调了 200 次，可你还是不知道这 200 次分别是从哪几条分支走进来的、谁在循环里反复开同一个文件。于是你打开 <code>Stalker.follow()</code>，目标瞬间慢了半拍，<code>/proc/&lt;pid&gt;/maps</code> 里冒出十几段没有文件名的可执行页，logcat 开始刷 event。你想要的可观测性到手了，代价也一并到手了。</p>
+<p>Stalker 的做法不是“打更多断点”，而是把执行流整体搬进一个沙箱：原代码一个字节不改，逐块复制成带回调的副本，CPU 跑的仍是原生指令。理解这一点，才能明白为什么比对代码段哈希抓不到它，也才能明白为什么“多出来的页”和“变慢的时序”才是它真正的破绽。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_stalker">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">Stalker：不改原代码，把执行流搬进 slab</span>
+  </div>
+  <p class="anim-sub">逐块翻译 → 插桩 → 事件投递，四帧看懂 follow 机制</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_stalker/f00.png" alt="Stalker：不改原代码，把执行流搬进 slab 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>目标从原始基本块 BB0 开始执行</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 目标从原始基本块 BB0 开始执行</button>
+    <button type="button" data-i="1">2. BB0 被翻译进 slab，PC 跳到副本</button>
+    <button type="button" data-i="2">3. 分支被改写，执行流在翻译块之间跳转</button>
+    <button type="button" data-i="3">4. 每块执行都向 event sink 投递事件</button>
+    <button type="button" data-i="4">5. near allocation 解决 arm64 跳转距离问题</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_stalker.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["目标从原始基本块 BB0 开始执行", "BB0 被翻译进 slab，PC 跳到副本", "分支被改写，执行流在翻译块之间跳转", "每块执行都向 event sink 投递事件", "near allocation 解决 arm64 跳转距离问题"]</script>
+<h2>把一次 follow 拆成八拍</h2>
+<ol><li><strong>JS 的 Stalker.follow(tid, opts) → 对该线程的 ExecCtx → 建/取执行上下文、保存寄存器现场</strong> → 结果：这条线程有了专属的翻译状态与 slab 池，别的线程不受影响。</li><li><strong>Stalker → 对目标线程 → 短暂 suspend（infect 模式下连其它线程一起挂起）</strong> → 结果：改 PC、改分支目标时不会有线程正跑在半途，避免踩到执行到一半的指令。</li><li><strong>Stalker → 对当前 PC 指向的基本块 → 逐条解码，识别分支 / 调用 / 返回作为边界</strong> → 结果：切出一个 basic block，得到这张“待翻译清单”。</li><li><strong>Stalker → 对 slab 分配器 → 在靠近原代码的地址池里申请可执行页（arm64 near allocation）</strong> → 结果：<code>B</code> / <code>BL</code> 的 ±128MB 跳转范围够用，不必退化成 <code>LDR + BR</code> 这种更贵的长跳转序列。</li><li><strong>Stalker → 对复制出的指令 → 在块头块尾插事件发射与现场保存，把分支目标改写成翻译块地址</strong> → 结果：原代码一个字节没动，执行流被整体搬进副本，副本之间首尾相接。</li><li><strong>CPU → 对翻译块 → 原生执行（不是逐条解释）</strong> → 结果：性能接近原生，只在插桩点付额外开销；这是它比模拟器快一到两个数量级的原因。</li><li><strong>翻译块 → 对 event sink → 按 call / ret / exec / block 类型投递事件并由 Gum 聚合</strong> → 结果：JS 侧 onReceive 一次拿到一批带地址的事件数组，而不是每个事件回一次 JS。</li><li><strong>遇到尚未翻译的新块 → 回到第三拍重新解码</strong> → 结果：边跑边翻译，热路径逐渐被 slab 缓存住，冷路径每次都要多付一次翻译成本。</li></ol>
+<h2>复现：只跟一个函数，别整进程跟着</h2>
+<p>Stalker 的正确用法是<strong>定点、短时、必 unfollow</strong>。下面这段脚本在 <code>open</code> 的 onEnter 里 follow、onLeave 里 unfollow，只留 call 事件，并把 libc 自身的范围用 <code>Stalker.exclude</code> 排除掉——否则跟踪里会全是 ART 与 libc 的噪声，还把 UI 拖死。</p>
+<div class="code">
+<div class="code-title">stalk.js：定点 follow 与 unfollow</div>
+<pre><code>// stalk.js —— 只跟 open 这一次调用的内部调用链
+const target = Module.findExportByName(&#x27;libc.so&#x27;, &#x27;open&#x27;);
+Interceptor.attach(target, {
+  onEnter: function (args) {
+    this.tid = Process.getCurrentThreadId();
+    Stalker.follow(this.tid, {
+      events: { call: true, ret: false, exec: false },
+      onReceive: function (events) {
+        // call 事件按 [from, to, depth] 三元组扁平排列
+        send({triples: Math.floor(events.length / 3)});
+      }
+    });
+  },
+  onLeave: function (ret) {
+    Stalker.unfollow(this.tid);
+    Stalker.garbageCollect();
+  }
+});
+ 
+# 另一个终端：数一数 follow 期间多出来的匿名可执行页
+frida -U -f com.example.app -l stalk.js -o stalk.log
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | grep &#x27;r-xp&#x27; | grep -v &#x27;/&#x27; | wc -l</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：<code>onReceive</code> 收到 <code>triples &gt; 0</code>，<code>stalk.log</code> 里的调用链能追到 <code>open</code> 的上游；匿名可执行页数在 follow 期间明显上涨，<code>unfollow</code> 加 <code>garbageCollect()</code> 之后回落。<strong>算失败</strong>：<code>triples</code> 一直是 0——多半是 <code>onLeave</code> 和 <code>onEnter</code> 不在同一条线程上、<code>this.tid</code> 已经失效，或者事件类型全设成了 false；页数不回落说明 slab 没被回收，长期开着会让目标越来越慢；整进程 <code>Stalker.follow()</code> 又不加 <code>Stalker.exclude</code>，常见表现是 UI 直接卡死——那是失败，不是“跟踪得细”。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>根因</th><th>处理方式</th></tr></thead><tbody>
+<tr><td>匿名可执行页暴涨</td><td>slab 为每个块分配副本</td><td>unfollow + Stalker.garbageCollect()</td></tr>
+<tr><td>目标变慢 3～10 倍</td><td>每个块都发射事件</td><td>只留一种 event、缩小 follow 范围</td></tr>
+<tr><td>跳转目标地址异常远</td><td>near allocation 未命中</td><td>确认 arm64 邻近池，避免长跳转退化</td></tr>
+<tr><td>跟踪里全是 libc / ART</td><td>没排除系统库</td><td>Stalker.exclude({base, size})</td></tr>
+<tr><td>JIT 代码事件断续</td><td>自修改代码使缓存失效</td><td>缩短 follow 窗口，别假设缓存常驻</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>Stalker 不修改原代码</strong>。它把执行流搬进 slab，原函数所在那片内存一个字节都没变，所以“比对代码段哈希”“检查入口指令有没有被改成跳转”这类检测对它完全无效。真正暴露它的是多出来的可执行页和变慢的时序。越想靠“看代码有没有被改”来抓 Stalker，越抓不到——这跟 Interceptor 的直觉正好相反。</div></aside>
+<p>“不改原指令、另建影子执行流”这套思路，在 KPM 部 <strong>M03 ARM64 指令 Hook 与 Text Shadow</strong> 会被搬到 EL1：Text Shadow 同样是保留原 text、在影子区放带桩的副本；<strong>M04 ARM64 内核单步 Trace</strong> 则是同一目标的极简实现。LSPosed 部 <strong>L03 多模块回调与去优化</strong> 讨论回调链时，也会撞上“观测本身让被观测对象变形”这同一笔代价——插桩越细，你看到的就越不是原本的行为。</p>
 </article>
 <div class="pager"><a href="f06-pthread.html"><span class="dir">上一讲</span>F06 Frida 默认 Hook</a><a href="f08-glib.html" style="text-align:right"><span class="dir">下一讲</span>F08 Frida 线程名称处理</a></div>
 </main>

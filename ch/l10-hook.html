@@ -185,6 +185,47 @@ for c in CASES:
     ok = c(); print(c.__name__, &#x27;PASS&#x27; if ok else &#x27;FAIL&#x27;)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>交付前的最后一个晚上</h2>
+<p>功能全跑通了：hook 生效、原方法能调、多模块顺序正确、Android 14 与 16 都绿。你正准备把 zip 发给同事，他问了三个问题：<code>System.gc()</code> 连跑十轮之后还稳吗？进程已经跑了半小时再附加模块呢？崩溃了有没有能符号化的 tombstone？——三个都答不上来。第二天他重编一份产物，哈希和你给的对不上，于是整套实验又得从头来一遍。<strong>能被重复验证的，才叫做完了。</strong></p>
+<p>验证矩阵的意义不是&#x27;再测一遍&#x27;，而是把&#x27;我觉得没问题&#x27;换成一张任何人都能跑、跑完能自动判绿红的表格。它同时是交付合同：源码、构建脚本、验证脚本、基线数据、已知限制清单，五样齐了，下一个人不必重走你踩过的每一个坑。</p>
+<h2>八格矩阵，逐格说清怎么判</h2>
+<ol><li><strong>基本 Hook</strong>：模块挂上目标方法并记一次调用；成功 = 回调条数等于调用次数且返回值为预期改写值。</li><li><strong>原方法调用</strong>：不 <code>returnEarly</code>，走 backup；成功 = 输出与未 hook 时逐字节一致，连异常类型与消息都相同。</li><li><strong>连续调用</strong>：10k 次压测；成功 = 无 native crash、无 <code>ClassCastException</code>、p95 不持续增长（持续增长说明有泄漏）。</li><li><strong>冷启动</strong>：<code>am force-stop</code> 后重启；成功 = specialize 窗口内 hook 重新挂上，首屏之前回调就已生效，而不是等用户点进页面才有。</li><li><strong>full GC</strong>：多轮 <code>System.gc()</code> 并触发一次 <code>Runtime.getRuntime().gc()</code>；成功 = backup 与 declaring-class 引用仍有效，重入不崩（对应 L08）。</li><li><strong>晚附加</strong>：进程运行中才启用模块；成功 = 附加后下一轮调用即生效，且 deopt 已完成（对应 L03）。</li><li><strong>tombstone</strong>：故意造一次崩溃；成功 = <code>/data/tombstones/</code> 有文件且能用带符号的 so 解析出栈，而不是一串 <code>??</code>。</li><li><strong>产物哈希</strong>：同一 commit 两次构建；成功 = <code>sha256sum</code> 完全一致，否则说明构建里混进了时间戳或绝对路径。</li></ol>
+<p>八格里最容易漏的是第 5、6、8 格。第 5 格在 Android 14 上常绿、16 上才炸（L08 的 moving GC）；第 6 格暴露 COW 集合与去优化时机（L03）；第 8 格看似与运行时无关，却是&#x27;别人能不能复现你的结论&#x27;的前提。把这三格加进 CI，比再加十台机型更值。</p>
+<h2>把矩阵变成一条命令</h2>
+<ul><li><strong>源码</strong>：可编译、依赖版本写死、不含本机绝对路径；一条 <code>./gradlew assemble</code> 出产物。</li><li><strong>构建脚本</strong>：输出 apk / zip 时同时打印 <code>sha256sum</code>，写进 <code>BUILDINFO</code>。</li><li><strong>验证脚本</strong>：<code>run_matrix.sh</code> 顺序跑完八格，每格输出 <code>PASS/FAIL</code> 与一行证据（日志片段或数字）。</li><li><strong>基线数据</strong>：干净环境采集的 L09 五项分布，随交付物一起打包，标注机型 / 系统 / App 版本。</li><li><strong>已知限制清单</strong>：明确写&#x27;哪些版本不支持、哪些场景会失效、哪些检测项未覆盖&#x27;——这是最常被省掉、也最常被下一任骂的一份。</li><li><strong>收尾</strong>：脚本最后汇总成一页报告，任一 FAIL 则整体退出码非零；CI 直接吃这个退出码。</li></ul>
+<p>第 3 条里&#x27;每格一行证据&#x27;很关键。只打印 PASS 的报告没法排障：等三个月后某个用例红了，你需要知道当时是&#x27;回调 10000/10000&#x27;还是&#x27;回调 9998/10000&#x27;。把原始数字留下来，报告才有可追溯性。</p>
+<h2>可复现：一条命令跑完八格</h2>
+<div class="code">
+<div class="code-title">run_matrix.sh 的骨架（在 host 上执行）</div>
+<pre><code>set -e
+PKG=com.example.app; DEV=$(adb get-serialno)
+adb shell am force-stop $PKG; adb logcat -c
+adb shell monkey -p $PKG 1 &gt;/dev/null
+adb logcat -s Matrix:V &gt; matrix.log &amp;
+for c in hook backup stress coldstart gc late tombstone hash; do
+  adb shell am broadcast -a com.example.app.RUN_CASE --es case $c &gt;/dev/null
+  sleep 2
+done
+grep -c &#x27;CASE_PASS&#x27; matrix.log        # 期望 8，少一个就是有 FAIL
+sha256sum app/build/outputs/apk/release/app-release.apk
+adb pull /data/tombstones/ tombstones/ 2&gt;/dev/null || true
+# 对照：把 matrix.log 与干净基线一起归档，标机型/SDK/App 版本</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：<code>grep -c</code> 输出 8，<code>matrix.log</code> 里每格都带一行数字证据，<code>sha256sum</code> 与 <code>BUILDINFO</code> 一致，<code>tombstones/</code> 为空（没崩）；重复构建两次哈希相同。<strong>看到什么算失败</strong>：计数为 7 且缺的是 <code>gc</code>——回去查 L08 的裸指针；缺的是 <code>late</code>——查 L03 的 deopt 与 COW 快照；哈希不一致——查构建里的时间戳、签名随机盐与绝对路径。<code>set -e</code> 别省：中途 adb 掉线还继续往下跑，会得到一份看起来&#x27;全绿&#x27;的假报告。</p>
+<div class="tbl"><table>
+<thead><tr><th>用例</th><th>证据形式</th><th>失败时优先回看</th><th>常见误判</th></tr></thead><tbody>
+<tr><td>基本 Hook</td><td>回调数 / 返回值</td><td>L02 入口是否改对</td><td>hook 了错的重载</td></tr>
+<tr><td>原方法调用</td><td>与未 hook 输出 diff</td><td>L02 backup 声明类</td><td>只比了返回值没比异常</td></tr>
+<tr><td>连续调用</td><td>10k 次数 + p95 趋势</td><td>L03 回调链 COW</td><td>把 JIT 预热当泄漏</td></tr>
+<tr><td>冷启动</td><td>首屏前回调时间戳</td><td>L01 specialize 筛选</td><td>scope 没勾目标包</td></tr>
+<tr><td>full GC</td><td>重入后 alive 日志</td><td>L08 Handle / declaring-class</td><td>Android 14 侥幸全绿</td></tr>
+<tr><td>晚附加</td><td>附加后首轮即生效</td><td>L03 deopt 时机</td><td>COW 快照多跑一轮属正常</td></tr>
+<tr><td>tombstone</td><td>符号化栈帧</td><td>构建是否带 unstripped so</td><td>只有 ?? 就当没崩</td></tr>
+<tr><td>产物哈希</td><td>两次 sha256 相同</td><td>构建脚本时间戳</td><td>签名盐导致差异被忽略</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>&#x27;已知限制清单&#x27;不是免责声明，而是最有价值的一份交付物</strong>。写清&#x27;这套实现在 Android 16 的某个 OEM 上不走 JVMTI 路径&#x27;&#x27;晚附加对已内联的热方法需要多一轮&#x27;，下一个人就能直接跳过你花掉的那两天。只交一份全绿报告，等于把所有没测到的地方都留成陷阱——绿的是测过的格子，不是没写的那些。</div></aside>
+<p>把这张矩阵铺回全书：第三部 F11 用一张总表收束 Frida 侧的兼容项，第四部 M02 的只读统计给出了 L09 基线数据的采集姿势，本章则是把两部的方法合成了可执行的验收脚本。第二部 K05 讲 ftrace 过滤与可重复追踪时强调的&#x27;先拿数据分布再定阈值&#x27;，在这里变成了&#x27;每格留一行原始数字&#x27;。训练营 T01/T02/T03 三组任务各有交付物，判据与本章完全同构：能编译、能重跑、有基线、写清限制。五部走到这里，工具会换、版本会变，但这四件事一项都不会过期。</p>
 </article>
 <div class="pager"><a href="l09-classloader.html"><span class="dir">上一讲</span>L09 侧信道与结构差分检测</a><a href="d01.html" style="text-align:right"><span class="dir">下一讲</span>D01 DexProtect 的检测逻辑拆解</a></div>
 </main>

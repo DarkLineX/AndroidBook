@@ -185,6 +185,53 @@
 # 并绑定到 127.0.0.1，不要 0.0.0.0</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
+<h2>两个 Chrome 同时活着，谁也不认识谁</h2>
+<p>屏幕上并排两个窗口，各登着不同账号，SurfaceFlinger 只当它们是两个普通窗口。往下拆：两个 userId、两套 CE 密钥、两棵从 zygote fork 出来的进程树、两个错开的 CDP 端口、两张互不干扰的 VPN 规则，以及一张随时能倒序回滚的内核改动表。<strong>难点从来不是“把第二个启动起来”，而是“让它俩从头到尾不认识彼此”</strong>。</p>
+<p>Android 的多用户机制已经把最硬的那部分做完了——uid 由 <code>userId * 100000 + appId</code> 生成，存储按 CE/DE 分目录，SELinux 域按 user 细分。多开要做的，是把 Chrome 自己的 <code>--user-data-dir</code>、子进程身份与调试通道也按同一条线切开，再给内核侧的改动套一层事务。</p>
+<h2>身份落地的五拍</h2>
+<ol><li><strong>管理端 → 对 UserManager / AMS</strong>：<code>createUser</code> 并指定 OEM Custom Profile，结果得到 <code>userId=10</code>，系统为它建 <code>/data/user/10</code> 与 <code>/data/user_de/10</code>；这一步同时决定后续所有 uid 与目录前缀，选错 profile 类型会让实例被当成普通工作资料而受策略限制。</li><li><strong>zygote → 对启动请求</strong>：按 userId fork 并在 specialize 阶段写入 uid、gid、SELinux 域、进程名与 data 目录，结果是进程<strong>从出生起</strong>就带独立身份；事后改 cred 只能改 uid，改不回已经铺好的目录与域，也补不上子进程的继承关系。</li><li><strong>vold → 对 CE 存储</strong>：用该 user 的锁屏凭据派生密钥解密 <code>/data/user/10</code>，结果是锁屏状态下 DE 目录可读、CE 目录不可读；两个实例的 cookie、凭据与缓存因此天然隔离，谁也读不到对方那把钥匙。</li><li><strong>Chrome → 对子进程</strong>：用独立的 <code>--user-data-dir</code> 与各自的 <code>--remote-debugging-port</code> 拉起 renderer / GPU / utility，结果是子进程继承同一 uid、CDP 端口不冲突；端口若复用默认配置，第二个实例会静默连到第一个的调试通道上。</li><li><strong>KPM → 对内核侧改动</strong>：每张表记录 (旧值, 新值, 撤销函数)，失败时按逆序逐条回滚，结果是半改状态不残留；多实例并发时还要给事务加序号，避免两个实例的回滚互相覆盖。</li></ol>
+<h2>翻车点都在“隔离线”上</h2>
+<ul><li><strong>身份线</strong>：两实例的 uid、SELinux 域与 cgroup 若共用，剪贴板、ContentProvider 与文件访问会互相可见；用 <code>ps -A -o USER,PID,NAME</code> 看 USER 列是最快的判据。</li><li><strong>存储线</strong>：<code>/data/user/&lt;id&gt;</code> 与 CE/DE 密钥必须随 user 走；把缓存目录写死成 <code>/data/data/&lt;pkg&gt;</code>，等于两个实例共用一份 cookie。</li><li><strong>网络线</strong>：per-user VPN 要各建一套，否则两个实例的出口 IP、DNS 与代理规则完全相同，网络身份直接串味；<code>ip rule</code> 里应能看到按 uid 范围分流的规则。</li><li><strong>调试线</strong>：CDP 端口按实例错开并只绑本地回环；端口冲突会让“第二个实例”实际操控第一个页面，端口暴露到外网则等于把会话句柄送出去。</li><li><strong>回滚线</strong>：进程、端口、fd 会随 <code>kill -9</code> 消失，唯独 <code>/data/user/10</code> 下的目录与内核里改过的表项不会；卸载后不清，下次启动就带着上一轮的残影。</li></ul>
+<div class="tbl"><table>
+<thead><tr><th>隔离线</th><th>框架 / 内核对象</th><th>串味表现</th><th>校验命令</th></tr></thead><tbody>
+<tr><td>身份</td><td>uid、userId、SELinux 域</td><td>互见剪贴板与文件</td><td>ps -A -o USER,PID,NAME | grep chrome</td></tr>
+<tr><td>存储</td><td>/data/user/&lt;id&gt;、CE/DE 密钥</td><td>cookie 与凭据混用</td><td>ls /data/user/10 | head</td></tr>
+<tr><td>网络</td><td>per-user VPN、ip rule</td><td>出口 IP 完全相同</td><td>ip rule | head -n 10</td></tr>
+<tr><td>调试</td><td>CDP 监听端口</td><td>一个端口被两实例复用</td><td>ss -ltnp | grep -E &#x27;9222|9223&#x27;</td></tr>
+<tr><td>进程</td><td>zygote 子进程、cgroup</td><td>强杀一个拖死另一个</td><td>kill -9 后复查进程表</td></tr>
+</tbody></table></div>
+<h2>可复现实验：四条硬指标一次跑完</h2>
+<div class="code">
+<div class="code-title">建实例 → 验身份 → 验端口 → 验强杀</div>
+<pre><code># 1. 建第二个实例并启动
+pm create-user --profileOf 0 --managed DemoSecond
+pm list users
+# 成功：出现 userId=10 的 DemoSecond；失败：报 max users = 机型已达上限，先删一个旧 user
+am start-user 10
+am start --user 10 -n com.android.chrome/com.google.android.apps.chrome.Main
+ 
+# 2. 验身份：Chrome 与其子进程必须全是 u10_a...
+ps -A -o USER,PID,NAME | grep -E &#x27;u10_|chrome&#x27; | head -n 10
+# 成功：所有相关行 USER 列以 u10_a 开头；失败：出现 u0_a... = 启动串回了主 user
+ 
+# 3. 验端口与会话隔离
+ss -ltnp | grep -E &#x27;9222|9223&#x27;
+# 成功：两个实例各占一个本地端口；失败：只有一个 = 第二实例复用了默认 user-data-dir
+ 
+# 4. 强杀一个，另一个必须继续活着
+PID2=$(pidof -s com.android.chrome)
+kill -9 $PID2
+ps -A -o USER,PID,NAME | grep chrome | head -n 5
+# 成功：另一 user 的进程仍在；失败：两边全没 = 进程组或 cgroup 被共享
+ 
+# 5. 卸载并回滚后检查残留
+pm remove-user 10
+ls /data/user/10 2&gt;&amp;1 | head -n 1
+# 成功：目录不存在；失败：仍有残留 = 卸载路径没清干净，下次启动会带残影</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：多开最难的不是“启动第二个”，而是“卸载后什么都别留下”。进程、端口、CDP、fd 都会随 kill 消失，唯独 <code>/data/user/10</code> 下的凭据目录和内核里改过的表项不会自己走；<strong>半改状态是最难恢复的状态</strong>，它不会立刻报错，只会在下一次启动时以“莫名其妙的旧会话”现身。</div></aside>
+<p>把 specialize 那个窗口再看一遍：Frida 部 F01 讲整体启动与 Zygote 门控时，抢的就是 fork 之后、specialize 之前的那一小段；LSPosed 部 L01 讲进程进入时，在同一段窗口里把 framework 注入进程；M07 则是让 zygote 按另一个 userId 写 uid、域与 data 目录。窗口只有一段，谁先动手谁定调——三章其实在讲同一处地形上的三种施工方式。</p>
 </article>
 <div class="pager"><a href="m06-inode.html"><span class="dir">上一讲</span>M06 SELinux 与 FD 安全扩展</a><a href="l01-zygisk.html" style="text-align:right"><span class="dir">下一讲</span>L01 LSPosed 总体设计与进程进入</a></div>
 </main>

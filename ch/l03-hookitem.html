@@ -180,6 +180,42 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>很多人只验证第 1 层就以为成功了。实际上“注册成功但没被调用”是最常见的情况——多半是“调用的不是同一个方法”或“被内联了”。</div></aside>
+<h2>两个模块盯上了同一个方法</h2>
+<p><code>TelephonyManager.getDeviceId</code> 上挂了两个模块：一个改返回值，一个只打日志。现在问题来了——打日志的那个该先跑还是后跑？如果改值的模块先跑，日志记下的就是假值；如果日志先跑，改值模块 <code>setResult</code> 之后它还有没有机会收尾？再叠一层：其中一个模块被用户在管理器里临时禁用，而此刻恰好有一条调用正在链上走到一半。这些都不是边角情况，而是 <code>HookItem</code> 每天要处理的日常。</p>
+<p>更麻烦的是 ART 自己。热点方法会被 JIT 内联进调用者，调用者里已经是一份展开后的机器码，压根不会再去查 <code>ArtMethod</code> 的入口指针。你在 L02 里辛辛苦苦换掉的 <code>entry_point_from_jni_</code>，对这段内联代码完全不可见。<strong>所以挂回调和去优化必须是一次原子动作</strong>，中间不能留出让 JIT 继续用旧代码的窗口。</p>
+<h2>回调链是怎么串起来的</h2>
+<ol><li><strong>模块 → LSPosedBridge</strong>：每个模块调用 <code>XposedBridge.hookMethod</code> 并传入 <code>XC_MethodHook</code> 与 priority；结果是框架按&#x27;方法&#x27;建一个 <code>HookItem</code>，把它登记进全局表。</li><li><strong>框架 → HookItem</strong>：同一个方法被多个模块 hook 时，框架不重复改 ArtMethod，只把新回调插入该 <code>HookItem</code> 的有序集合；结果是入口只被替换一次，回调却可以无限叠加。</li><li><strong>框架 → 排序器</strong>：<code>XCallback</code> 的 priority（默认 50，最高 10000）决定 before 正序、after 逆序；结果是&#x27;外层&#x27;模块能包住&#x27;内层&#x27;模块，形成洋葱式的调用结构。</li><li><strong>分发器 → 各回调</strong>：依次调用 <code>beforeHookedMethod(param)</code>；任一回调 <code>setResult</code> 或 <code>setThrowable</code> 就是 <code>returnEarly</code>，跳过剩余 before 与整个原方法；结果是短路语义可以预测。</li><li><strong>分发器 → backup → after</strong>：原方法（或短路结果）写回 <code>param.result</code>，after 按逆序执行，仍可改写结果；结果是最后一个说话的往往是最先注册的模块。</li><li><strong>管理器 → 集合（并发）</strong>：卸载模块时改的是 Copy-On-Write 集合，遍历中的调用持有旧快照；结果是当前这一轮调用会走完旧链，下一轮才看不到被摘掉的回调。</li></ol>
+<p>第 6 拍是很多&#x27;明明禁用了却还生效一次&#x27;的根源。COW 集合换来的是遍历时不会抛 <code>ConcurrentModificationException</code>，代价是<strong>撤销不即时</strong>。做回归用例时，卸载后至少要再跑一轮空调用再断言，否则会得到假失败。</p>
+<h2>为什么必须让 JIT 忘掉它</h2>
+<ul><li>JIT 编译调用者 <code>caller()</code> 时，把被调方法 <code>callee()</code> 的字节码内联进 <code>caller</code> 的机器码。</li><li>此后 <code>caller</code> 调用 <code>callee</code> 不再查 ArtMethod，直接执行展开后的指令——hook 对新入口完全失明。</li><li>框架在发布回调时调用 <code>Instrumentation</code> / JIT code cache 的去优化接口，把相关编译码标记为失效。</li><li>ART 让这些栈帧退回解释执行或重新编译；新的解释路径每次都查 <code>ArtMethod</code>，于是走到蹦床。</li><li>代价：去优化后的一小段时间内该路径明显变慢，且时序改变，可能把偶发竞态暴露出来。</li></ul>
+<p>注意第 3 步的时机：去优化必须发生在<strong>改入口之前或与之成对</strong>，不能等回调都注册完了才想起来。否则中间那几毫秒里，另一个线程上的 <code>caller</code> 依旧跑着内联的旧代码，测出来的&#x27;偶发不生效&#x27;会让排查方向整个跑偏。</p>
+<h2>可复现：把去优化前后的耗时打出来</h2>
+<div class="code">
+<div class="code-title">模块内的计时探针</div>
+<pre><code>// 在 handleLoadPackage 里对目标方法连续压测，记录 p50 / p95
+long[] ts = new long[2000];
+for (int i = 0; i &lt; ts.length; i++) {
+    long a = System.nanoTime();
+    String v = Target.sign(&quot;payload&quot;);   // 被 hook 的方法
+    ts[i] = System.nanoTime() - a;
+    if (!&quot;expected&quot;.contentEquals(v)) Log.e(&quot;probe&quot;, &quot;bad result at &quot; + i);
+}
+java.util.Arrays.sort(ts);
+Log.d(&quot;probe&quot;, &quot;p50=&quot; + ts[1000] + &quot; p95=&quot; + ts[1900]);
+// 对照：未挂回调时跑同一段循环，留一份基线</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：2000 次调用无 <code>bad result</code>，p50 稳定在同一数量级，且回调日志条数恰好等于调用次数；去优化刚发生的那一两轮可以慢，但随后应回落到稳定值。<strong>看到什么算失败</strong>：返回值出现&#x27;未 hook 时的原值&#x27;且集中在预热后的批次——典型的 JIT 内联没被打掉；或者回调条数少于一两次，说明有线程跑在旧编译码上。补一条 <code>adb logcat -s probe:V | grep bad</code> 统计失败次数，再对照未注入基线，别把设备本身的调度抖动算到框架头上。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>最可能的原因</th><th>验证动作</th><th>修法</th></tr></thead><tbody>
+<tr><td>hook 偶发不生效</td><td>JIT 内联未去优化</td><td>预热后再压测，看失效是否集中在热路径</td><td>发布回调时成对触发 deopt</td></tr>
+<tr><td>禁用模块后仍生效一次</td><td>COW 快照遍历中</td><td>卸载后再跑一轮空调用</td><td>等下一轮再断言</td></tr>
+<tr><td>after 拿到的值被改</td><td>多个模块都 setResult</td><td>打印 priority 与调用顺序</td><td>约定 priority 分层</td></tr>
+<tr><td>耗时突然涨十倍</td><td>deopt 后解释执行</td><td>对比 p50 与基线</td><td>等待重新编译或降低采样权重</td></tr>
+<tr><td>before 里抛异常后崩溃</td><td>异常未走 param.throwable</td><td>检查是否用 setThrowable</td><td>统一异常出口</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>去优化造成的&#x27;突然变慢&#x27;，比任何特征串都更像检测信号</strong>。反调试不必知道你用了哪个框架，只要发现&#x27;这个原本 200 纳秒的函数某一刻起变成 2 微秒，过一会儿又恢复&#x27;，就能推断附近发生过入口改写。你在修功能，对方在读时序——这是 L09 结构差分里最难消掉的一项。</div></aside>
+<p>回调发布时机与第三部 F03 的 <code>Java.perform</code> 是同一类问题：都要求&#x27;在正确的线程与正确的时刻&#x27;改动 ART 状态，只是 Frida 靠排队、LSPosed 靠 COW 集合。去优化与 F07 的 Stalker 挂起线程再改执行流也能对读——一个针对解释器与 JIT，一个针对翻译后的代码，共同前提是&#x27;别在别人跑着的时候改&#x27;。训练营 T03 那轮&#x27;隐藏 → 检测 → 改进&#x27;，最容易漏改进的就是这条时延曲线。</p>
 </article>
 <div class="pager"><a href="l02-artmethod.html"><span class="dir">上一讲</span>L02 LSPlant Java Hook 原理</a><a href="l04-sharedmemory.html" style="text-align:right"><span class="dir">下一讲</span>L04 模块 ClassLoader 与 DEX 生命周期</a></div>
 </main>

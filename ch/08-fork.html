@@ -174,6 +174,38 @@ ls /proc/self/task | wc -l
 <tr><td>环境变量</td><td>天然继承</td><td>长度有限、可被读取</td></tr>
 <tr><td>fd 传递</td><td>灵活</td><td>要管理生命周期</td></tr>
 </tbody></table></div>
+<h2>一个 App 出生前的那零点几毫秒</h2>
+<p>把时间钉在 <code>fork()</code> 返回之后、<code>setresuid()</code> 执行之前。这个副本已经是一个独立进程，却还带着 zygote 的全部身份：uid 是 0，能读 <code>/data/adb/modules</code>，SELinux 还没切到 <code>untrusted_app</code>。再过几条指令，它就会被降权、改名、切 namespace，永远失去这个窗口。Zygisk 的全部设计，就是抢在这零点几毫秒里把该做的事做完。</p>
+<p>更妙的是杠杆：不用逐个 App 注入，只要把一段代码放进 zygote，之后<strong>每一个 fork 出来的副本都会自带它</strong>。一次动手，全机覆盖。代价也同样明显——这段代码的痕迹会被复制到成百上千个进程里，任何一处不干净，检测方随便挑一个进程都能看到。</p>
+<h2>模块代码是怎么跟着 fork 一起被复制的</h2>
+<ol><li><strong>`magiskd` 在 post-fs-data</strong> → 对模块目录 → 用 <code>mount --bind</code> 把模块文件铺到系统视图里 → 结果：模块的 .so / dex 在文件系统层面「看起来」已就位。</li><li><strong>`magiskd` 注入 zygote</strong> → 对 zygote 进程 → ptrace 附加后 <code>dlopen</code> 载入 <code>zygisk.so</code> → 结果：zygote 的地址空间里多了一段模块运行时，并在 JNI 层挂住 <code>nativeForkAndSpecialize</code>。</li><li><strong>Java 层发起 fork</strong> → 对 <code>Zygote.forkAndSpecialize</code> → 带着 uid、gid、seinfo、nice_name 等参数进来 → 结果：请求先经过被挂住的 JNI 入口，Zygisk 拿到 <code>preAppSpecialize</code> 回调。</li><li><strong>pre-specialize 回调</strong> → 对仍是 root 的子进程副本 → 读模块配置、把 dex/so 路径备好、决定这个包要不要启用模块 → 结果：该读的文件在降权之前就读完了。</li><li><strong>内核执行 specialize</strong> → 对新副本 → setresuid/setgid、<code>setcon</code>、切 mount ns、清 capability、改进程名 → 结果：uid 变成 <code>u0_aNNN</code>，<code>untrusted_app</code> 域生效，<code>/data/adb</code> 从此不可读。</li><li><strong>post-specialize 回调</strong> → 对已降权的副本 → 只操作内存里已有的对象：hook 已加载的类、替换方法实现 → 结果：模块业务逻辑在 App 沙箱内开始运行。</li><li><strong>需要特权时</strong> → 对 <code>magiskd</code> 的 companion 通道 → 由 App 进程发起请求，让特权侧代做文件操作 → 结果：沙箱里的模块仍能间接完成需要 root 的动作。</li></ol>
+<h2>动手：让模块自己报出 specialize 前后的 uid</h2>
+<div class="code">
+<div class="code-title">编一个只打印 uid 的模块并观察</div>
+<pre><code># 1) 用官方 zygisk-module-sample 模板，在 ModuleBase 里实现两个回调：
+#    preAppSpecialize  -&gt;  __android_log_print(..., getuid(), getpid())  打 pre
+#    postAppSpecialize -&gt;  同样一行，打 post
+# 2) NDK 编出 libzygiskmod.so，塞进模块 zip 的 zygisk/arm64-v8a/ 下
+# 3) 管理器里安装、启用、重启，然后：
+adb reboot &amp;&amp; adb wait-for-device
+adb logcat -c
+adb shell am force-stop com.target.app
+adb shell am start -n com.target.app/.MainActivity
+adb logcat -d -s ZygiskMod:V | head -20
+adb shell &#x27;cat /proc/$(pidof com.target.app)/status&#x27; | grep -E &#x27;^(Name|Uid):&#x27;</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>：logcat 里成对出现 <code>pre uid=0 pid=NNN</code> 与 <code>post uid=10xxx pid=NNN</code>，<strong>pid 相同、uid 不同</strong>——这一对日志就是 specialize 分界线的直接证据，也说明模块确实被复制进了 App 分支。<strong>失败</strong>分三种：只有 <code>post</code>，说明 <code>dlopen</code> 没进 zygote 或预加载被拦，模块压根没跑到 pre；看到的是 <code>preServerSpecialize</code> 相关日志，说明模块只挂到了 system_server 一路；两行 uid 都稳定在 1000 附近，那是 system_server 的 uid，不是普通 App，采样对象挑错了。注意 <code>pre</code> 里千万别去开 App 私有目录——那时上下文还没切完，SELinux 会拦。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>原因</th><th>排查方向</th></tr></thead><tbody>
+<tr><td>pre/post 成对且 pid 相同</td><td>模块在 App 分支正常加载</td><td>成功，记下 uid 变化</td></tr>
+<tr><td>只有 post</td><td>pre 回调没执行 / 未注入 zygote</td><td>查 magiskd 日志与 zygisk.so 是否 dlopen</td></tr>
+<tr><td>只有 preServerSpecialize</td><td>只覆盖 system_server</td><td>检查模块声明与枚举分支</td></tr>
+<tr><td>pre 里读 /data/adb 失败</td><td>已在 post 阶段或 SELinux 拦下</td><td>把读操作前移到 pre</td></tr>
+<tr><td>post 里再打开模块目录报 EACCES</td><td>已降权，属预期行为</td><td>改走 companion 通道</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>Zygisk 模块并不是「在 App 里运行」，而是「在 zygote 的每一个副本里各自运行」</strong>。同一份 .so 被 fork 复制进成百上千个进程，彼此内存完全不共享，模块里的全局变量在每个进程里各有一份。想跨进程说话，只能绕回 <code>magiskd</code> 的 companion 通道——这也是「一次注入覆盖全部」这一杠杆的隐藏成本。</div></aside>
+<p>这条「pre 读文件 / post 改内存」的分界线，第 05 章已经用 <code>am start -W</code> 和 <code>Start proc</code> 从外面量过一次，本章则是从里面把它打印出来；第 12 章讲 Java Hook 时，post-specialize 之后替换 <code>ArtMethod</code> 入口就是最典型的落地动作；第五部拆 LSPosed 时，会沿着本章的 companion 通道和模块加载顺序继续往里走。</p>
 </article>
 <div class="pager"><a href="07-ptrace.html"><span class="dir">上一讲</span>07 Android ptrace 原理</a><a href="09-frida.html" style="text-align:right"><span class="dir">下一讲</span>09 Android hook 原理</a></div>
 </main>

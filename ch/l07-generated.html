@@ -184,6 +184,41 @@ cache[class_sig + &#x27;#&#x27; + method_name + method_sig] = ArtMethod*;</code>
 <h2>7.10 实战：一次“新版本不工作”的排查记录</h2>
 <ol><li>确认是“完全没生效”还是“部分生效”——前者通常是加载失败，后者是布局变了。</li><li>用 JVMTI dump 出真实的 ArtMethod 布局，与代码里的假设比对。</li><li>发现某个字段偏移变了 8 字节。</li><li>改成“运行时探测偏移”，而不是“写死”。</li><li>回归：在三个版本上各跑一遍八项用例。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这个流程可以复用到所有“版本升级后失效”的场景：<strong>先分清“没进去”还是“进去但错了”</strong>，再决定是改加载逻辑还是改偏移假设。</div></aside>
+<h2>刷完 Android 16，模块集体失灵</h2>
+<p>同一台机器、同一个模块包，Android 14 上跑得好好的，OTA 到 Android 16 后所有 hook 静默失效：没有崩溃，没有异常，日志里连一行错误都没有。模块入口执行了，<code>hookMethod</code> 返回了成功，可目标方法就是不走回调。第一反应往往是&#x27;入口指针写法变了&#x27;，于是把 <code>ArtMethod</code> 偏移表翻来覆去改了一整天——方向从一开始就错了。<strong>失效发生在找方法那一步，不是改入口那一步。</strong></p>
+<p>Android 16 的 ART 把动态生成的类从常规类表里挪了出去，反射拿到的 <code>Method</code> 也可能是包装对象，DEX 方法索引的语义还顺带调了。框架拿着一个&#x27;看起来对&#x27;的 ArtMethod 地址改了半天，改的其实是个影子。根因修复的第一步因此不是打补丁，而是<strong>把运行时真实结构 dump 出来看一眼</strong>。</p>
+<h2>四个根因，逐个照出来</h2>
+<ol><li><strong>ART → 生成类</strong>：动态生成的桩类、lambda 类、代理类不再出现在常规 <code>ClassLinker</code> 枚举里；结果是反射遍历 <code>getDeclaredClasses()</code> 拿不到它们，基于类表的 hook 定位直接落空。</li><li><strong>修复 → JVMTI `GetLoadedClasses`</strong>：改用 JVMTI 枚举所有已加载类并 <code>GetClassSignature</code> 过滤；结果是隐藏在非常规表里的类也能被逐个照出来，且不依赖私有偏移。</li><li><strong>ART → dex method index</strong>：新版本对索引语义与缓存做了调整；结果是旧版按索引缓存的 ArtMethod 映射失效，签到的方法与实际入口不是同一个。</li><li><strong>修复 → 按签名重新解析</strong>：放弃&#x27;记住一个整数索引&#x27;，每次按 <code>类名 + 方法名 + 签名</code> 现场解析；结果是缓存失效不会导致错挂，代价是每次多一次查表。</li><li><strong>ART → backup 温差</strong>：backup 若与目标 ArtMethod 落在同一页，页权限、脏页状态与访问局部性会暴露&#x27;这里有一份副本&#x27;；结果是结构差分能一眼看出两份相邻的方法体。</li><li><strong>修复 → 独立匿名页 + 反射解包</strong>：把 backup 放进独立的匿名映射页，反射拿到的 <code>Method</code> 先解包到真实 ArtMethod 再操作；结果是温差消失，且不再误改包装对象。</li></ol>
+<p>第 6 拍里的&#x27;解包&#x27;值得单独说：某些路径下 <code>Method</code> 对象只是一个句柄/包装，直接拿它的首字段当 <code>ArtMethod*</code> 会得到一个合法但错误的地址——所有后续写入都不会崩溃，也永远不会生效。这正好解释了开头那个&#x27;零报错的静默失效&#x27;。</p>
+<h2>能力探测，而不是版本判断</h2>
+<ul><li>启动时用 <code>dlsym</code> 探测 <code>art::ArtMethod</code> 相关符号与 JVMTI 能力集是否存在，记录成一张能力表。</li><li>为每条能力准备两条以上实现：如&#x27;类枚举&#x27;分别有 ClassLinker 路径与 JVMTI 路径。</li><li>运行时按能力表选路径，而不是写 <code>if (SDK_INT == 36)</code>；同一个 OEM 的 15 与 16 可能行为不同。</li><li>把&#x27;选了哪条路&#x27;打进日志；出问题时第一件事是核对路径，而不是重读偏移表。</li><li>每加一条新路径，回归矩阵里补一行；路径可以共存，但必须可追踪、可回滚。</li></ul>
+<p>这套&#x27;能力探测 → 多路径 → 运行时选择&#x27;是兼容工程的通用骨架。它的价值不在少写几个 if，而在于<strong>把&#x27;哪个版本&#x27;的问题换成&#x27;有没有这个能力&#x27;的问题</strong>——前者随 ROM 分裂无限膨胀，后者永远只有有限几种取值。L08 的适配层就是这个骨架落到代码里的样子。</p>
+<h2>可复现：用 JVMTI 把真相打出来</h2>
+<div class="code">
+<div class="code-title">枚举所有已加载类（agent 内，C++）</div>
+<pre><code>jclass* classes = nullptr; jint count = 0;
+jvmti-&gt;GetLoadedClasses(&amp;count, &amp;classes);   // 含动态生成类
+for (jint i = 0; i &lt; count; i++) {
+    char* sig = nullptr;
+    jvmti-&gt;GetClassSignature(classes[i], &amp;sig, nullptr);
+    if (sig &amp;&amp; strstr(sig, &quot;Target&quot;)) LOGI(&quot;found %s&quot;, sig);
+    if (sig) jvmti-&gt;Deallocate((unsigned char*)sig);
+}
+jvmti-&gt;Deallocate((unsigned char*)classes);
+// 对照：Java 侧 getDeclaredClasses 的数量应明显小于 count</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：<code>count</code> 明显大于 Java 侧类表数量，且 <code>found</code> 里出现目标类的完整签名；按这个签名重新解析后，hook 回调在 Android 16 上恢复触发。<strong>看到什么算失败</strong>：<code>count</code> 与 Java 侧数量差不多，说明 JVMTI 能力没启用（检查 agent 是否 <code>Agent_OnAttach</code> 成功、<code>can_generate_all_class_hook_events</code> 等能力集是否申请）；或者 <code>found</code> 打印了签名但回调仍不触发，那问题已下沉到 backup / 反射解包，回到第 6 拍查包装对象。留一份 Android 14 上的同类 dump 做对照，两次 <code>count</code> 的差值本身就是根因线索。</p>
+<div class="tbl"><table>
+<thead><tr><th>根因</th><th>Android 14 行为</th><th>Android 16 行为</th><th>定位手段</th><th>修法</th></tr></thead><tbody>
+<tr><td>生成类枚举</td><td>常规类表可见</td><td>部分生成类不在常规表</td><td>JVMTI GetLoadedClasses 差值</td><td>走 JVMTI 枚举</td></tr>
+<tr><td>dex method index</td><td>索引可缓存</td><td>语义调整、缓存失效</td><td>按签名重解析后比对入口</td><td>改签名解析</td></tr>
+<tr><td>ArtMethod backup</td><td>同页副本不显眼</td><td>页温差成结构差分</td><td>maps / smaps 页属性</td><td>独立匿名页</td></tr>
+<tr><td>反射 Method</td><td>基本是真实对象</td><td>可能为包装对象</td><td>对比解包前后地址</td><td>先解包再操作</td></tr>
+<tr><td>JIT / deopt 接口</td><td>符号稳定</td><td>部分符号收窄</td><td>dlsym 能力表</td><td>多路径实现</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>最难修的不是崩溃，是&#x27;零报错的静默失效&#x27;</strong>。改错了包装对象、缓存了失效索引，所有写操作都落在合法内存上，ART 一点意见都没有，只是永远不走你的回调。所以遇到新版本不工作，第一动作永远是 dump 真实结构，而不是猜 API、更不是翻偏移表——先确认&#x27;我改的是不是那个对象&#x27;，再谈怎么改。</div></aside>
+<p>这套方法论与第三部 F11 的&#x27;当前工程隐藏与兼容处理总表&#x27;是同一条线：F11 汇总了 Frida 侧的版本差异处理，本章把它落成了 ART 侧的可执行流程。L08 会进一步把这些多路径实现收进一个适配层；第二部 K06 讲 BTF 取 offset 时那句&#x27;不要硬编码结构&#x27;，在这里换成了&#x27;不要硬编码版本&#x27;。训练营 T02 从陌生 App 里挖算法，遇到加固后的动态生成类，靠的正是这一拍 JVMTI 枚举。</p>
 </article>
 <div class="pager"><a href="l06-bridge.html"><span class="dir">上一讲</span>L06 Binder、FD 与 linker 账本收口</a><a href="l08-moving.html" style="text-align:right"><span class="dir">下一讲</span>L08 Android 14 / 16 分层适配</a></div>
 </main>

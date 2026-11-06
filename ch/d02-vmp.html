@@ -172,6 +172,85 @@ handler_0x03:            IR:  if (t3) goto L1</code></pre>
 <aside class="note"><span class="note-tag">要点</span><div>这条路很慢，但它是“可复用”的：一旦你有了“字节码 → IR”的翻译器，后续所有同类样本都能自动处理。这正是二期要建立的能力。</div></aside>
 <h2>2.11 实战：先做“能跑”再做“能读”</h2>
 <ol><li>先用模拟执行跑通一段字节码，确认你对 VM 模型的理解是对的。</li><li>再把它翻译成 IR，与手工推导的结果比对。</li><li>最后才做优化与美化。</li></ol>
+<h2>jadx 窗口里全是空方法</h2>
+<p>你把 APK 拖进 jadx，类树很完整，包名、资源、Manifest 一应俱全，可点开业务类，每个方法体都是一行 <code>throw new RuntimeException(&#x27;stub&#x27;)</code> 或者干脆是空的。第一反应往往是「反编译工具坏了」——换 jadx 版本、换 apktool、换 dex2jar，折腾一圈结果一样。其实工具没错，你看到的是加固时刻意留下的骨架：真正的指令在打包阶段被从 <code>code_item</code> 里挖走，加密塞进了 assets 里的一块二进制，只有等某个类真的要被加载、某个方法真的要被执行，才会被解密写回内存。</p>
+<p>所以现场该看的不是「dex 文件长什么样」，而是「进程内存里的 dex 在哪些瞬间是完整的」。把手机连上，准备好一个能扫 <code>/proc/&lt;pid&gt;/maps</code> 的脚本，再准备一个能按 <code>dex\n035</code> 魔数找内存块的 python 片段。前面讲过判断档位的三个信号，这里要补的是时间维度：完整 dex 在内存里往往只活几毫秒到几十毫秒，dump 工具跑得慢反而会错过它。</p>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_dex">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">二代壳：方法抽取与运行时回填</span>
+  </div>
+  <p class="anim-sub">为什么 dump 早了是空壳，回填后才是完整 dex</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_dex/f00.png" alt="二代壳：方法抽取与运行时回填 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>加固阶段把 code_item 挖空，真指令加密存放</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 加固阶段把 code_item 挖空，真指令加密存放</button>
+    <button type="button" data-i="1">2. App 启动，壳代码先执行并准备解密环境</button>
+    <button type="button" data-i="2">3. 首次调用某方法时触发回填：解密并写回 dex 内存</button>
+    <button type="button" data-i="3">4. ART 此刻才看到完整指令，可解释或编译执行</button>
+    <button type="button" data-i="4">5. 选择回填完成后的窗口 dump，才能拿到完整 dex</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_dex.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["加固阶段把 code_item 挖空，真指令加密存放", "App 启动，壳代码先执行并准备解密环境", "首次调用某方法时触发回填：解密并写回 dex 内存", "ART 此刻才看到完整指令，可解释或编译执行", "选择回填完成后的窗口 dump，才能拿到完整 dex"]</script>
+<h2>从点图标到方法体被填回去，一拍一拍看</h2>
+<ol><li><strong>Launcher</strong> → 对 <strong>AMS</strong> → 发一次 startActivity 的 Binder 请求 → 结果是 AMS 发现进程不存在，通过 socket 通知 zygote fork。</li><li><strong>壳的 Application</strong> → 对 <strong>attachBaseContext</strong> → 抢在业务 Application 之前执行，读取 assets 里的加密块、解出二级 dex 与回填表 → 结果是进程里多出一个壳自己维护的 ClassLoader。</li><li><strong>壳 ClassLoader</strong> → 对 <strong>dexElements</strong> → 把解密出来的 dex 插到查找路径前面 → 结果是后续 <code>findClass</code> 会先命中壳的类，业务类看起来「从没出现在原始 APK 里」。</li><li><strong>ART 解释器</strong> → 对 <strong>目标方法</strong> → 首次调用时触发壳注册的回填回调 → 结果是加密区里那条真指令被解密、写回该方法对应的 <code>code_item</code> 内存。</li><li><strong>ART 的 JIT</strong> → 对 <strong>已回填的方法</strong> → 按正常路径解释或编译 → 结果是这一刻内存里的 dex 才是完整的，也是唯一值得 dump 的窗口。</li><li><strong>壳的擦除逻辑</strong> → 对 <strong>长时间不用的方法</strong> → 有可能把 <code>code_item</code> 再抹一次 → 结果是「跑了一遍功能再 dump」和「启动就 dump」拿到的内容可能不一样。</li></ol>
+<h2>dump 时机怎么选，三种做法逐拍对比</h2>
+<ul><li><strong>启动时整段抓</strong> → 对 <strong>刚映射进来的 dex</strong> → 按 <code>header.file_size</code> 一次性读 → 结果对一代整体加密壳有效，对二代抽取壳拿到的是一堆空 <code>code_item</code>。</li><li><strong>扫魔数全内存抓</strong> → 对 <strong>`/proc/self/maps` 里每一段可读区</strong> → 逐块搜 <code>dex\n035</code> 并校验 header 的 <code>file_size</code> 与 <code>map_off</code> → 结果能捞到壳动态释放的 dex，但会漏掉「回填前」那一瞬间的空方法。</li><li><strong>挂在方法首次执行上抓</strong> → 对 <strong>目标类的任一方法</strong> → 在 hook 回调里立刻按 ClassLoader 定位 <code>DexFile</code> 再整段读 → 结果最准：此时回填刚完成、擦除还没发生。</li></ul>
+<h2>可复现实验：自己写一遍魔数扫描</h2>
+<div class="code">
+<div class="code-title">在设备外跑的 python 片段（把 dump 出来的内存喂给它）</div>
+<pre><code>import struct, sys
+ 
+def find_dex(blob):
+    magic = b&#x27;dex\n035\x00&#x27;
+    out, off = [], 0
+    while True:
+        i = blob.find(magic, off)
+        if i &lt; 0: break
+        size = struct.unpack_from(&#x27;&lt;I&#x27;, blob, i + 32)[0]
+        out.append((hex(i), size))
+        off = i + 8
+    return out
+ 
+if __name__ == &#x27;__main__&#x27;:
+    data = open(sys.argv[1], &#x27;rb&#x27;).read()
+    for pos, size in find_dex(data):
+        print(&#x27;candidate&#x27;, pos, &#x27;file_size&#x27;, size)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<div class="code">
+<div class="code-title">从设备上取一段可读内存（adb）</div>
+<pre><code># 先确认进程与映射，别盲目 dump 整个 /proc
+adb shell pidof com.example.protected
+adb shell cat /proc/$(adb shell pidof com.example.protected)/maps \
+  | grep -E &#x27;dex|anon&#x27; | head -40
+ 
+# 用 frida 在方法首次执行时按 DexFile 整段读，比 shell 更稳
+#   触发：点一次目标功能；观察：send 回来的 len 是否等于 file_size</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：脚本打印出的 <code>file_size</code> 与 header 偏移 32 处读到的值一致，把该段单独切出来存成 <code>.dex</code> 后 jadx 能打开，而且关键方法里有真实的 <code>invoke-</code> / <code>iget-</code> 指令而不是一片 <code>nop</code>。看到什么算失败：jadx 报 <code>bad checksum</code> 或 <code>map_list</code> 错位，说明你按 <code>file_size</code> 抓的时候跨段截断了；或者方法体全是 <code>nop</code>，说明抓在回填之前——把触发点换成「点一次目标功能再抓」，重跑三轮确认稳定。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>原因</th><th>修法</th></tr></thead><tbody>
+<tr><td>jadx 里方法体是 stub</td><td>code_item 被抽取</td><td>挂首次执行后再 dump</td></tr>
+<tr><td>dump 出来 file_size 对不上</td><td>跨段读取被截断</td><td>按 maps 分段读再拼接</td></tr>
+<tr><td>jadx 报 bad checksum</td><td>header 里 checksum/sha1 未修</td><td>重算并回写 0x0C 与 0x20 两处</td></tr>
+<tr><td>方法体全是 nop</td><td>抓在回填之前</td><td>先跑一遍功能，再抓</td></tr>
+<tr><td>只有壳的类没有业务类</td><td>dump 错了 ClassLoader 的 dex</td><td>按 dexPath 定位，逐个 ClassLoader 试</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>完整 dex 在内存里活得比你的工具启动还短</strong>。很多人以为脱壳难在「找不到 dump 工具」，实际难在「工具还没就绪，窗口已经关了」。所以正确的顺序是先确认回填事件、再决定抓取动作，而不是先开一个通用 dump 器守株待兔。</div></aside>
+<p>把「回填事件」这个钩子留在你的工具箱里，D03 里它会换个身份出现：顶级方案同样靠「按需触发」来省钱，只不过它按需触发的是检测而不是解密。再看 P01，VMP 把这条链又往前推了一步——连 <code>code_item</code> 都不填了，直接换成自定义字节码交给你自己解释。</p>
 </article>
 <div class="pager"><a href="d01.html"><span class="dir">上一讲</span>D01 DexProtect 的检测逻辑拆解</a><a href="d03.html" style="text-align:right"><span class="dir">下一讲</span>D03 Promon 类方案的对抗思路</a></div>
 </main>

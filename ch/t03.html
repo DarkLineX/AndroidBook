@@ -134,6 +134,73 @@ rows.append(snapshot(&#x27;hidden&#x27;))</code></pre>
 <ul><li>填完的记录表（含每一步的操作说明）。</li><li>一段分析：哪一项最难降？为什么？</li><li>一份“已知限制清单”：哪些痕迹是你承认消不掉的。</li></ul>
 <h2>3.6 自测</h2>
 <ul><li>为什么必须有“clean”这一列？没有它会怎样？</li><li>如果某项指标降不下来，正确的做法是什么？</li><li>“基线 ±10%”这个标准合理吗？在什么情况下需要放宽？</li><li>这份记录表能用来做什么（除了自测）？</li></ul>
+<h2>你坐在机器前，手里是一张空白 CSV</h2>
+<p>你坐在机器前，手里有 T01 那个靶场 App、一张只有表头的 CSV、两个已经排好的终端窗口。左边窗口跑采集，右边窗口准备注入。这一节不教新招式，只逼你做一件多数人跳过的事：把「感觉变干净了」换成「四个数字各是多少」。表头写着 <code>tag, maps, threads, fds, loaders</code>，下面的格子全是空的，得你自己一格一格填出来。</p>
+<p>先把纸笔放旁边，写下一个假设：「注入之后 maps 会多出若干匿名可执行段，线程数会多两三个，FD 会多一两个，ClassLoader 数不变」。然后严格按 <code>clean → injected → hidden</code> 三个标签各采三次，每次都冷启动。你会发现最难的不是隐藏，是让三次测出来的数字彼此对得上——环境漂移比任何对抗都更能毁掉一张表。</p>
+<figure class="anim" data-delay="820" data-n="4" data-key="a_detect">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">隐藏与检测：一轮完整闭环</span>
+  </div>
+  <p class="anim-sub">造 → 验 → 破 → 加固，四步循环才是真正的训练</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_detect/f00.png" alt="隐藏与检测：一轮完整闭环 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 4</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>在靶场 App 里写一道具体、可证伪的检测</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. 在靶场 App 里写一道具体、可证伪的检测</button>
+    <button type="button" data-i="1">2. 干净环境与修改环境各跑一遍，确认差异可复现</button>
+    <button type="button" data-i="2">3. 找出检测依赖的事实，让事实本身恢复正常</button>
+    <button type="button" data-i="3">4. 换维度交叉校验，把闭环再跑一轮并记录</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_detect.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["在靶场 App 里写一道具体、可证伪的检测", "干净环境与修改环境各跑一遍，确认差异可复现", "找出检测依赖的事实，让事实本身恢复正常", "换维度交叉校验，把闭环再跑一轮并记录"]</script>
+<h2>三次基线，一拍一拍采</h2>
+<ol><li><strong>你</strong> → 对 <strong>进程</strong> → <code>am force-stop</code> 后冷启动，等 SDK 初始化完成再采 → 结果是避开「检测代码自己改变被测量量」的自污染，拿到真正的 clean 基线。</li><li><strong>你</strong> → 对 <strong>`/proc/&lt;pid&gt;/maps`</strong> → 数行数，另外单独数 <code>r-xp</code> 且路径为空的匿名可执行段 → 结果是两个数字，后者往往比总行数更敏感。</li><li><strong>你</strong> → 对 <strong>`/proc/&lt;pid&gt;/task`</strong> → 数目录项 → 结果是线程总数；连采三次取中位数，别拿第一次的值当基线。</li><li><strong>你</strong> → 对 <strong>`/proc/&lt;pid&gt;/fd`</strong> → 数目录项 → 结果是 FD 数；注意采集脚本自己打开的文件也会算进去，要在读数前先关掉。</li><li><strong>你</strong> → 对 <strong>Java 侧 ClassLoader</strong> → 用 <code>Java.enumerateClassLoaders</code> 数实例 → 结果是 loaders 数；这一项对「谁注入了 dex」最敏感。</li><li><strong>你</strong> → 对 <strong>三次结果</strong> → 取中位数写进 CSV 的 clean 列 → 结果是后面所有比较都有同一把尺子，而不是拿某一次 lucky run 当参照。</li></ol>
+<h2>注入与隐藏之后，数字怎么变</h2>
+<ul><li><strong>注入器</strong> → 对 <strong>目标进程</strong> → 映射 agent、起 JS 线程、接管若干信号 → 结果是 maps 多出匿名可执行段、线程数 +2~3、FD 数 +1~2，四项里通常三项同时动。</li><li><strong>你</strong> → 对 <strong>injected 列</strong> → 把四个数字抄进去，逐项算相对 clean 的增幅 → 结果是第一次把「有痕迹」变成可比较的百分比，而不是一句「明显多了」。</li><li><strong>隐藏动作</strong> → 对 <strong>maps 与线程名</strong> → 改映射名、改线程名、合并短命线程 → 结果是名字类痕迹下降，但条目数与线程数往往纹丝不动。</li><li><strong>隐藏动作</strong> → 对 <strong>linker 账本与 FD</strong> → 补登记、关掉闲置 fd → 结果是一部分指标回到基线，另一部分怎么也降不下来。</li><li><strong>你</strong> → 对 <strong>hidden 列</strong> → 再采三次取中位数，与 clean 逐项对比 → 结果是表里最后两列终于可以填「合格 / 不合格 / 无法改进」了。</li></ul>
+<h2>可复现实验：一条命令量出四个数字</h2>
+<div class="code">
+<div class="code-title">host 端采集脚本（改 PKG 后直接跑）</div>
+<pre><code>PKG=com.example.range
+PID=$(adb shell pidof $PKG | tr -d &#x27;\r&#x27;)
+ 
+for tag in clean injected hidden; do
+  echo -n &quot;$tag, &quot;
+  echo -n &quot;$(adb shell wc -l &lt; /proc/$PID/maps | tr -d &#x27; &#x27;), &quot;
+  echo -n &quot;$(adb shell ls /proc/$PID/task | wc -l | tr -d &#x27; &#x27;), &quot;
+  echo -n &quot;$(adb shell ls /proc/$PID/fd   | wc -l | tr -d &#x27; &#x27;), &quot;
+  echo &#x27;loader_count_from_frida&#x27;
+  read -p &#x27;按回车采下一个标签...&#x27; _
+done
+ 
+# ClassLoader 数用 frida 补：
+#   Java.perform(() =&gt; { let n=0;
+#     Java.enumerateClassLoaders({ onMatch:()=&gt;n++, onComplete:()=&gt;send(n) }); });</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：三个标签各有一行、每行四个数字，且同标签连跑三次的中位数波动在 ±3% 以内；hidden 列里至少三项落回 clean 的 ±10% 区间。看到什么算失败：clean 列自己三次就差了 20%——那不是隐藏失败，是基线没稳住，回去检查是否每次都 force-stop、是否等够了 SDK 初始化、采集脚本自己有没有多开 fd；或者 hidden 列四项全降但 UI 仍报失败，说明检测还看了第五个维度，把它补进表头重跑一轮。</p>
+<div class="tbl"><table>
+<thead><tr><th>指标</th><th>clean（中位数）</th><th>injected</th><th>hidden</th><th>判定档位</th></tr></thead><tbody>
+<tr><td>maps 条目</td><td>填实测值</td><td>通常 +5~12</td><td>改名可降、条目难降</td><td>接近基线才算合格</td></tr>
+<tr><td>线程数</td><td>填实测值</td><td>通常 +2~3</td><td>合并线程可降 1</td><td>只降不升</td></tr>
+<tr><td>FD 数</td><td>填实测值</td><td>通常 +1~2</td><td>关闲置 fd 可回基线</td><td>较易合格</td></tr>
+<tr><td>ClassLoader 数</td><td>填实测值</td><td>可能 +1</td><td>结构决定，多数降不了</td><td>常落「无法改进」</td></tr>
+<tr><td>匿名可执行段</td><td>填实测值</td><td>必然增加</td><td>只能换映射方式</td><td>结构性痕迹</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>最难消掉的不是 maps 里那个 so 的名字，是线程数</strong>。名字能改、路径能隐藏、账本能补，可「为了干活必须多起一个线程」这件事由架构决定，不由命名决定。填完表你会亲眼看到某一项无论怎么改都贴着基线之上不肯下来——那就是结构性痕迹，也正是检测方最可靠、最省钱的那一类信号。承认它、写进已知限制，比假装它不存在有用得多。</div></aside>
+<h2>交付物清单（缺一项就不算完成）</h2>
+<ol><li><strong>填完的记录表</strong>：三个标签 × 四个指标 × 三次原始值，附每次的操作说明（改了什么、什么时候改的）。</li><li><strong>增幅计算</strong>：injected 相对 clean 的逐项百分比，hidden 相对 clean 的逐项偏差，标出合格 / 不合格 / 无法改进。</li><li><strong>一段分析</strong>：哪一项最难降、你试过哪几种办法、为什么都失效；要落到具体机制，不要写「因为比较隐蔽」。</li><li><strong>已知限制清单</strong>：明确列出你承认消不掉的痕迹，并说明检测方若只盯这一项会怎样。</li><li><strong>三次原始日志</strong>：冷启动 logcat、采集脚本输出、frida 的 ClassLoader 计数，供别人复跑。</li><li><strong>一行回归结论</strong>：不注入时四个数字是否回到 clean——用来证明表里变化的确由你的动作引起。</li></ol>
+<p>这张表合上，三组训练就走完了完整的一圈：T01 造出可证伪的检测，T02 学会不靠硬读也能拿到事实，T03 把事实变成可度量的证据。回头翻 D01 的采样时间线、D03 的双机对照，你会发现它们全是这一张表的放大版；而 A01 的速查卡和 A05 的排错手册，正是为了让你在下一台陌生机器上，还能用同样的顺序把格子填满。</p>
 </article>
 <div class="pager"><a href="t02-hook.html"><span class="dir">上一讲</span>T02 训练营二：从一个陌生 App 里挖出一个算法</a><a href="a01.html" style="text-align:right"><span class="dir">下一讲</span>A01 附录 A · 全书速查表</a></div>
 </main>

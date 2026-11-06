@@ -158,6 +158,42 @@
 <p>策略级下发最麻烦：它意味着“同一个版本，在不同时间可能有不同行为”。这让“复现问题”变得困难。</p>
 <h2>3.11 实战：把“共存”拆成可执行的动作</h2>
 <ol><li>列出它的采集面（第一章的检测地图）。</li><li>找出“采集不到的维度”。</li><li>把你的改动迁移到那些维度上。</li><li>每迁移一项，用三组对照验证。</li></ol>
+<h2>周一能跑的脚本，周三就不行了</h2>
+<p>周五下班前你把脚本跑通，截图存档，心满意足地关了电脑。周一回来复现，一切正常；周三再跑，同一个 APK、同一台机器、同一行命令，进程却在 attach 后三秒安静退出。你没改过任何东西——变的是它。规则包在后台被换了一版，采集面重排了一次，昨天还空着的那个维度今天开始采样了。这类方案最折磨人的地方不是强度，而是它把「绕过」变成了一次性的运气：你对抗的不是一个二进制，是一条会自己往前走的产品线。</p>
+<p>所以现场的正确姿势不是继续调脚本，而是先把「它变了什么」记下来。桌上摆两台机器，一台断网跑离线基线，一台联网跑当前规则；两边同时记录 <code>openat</code> 命中的配置文件路径、每次检测的调用序列和时间戳。有了这组对照，你才能把「玄学失效」翻译成一句可验证的话：某个观测面从「不采」变成了「采」。</p>
+<h2>规则包落地的一拍一拍</h2>
+<ol><li><strong>服务端</strong> → 对 <strong>规则包</strong> → 按设备分组下发一个带版本号的策略文件（阈值、开关、采集面清单）→ 结果是同一版本的 App 在不同时间拥有不同行为。</li><li><strong>壳的配置加载器</strong> → 对 <strong>规则包</strong> → 在启动早期 <code>openat</code> 读取并做签名校验 → 结果是把旧规则从内存里替换掉，磁盘上通常只留一个看不出含义的缓存名。</li><li><strong>采集面重排器</strong> → 对 <strong>六个观测面</strong> → 按新清单决定这一轮采哪几项、采几次 → 结果是原本安全的那个维度突然开始上报，你的旧脚本正好落在那里。</li><li><strong>主进程</strong> → 对 <strong>守护进程</strong> → 通过 Binder 或共享内存周期性互发心跳 → 结果是任何一方被杀掉或长时间不回应，另一方立刻把 risk 等级拉满。</li><li><strong>守护进程</strong> → 对 <strong>主进程的地址空间</strong> → 只读地抽查几个关键结构 → 结果是它不需要注入你，也能发现「结构被改过」。</li><li><strong>行为基线模块</strong> → 对 <strong>正常用户的时延分布</strong> → 长期统计后设 p99 门限 → 结果是哪怕所有静态特征都干净，只要你的路径比正常人慢一截，依然会被记一笔。</li></ol>
+<h2>把「共存」拆成当天就能做的动作</h2>
+<ul><li><strong>你</strong> → 对 <strong>两台机器</strong> → 一台断网固定规则、一台联网跟随更新 → 结果是拿到一份「规则版本 × 行为差异」的对照，而不是一句「今天又不行了」。</li><li><strong>你</strong> → 对 <strong>采集面清单</strong> → 每次实验先打印当前命中的观测面编号 → 结果是把绕过动作从「盲改」变成「只改没被采的那一项」。</li><li><strong>你</strong> → 对 <strong>改动面</strong> → 一次只动一个点，动完立刻跑三组对照 → 结果是失效时能立刻定位到是哪一步引入的，而不是把整个脚本推倒重来。</li><li><strong>你</strong> → 对 <strong>实现层</strong> → 把必须长期存在的逻辑从用户态迁到更贴近事实的层 → 结果是让「被检测的事实」本身合理，而不是让检测函数说谎。</li><li><strong>你</strong> → 对 <strong>交付物</strong> → 每次更新后重跑同一套用例并归档日志 → 结果是三个月后你还能回答「哪一版开始变的」。</li></ul>
+<h2>可复现实验：抓住规则生效的那一刻</h2>
+<div class="code">
+<div class="code-title">双机对照的最小记录脚本（host 端）</div>
+<pre><code># 机器 A：断网，固定离线基线
+adb -s SERIAL_A shell settings put global airplane_mode_on 1
+adb -s SERIAL_A logcat -c &amp;&amp; adb -s SERIAL_A logcat -v time &gt; /tmp/A.log
+ 
+# 机器 B：联网，跟随当前规则
+adb -s SERIAL_B logcat -c &amp;&amp; adb -s SERIAL_B logcat -v time &gt; /tmp/B.log
+ 
+# 两边都抓一次「读了哪些配置文件」
+adb -s SERIAL_A shell strace -f -p $(adb -s SERIAL_A shell pidof TARGET) \
+  -e trace=openat -o /tmp/A.open 2&gt;/dev/null
+ 
+# 对比差异：同一时刻，B 多读了哪个文件，就从哪个文件入手
+diff &lt;(grep -oE &#x27;[^/]+$&#x27; /tmp/A.open) &lt;(grep -oE &#x27;[^/]+$&#x27; /tmp/B.open)</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>看到什么算成功：两台机器在同一操作下的 <code>openat</code> 序列出现一处稳定差异，且这台联网机器随后多跑了一次此前没有的采集动作——你就把「规则热更新」从一个概念变成了可指认的文件和时间点。看到什么算失败：两边日志几乎一模一样，说明这次失效跟规则无关，回去查是不是环境漂移（系统更新、SELinux 状态、frida-server 版本），别把环境问题误记成「壳变强了」。</p>
+<div class="tbl"><table>
+<thead><tr><th>档位</th><th>规则来源</th><th>行为特征</th><th>可持续的对策</th></tr></thead><tbody>
+<tr><td>离线固定</td><td>随包内置</td><td>可复现、可穷举</td><td>逐项建模，做完整检测地图</td></tr>
+<tr><td>策略热更</td><td>服务端下发阈值</td><td>同版本跨天不同</td><td>每次实验先记录规则版本</td></tr>
+<tr><td>规则热更</td><td>服务端下发采集面</td><td>旧脚本突然命中</td><td>双机对照找新增观测面</td></tr>
+<tr><td>多进程互检</td><td>进程间心跳</td><td>杀一个立刻暴露</td><td>让所有进程都看到正常事实</td></tr>
+<tr><td>行为基线</td><td>长期统计 p99</td><td>静态全干净仍报警</td><td>缩小改动面、控制时延</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>最稳的对抗不是让自己更隐蔽，而是让自己比正常 App 更正常</strong>。隐蔽是在跟特征名单赛跑，名单会变；正常是在跟结构事实对齐，事实不随版本变。这也是为什么「共存」比「绕过」更持久：你不再需要预测下一版规则，只需要保证自己落在它不采集、或者采集了也挑不出毛病的那一侧。</div></aside>
+<p>把双机对照的习惯带进 P01 和 P02：那边虽然不谈热更新，但同样要求「先建模型，再动手」。再往后 T03 会把这套对照变成一张必须填满数字的记录表——到时候你会发现，本章这句「让事实真的合理」正是那张表里每一项指标最终的判定标准。</p>
 </article>
 <div class="pager"><a href="d02-vmp.html"><span class="dir">上一讲</span>D02 DexProtect 的加固结构与脱壳路径</a><a href="p01-cfg.html" style="text-align:right"><span class="dir">下一讲</span>P01 二期主线：从编译原理到 VMP</a></div>
 </main>

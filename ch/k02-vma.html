@@ -175,6 +175,78 @@ bit 54    UXN（用户态不可执行）</code></pre>
 <p>注意两位的<strong>极性相反</strong>：AP[1]（bit6）为 <strong>1</strong> 才是“EL0 可访问”，AP[2]（bit7）为 <strong>1</strong> 才是“只读”。在 Linux 里它们分别对应 <code>PTE_USER</code> 与 <code>PTE_RDONLY</code>。写代码时把两位搞反，表现就是“要么用户态访问直接 fault，要么改了权限却仍然是只读”。</p>
 <p>“双 PFN”改的就是 bit 12–47。改完必须刷 TLB，否则 CPU 还用旧的翻译。</p>
 <aside class="note"><span class="note-tag">要点</span><div>以上是 4KB 粒度的 L3 表项。若是 L2 块描述符（2MB 大页），地址位会到 bit 12–47 之外还多出bit 29 附近的 contiguous hint，写代码时按页大小分别处理，不要混用。</div></aside>
+<figure class="anim" data-delay="820" data-n="5" data-key="a_cow">
+  <div class="anim-head">
+    <span class="anim-badge">动图演示</span>
+    <span class="anim-title">一次写操作，触发 COW 的全过程</span>
+  </div>
+  <p class="anim-sub">fork 不复制内存；第一次写入才真正分家</p>
+  <div class="anim-stage">
+    <img class="anim-frame" src="../assets/anim/a_cow/f00.png" alt="一次写操作，触发 COW 的全过程 第 1 帧" width="1000">
+    <button class="anim-big" type="button" aria-label="播放">▶</button>
+  </div>
+  <div class="anim-bar">
+    <button class="anim-play" type="button">▶ 播放</button>
+    <button class="anim-prev" type="button" title="上一帧">‹</button>
+    <div class="anim-track"><div class="anim-fill"></div></div>
+    <button class="anim-next" type="button" title="下一帧">›</button>
+    <span class="anim-count">1 / 5</span>
+  </div>
+  <div class="anim-caption"><b>第 1 步</b><span>fork 完成：父子 PTE 指向同一物理页，标记 COW 只读</span></div>
+  <div class="anim-steps">
+    <button type="button" data-i="0">1. fork 完成：父子 PTE 指向同一物理页，标记 COW 只读</button>
+    <button type="button" data-i="1">2. 子进程尝试写，CPU 报 permission fault</button>
+    <button type="button" data-i="2">3. 进入 do_page_fault，查 VMA 确认是 COW 可写页</button>
+    <button type="button" data-i="3">4. 分配新物理页、复制内容、改写子进程 PTE</button>
+    <button type="button" data-i="4">5. 返回用户态重跑写指令，这次成功写入自己的副本</button>
+  </div>
+  <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_cow.gif">GIF 自动播放版</a>。</p></noscript>
+</figure>
+<script type="application/json" class="anim-data">["fork 完成：父子 PTE 指向同一物理页，标记 COW 只读", "子进程尝试写，CPU 报 permission fault", "进入 do_page_fault，查 VMA 确认是 COW 可写页", "分配新物理页、复制内容、改写子进程 PTE", "返回用户态重跑写指令，这次成功写入自己的副本"]</script>
+<h2>盯着一个刚 fork 出来的进程，看它第一次写内存</h2>
+<p>前零点几微秒风平浪静：父子俩的页表项一模一样，指向同一张物理页，权限都是只读。下一瞬，子进程往一个全局变量里存了个 1——CPU 立刻把这条 store 拦下来，甩给内核一个同步数据异常。这一拍，就是 COW 从<strong>承诺</strong>变成<strong>字节</strong>的时刻。</p>
+<p>内核里没有谁在提前复制。fork 只做了一件事：把双方的页表项都标成只读，然后记一笔这张页还欠着谁。真正掏钱买新物理页，要一直拖到有人动手写。整个内存管理的戏剧性都在这句话里：先许诺，后兑现。</p>
+<h2>一次写操作，五拍走完 COW</h2>
+<ol><li><strong>CPU</strong> 对 <strong>页表项</strong> 做地址翻译：store 指令查到 PTE 有效但没有写权限 → 结果：触发同步异常，把出错虚拟地址写进 <code>FAR_EL1</code>，原因写进 <code>ESR_EL1</code>。</li><li><strong>`do_page_fault`</strong> 对 <strong>`mm_struct`</strong> 查账：拿 <code>FAR_EL1</code> 里的地址去 VMA 树里找归属区间 → 结果：确认这次写落在合法的可写 VMA 内；找不到就直接送 SIGSEGV。</li><li><strong>`handle_mm_fault`</strong> 对 <strong>页表</strong> 逐层补齐：PGD、PUD、PMD、PTE，最后走进 <code>wp_page_copy</code> 分支 → 结果：判定这是写时复制，不是从磁盘换入。</li><li><strong>`wp_page_copy`</strong> 对 <strong>物理页</strong> 分配新页：从 buddy 拿一页，把旧页原样拷过来，读 <code>page_mapcount</code> 判断还有几个人共享 → 结果：只有写者拿到可写的新页，旧页继续留给父进程和其它共享者。</li><li><strong>`set_pte_at` 加 `flush_tlb_range`</strong> 对 <strong>CPU 的 TLB</strong> 收尾：把写者 PTE 的 PFN 换成新页并置可写位，再刷掉旧翻译 → 结果：那条 store 重新执行一遍，这次成功；父进程读到的仍是原来的值。</li></ol>
+<p>第 4 拍有个容易漏掉的分支：如果 <code>mapcount</code> 已经等于 1，内核不会分配新页，直接把原 PTE 的可写位打开就返回，这叫复用。所以 COW 的代价不是每次写都复制，而是<strong>最后一次写反而免费</strong>。这类不需要 I/O 的缺页会记进 <code>/proc/self/stat</code> 的 <code>min_flt</code> 字段。</p>
+<h2>一段虚拟地址是怎么长成物理页的</h2>
+<ol><li><strong>`mmap`</strong> 对 <strong>`mm_struct`</strong> 只画边界：新建一个 <code>vm_area_struct</code>，填好起止地址、flags、后备文件，挂进 maple tree → 结果：一段虚拟区间存在了，但一个物理页都没分配。</li><li><strong>首次读</strong> 对 <strong>PTE</strong> 触发缺页：若 VMA 是匿名且只读，内核统一映射到全局 <code>ZERO_PAGE</code> → 结果：读出一串 0，全系统只花一页物理内存。</li><li><strong>首次写</strong> 对 <strong>buddy</strong> 才真要页：分配匿名页、清零、填 PTE → 结果：<code>/proc/self/smaps</code> 里的 <code>Anonymous</code> 与 <code>Private_Dirty</code> 开始上涨。</li><li><strong>文件映射</strong> 对 <strong>page cache</strong> 借页：把文件 <code>address_space</code> 里已有的物理页直接映射进来，标成干净页 → 结果：多个进程映射同一个 so，RSS 各算一遍，PSS 却按映射者数量均摊。</li><li><strong>`exit_mmap`</strong> 对 <strong>VMA 树</strong> 反向清账：逐条摘 VMA、清 PTE、把物理页引用计数减回去 → 结果：页还给 buddy，进程消失后内存统计归零。</li></ol>
+<div class="tbl"><table>
+<thead><tr><th>/proc/self/smaps 字段</th><th>它统计什么</th><th>隐藏手段为什么会露</th></tr></thead><tbody>
+<tr><td>Rss</td><td>本进程驻留的物理页总数，共享页全算</td><td>注入一块 so，Rss 直接跳一截</td></tr>
+<tr><td>Pss</td><td>Rss 按共享者数量均摊后的值</td><td>与 Rss 的差值泄露了共享关系</td></tr>
+<tr><td>Private_Dirty</td><td>只属于本进程且被写脏的页</td><td>COW 写完的页全落这里，改过的代码页最显眼</td></tr>
+<tr><td>Shared_Clean</td><td>文件映射且未改写的干净页</td><td>只读代码页本该全在这里，混进 Private 就反常</td></tr>
+<tr><td>Anonymous</td><td>无文件后备的匿名映射</td><td>mmap 出来的跳板与 shellcode 无处可藏</td></tr>
+<tr><td>VmFlags</td><td>VMA 的 rd、wr、ex、mr、mw 等标志</td><td>一段 rwxp 匿名区间本身就是强信号</td></tr>
+</tbody></table></div>
+<h2>把一次 COW 兑现录成数字</h2>
+<div class="code">
+<div class="code-title">动手：用缺页计数与账本交叉验证</div>
+<pre><code># 1. 基准：/proc/self/stat 第 10 字段是 min_flt，第 12 字段是 maj_flt
+awk &#x27;{print $10, $12}&#x27; /proc/self/stat
+ 
+# 2. 制造一批真正要新页的写（写新文件，不需要先读盘）
+dd if=/dev/zero of=/data/local/tmp/cow_probe.bin bs=1M count=32 2&gt;/dev/null
+awk &#x27;{print $10, $12}&#x27; /proc/self/stat
+ 
+# 3. 看账本：哪些是私有脏页、哪些是共享干净页
+grep -E &#x27;^(Rss|Pss|Private_Dirty|Private_Clean|Shared_Clean|Anonymous)&#x27; /proc/self/smaps | head -24
+grep VmFlags /proc/self/smaps | sort | uniq -c | head
+ 
+# 成功：min_flt 明显增长、maj_flt 不变 =&gt; 页是现补的，没走磁盘 I/O
+# 失败：maj_flt 同步增长 =&gt; 有文件回读或 swap 换入，实验被 I/O 污染，换 tmpfs 重做
+# 失败：两个数都不动 =&gt; 读的是同一个快照，重新 exec 一条命令再取
+ 
+# 4. 页表项能否读到真实物理页（需要 CAP_SYS_ADMIN）
+dd if=/proc/self/pagemap of=/dev/null bs=8 count=1 2&gt;/dev/null
+# 成功：读到 8 字节表项；非 root 时 PFN 位恒为 0，只剩 present 与 soft-dirty 标志
+rm -f /data/local/tmp/cow_probe.bin</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p>这套实验的真正价值在第 4 条注释：普通 adb shell 没有 <code>CAP_SYS_ADMIN</code>，读自己的 <code>pagemap</code> 也只会拿到 PFN=0。如果拿两个进程各读一次、发现都是 0 就断言它们指向同一物理页，那结论是假的。想验证双 PFN，必须在内核模块里直接走页表，或者以具备该能力的 root 身份读。</p>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>写时复制里的复制，只有在还有别人共享时才发生</strong>。如果这张页已经只剩你一个映射者，内核连 <code>alloc_page</code> 都懒得调，直接把 PTE 的可写位打开——这次写是零分配、零拷贝的。于是<strong>我改了内存</strong>和<strong>多了一张物理页</strong>根本不是同一件事；用物理页数变化去检测内存改动，会漏掉整整一类情况。</div></aside>
+<p>把这条结论带走：<strong>改一个进程看到的内容，可以不改任何共享物理页，只改它自己的 PTE</strong>。第四部 M03 的 Text Shadow 就是把这句话做到极致——复制一份代码页、只换目标进程的 PFN，别的进程页表原封不动；第五部 L09 用 Rss 与 Pss 的差值做结构差分，追的正是这张表里的几列账；第三部 F07 讲 Stalker 把执行流搬进新 slab，同样要回答新页从哪来、旧页谁还指着这两个问题。</p>
 </article>
 <div class="pager"><a href="k01-fork.html"><span class="dir">上一讲</span>K01 Linux 进程、线程与调度</a><a href="k03-vector.html" style="text-align:right"><span class="dir">下一讲</span>K03 ARM64 异常、中断与信号</a></div>
 </main>

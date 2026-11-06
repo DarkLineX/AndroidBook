@@ -189,6 +189,44 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <tr><td>FD 高水位</td><td>10</td><td>&gt; 基线 20%</td></tr>
 <tr><td>线程数</td><td>20</td><td>&gt; 基线 p99</td></tr>
 </tbody></table></div>
+<h2>名字全抹干净了，还是被报了阳性</h2>
+<p>L05 的五处扫描全部输出 <code>clean</code>，L06 的四本账三向核对相等，字符串、加载器、fd、solist 都收拾妥当。检测库依旧稳定报阳性。它没在找任何特征，只在做一件事：<strong>把当前进程的结构和同机型同版本的干净基线比一遍</strong>。<code>ClassLoader</code> 多了一个、匿名可执行段多了一条、某条热路径的 p95 比基线高出一截、fd 峰值在启动后第 200 毫秒抬了一次又落回去——单项都在噪声范围内，四项叠起来就不是噪声了。</p>
+<p>这就是侧信道与结构差分的难缠之处：改工具、换名字、抹字符串，全都无效，因为它压根不认识这些名字。唯一的出路是<strong>让结构真的变合理</strong>——不是让计数看起来正常，而是让那些多出来的加载器、映射和时延，本来就属于一个正常 App 会有的分布。</p>
+<h2>五项信号，各自怎么被量出来</h2>
+<ol><li><strong>检测库 → 热路径</strong>：同一方法循环调用数千次采 p50 / p95；结果是 hook 的蹦床与参数封送在尾巴上拖出一段可被统计的偏移。</li><li><strong>检测库 → ClassLoader 图</strong>：枚举所有加载器并记录 parent 链与 dexPath；结果是模块加载器即便中性命名，也会在拓扑上多出一个节点。</li><li><strong>检测库 → /proc/self/maps</strong>：逐条核对可执行段的 back-file；结果是无 back-file、大小又接近 dex 的匿名段很难解释成系统行为。</li><li><strong>检测库 → fd 高水位</strong>：在启动窗口内高频采样 fd 数；结果是注入瞬间 open / mmap 留下的峰值会形成一个短暂尖刺，事后数 fd 是看不到的。</li><li><strong>检测库 → 自己</strong>：枚举、采样、读 <code>/proc</code> 这些动作本身会增加线程、fd 与耗时；结果是若不先跑空检测拿基线，测出来的&#x27;异常&#x27;有一半是检测器自己造的。</li><li><strong>框架 → 结构治理</strong>：把多出来的加载器并入合法插件链、让映射有可解释来源、把初始化开销摊到启动阶段；结果是差分表上的每一项都落回基线分布。</li></ol>
+<p>第 5 拍叫&#x27;检测器自污染&#x27;，是最容易把人绕进去的一项。同一个采样脚本，在干净环境和注入环境里跑，本身引入的 fd 与线程数并不相同——因为注入环境的调度时序变了。所以基线必须是&#x27;跑同一份检测代码&#x27;得到的，而不能是&#x27;不跑检测&#x27;得到的。</p>
+<h2>差分不是比大小，是比分布</h2>
+<ul><li>先固定三件事：同机型、同系统版本、同 App 版本。跨版本比较得到的全是噪声。</li><li>在干净环境跑一遍完整检测流程，把五项信号的分布（不止均值，含 p95 与峰值时序）存成基线。</li><li>注入环境跑同一份流程，逐项算 delta；单项超阈值先记为候选，不直接下结论。</li><li>把候选组合起来看：时延 + 加载器 + 匿名映射同时偏离，才进入判定；单看一项误报率极高。</li><li>重复五轮以上，看偏离是否稳定复现；偶发尖刺多半是调度，稳定偏移才是结构差异。</li><li>改进后再跑一轮，目标是让五项都回到基线区间内，而不是让某一项&#x27;看起来小一点&#x27;。</li></ul>
+<p>第 4 步的&#x27;组合判定&#x27;是核心。单看 p95，JIT 预热、后台 GC 都能解释；但若同时多出一个来源不明的加载器和一条匿名 dex 映射，可解释空间就塌了。</p>
+<h2>可复现：五轮采样的差分脚本</h2>
+<div class="code">
+<div class="code-title">采集并比较（在目标进程内，Python/Frida 侧亦可照搬）</div>
+<pre><code>import os, statistics
+def sample():
+    return {
+        &#x27;threads&#x27;: len(os.listdir(&#x27;/proc/self/task&#x27;)),
+        &#x27;fds&#x27;: len(os.listdir(&#x27;/proc/self/fd&#x27;)),
+        &#x27;maps&#x27;: sum(1 for _ in open(&#x27;/proc/self/maps&#x27;)),
+    }
+base = sample()          # 干净环境：跑同一份检测流程得到
+rows = [sample() for _ in range(5)]
+for k in base:
+    d = [r[k] - base[k] for r in rows]
+    print(k, &#x27;deltas=&#x27;, d, &#x27;stable=&#x27;, max(d) == min(d))
+# 判定：三项都 stable 且落在基线区间内算干净；任一稳定偏移算结构差异</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>看到什么算成功</strong>：五轮里三项 <code>deltas</code> 全为 0 或落在基线噪声区间、<code>stable=True</code>，且热路径 p95 与基线相差不超过 1.5 倍。<strong>看到什么算失败</strong>：某一项出现<strong>稳定</strong>偏移（五轮都是 +1 加载器、或 fds 恒定多 2）——那是真结构差异，改名字没用；反过来若五轮忽高忽低、<code>stable=False</code>，先怀疑采样窗口撞上了 GC 或线程创建，别急着改框架。补一条 <code>adb shell cat /proc/[PID]/smaps | grep -E &#x27;VmFlags|Private_Dirty&#x27;</code> 定位那条多出来的映射有没有 back-file，能省掉半天盲猜。</p>
+<div class="tbl"><table>
+<thead><tr><th>信号</th><th>采集点</th><th>基线区间</th><th>稳定偏移的含义</th><th>最容易误判为</th></tr></thead><tbody>
+<tr><td>时延 p50/p95</td><td>热路径循环</td><td>同版本未注入分布</td><td>蹦床 / deopt 后解释执行</td><td>JIT 预热、温控降频</td></tr>
+<tr><td>ClassLoader 数</td><td>枚举 + parent 链</td><td>App 类型决定 1~5</td><td>模块加载器节点</td><td>插件化 / 加固自带加载器</td></tr>
+<tr><td>DEX 映射</td><td>maps + map_files</td><td>每条可执行段有来源</td><td>匿名 dex / 内存加载</td><td>JIT code cache</td></tr>
+<tr><td>FD 高水位</td><td>启动窗口高频采样</td><td>峰值与时序固定</td><td>pre 阶段遗留 fd</td><td>检测器自己打开的 fd</td></tr>
+<tr><td>检测器自污染</td><td>空检测对照</td><td>同脚本同流程</td><td>基线取错</td><td>框架残留</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>基线必须&#x27;跑着检测代码&#x27;去采，而不是&#x27;不检测&#x27;去采</strong>。检测器自己会开 fd、起线程、拉高时延；用一份安静环境的数字去比一份正在扫描的数字，得到的 delta 里有一大半是检测器造的，于是你怎么改框架都消不掉那几个 +1。先给自己称重，再称别人——这一拍做不到，后面五项全是噪声。</div></aside>
+<p>把这张差分表与第三部 F11 的隐藏总表对读：F11 列的是&#x27;逐项抹掉特征&#x27;，本章列的是&#x27;逐项回到分布&#x27;，后者才是 L06 四本账收口之后真正的验收标准。第四部 M02 用 <code>smaps</code> 统计匿名可执行映射，正是这里第三项的原始数据来源；L03 那句&#x27;变慢本身就是检测信号&#x27;，在本章被量化成 p95 偏移。训练营 T03 的最终一轮&#x27;改进&#x27;，判据就是这五项五轮全部 stable 且落在基线区间内——做到这一步，才敢说隐藏做完了。</p>
 </article>
 <div class="pager"><a href="l08-moving.html"><span class="dir">上一讲</span>L08 Android 14 / 16 分层适配</a><a href="l10-hook.html" style="text-align:right"><span class="dir">下一讲</span>L10 验证矩阵与工程交付</a></div>
 </main>

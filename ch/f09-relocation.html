@@ -170,6 +170,47 @@
 </div>
 <h2>9.11 实战：先禁用 TLS 再逐步加回</h2>
 <p>如果你的 payload 不依赖 TLS，可以先编译成“不使用 thread_local”的版本——这样最小实现就能跑通。等功能稳定后，再逐步加回 TLS 支持。</p>
+<h2>现场：dlopen 留下的三份账</h2>
+<p><code>dlopen(&#x27;/data/local/tmp/frida-agent.so&#x27;)</code> 一执行，现场立刻多出三份互相印证的证据：<code>/proc/self/maps</code> 里多了一行带路径的映射，linker 私有的 <code>solist</code> 里多了一个节点，某些 ROM 的 logcat 里还有一条 dlopen 记录。你学聪明了，把 so 塞进 memfd 再 dlopen——路径变成 <code>/memfd:name</code>，可 <code>solist</code> 那个节点照样在，三份账只少算了半份。</p>
+<p>所以自定义 linker 不是为了“把路径藏起来”，而是为了<strong>根本不进 linker 的账本</strong>。自己 mmap、自己重定位、自己跑构造函数，linker 压根不知道有个模块存在。代价也很直白：原本由它代劳的符号解析、TLS、BTI、卸载清理，现在每一项都归你，漏一项就换一种随机崩溃。</p>
+<h2>把一次自加载拆成八拍</h2>
+<ol><li><strong>agent-mapper → 对 ELF 文件头 → 读 e_phoff / e_phnum，遍历 PT_LOAD、PT_DYNAMIC、PT_RELRO、PT_TLS</strong> → 结果：拿到每个段的 p_vaddr、p_filesz、p_memsz、p_flags，一张待办清单成型。</li><li><strong>mapper → 对目标地址空间 → 按 p_align 一次 mmap 出整段跨度，再 mprotect 分段给 R/W/X</strong> → 结果：一段没有 back-file、没有 soname 的匿名映射；权限组合本身也会成为观测特征。</li><li><strong>mapper → 对每个 PT_LOAD → 从 p_offset 拷 p_filesz 字节，BSS 部分靠匿名页天然为 0</strong> → 结果：ELF 镜像在内存里成型，但此时所有绝对地址还指向错误位置。</li><li><strong>mapper → 对重定位表 → 先做 RELATIVE（base+addend），再 GLOB_DAT / JUMP_SLOT，最后 TLSDESC / TLS_TPREL</strong> → 结果：全局指针与外部调用目标全部落位；顺序颠倒会让构造函数读到还没修好的 NULL。</li><li><strong>mapper → 对符号查找 → 自己遍历已加载模块的 DT_SYMTAB / DT_HASH / DT_GNU_HASH，不调 dlsym</strong> → 结果：解析完成且不惊动 linker，solist 里一个节点都没多。</li><li><strong>mapper → 对 PT_GNU_RELRO → 重定位完成后 mprotect 成只读</strong> → 结果：GOT 与初始化数据不可再被改写，后续误写会当场 SIGSEGV 而不是静默损坏。</li><li><strong>mapper → 对 DT_INIT / DT_INIT_ARRAY → 按数组顺序逐个调用构造函数</strong> → 结果：Gum 与 JS 运行时被拉起来；这一拍跑得太早，前面所有重定位都白做。</li><li><strong>mapper → 对全局状态 → 记录 agent_base / agent_size 与一张资源表</strong> → 结果：后续 hook 能定位自身，卸载时按倒序还原 trampoline 并逐段 munmap，不留下空白区。</li></ol>
+<h2>复现：证明账本里真的没有你</h2>
+<p>分两组跑：一组走 dlopen 做对照，一组走自建 mapper。别只盯着 maps——<code>/proc/&lt;pid&gt;/map_files</code> 里的符号链接、匿名可执行段的数量、以及“脚本能不能正常 send”，要一起看才算验完。</p>
+<div class="code">
+<div class="code-title">对照命令 + PT_LOAD 映射骨架</div>
+<pre><code># 对照组：dlopen / memfd 都会在 maps 里留下可 grep 的字样
+adb shell &#x27;grep -F -e frida -e agent -e memfd /proc/$(pidof com.example.app)/maps&#x27;
+ 
+# 自建 mapper 组：只剩匿名可执行段，且 map_files 里搜不到名字
+adb shell &#x27;cat /proc/$(pidof com.example.app)/maps&#x27; | grep &#x27;r-xp&#x27; | grep -v &#x27;/&#x27;
+adb shell &#x27;ls -l /proc/$(pidof com.example.app)/map_files&#x27; | grep -iE &#x27;frida|agent&#x27;
+ 
+// mapper 骨架：先量出整段跨度，再一次性 mmap
+Elf64_Phdr* ph = (Elf64_Phdr*)(buf + ehdr-&gt;e_phoff);
+uintptr_t lo = ~0UL, hi = 0;
+for (int i = 0; i &lt; ehdr-&gt;e_phnum; i++) {
+  if (ph[i].p_type != PT_LOAD) continue;
+  lo = MIN(lo, ph[i].p_vaddr &amp; ~0xfffUL);
+  hi = MAX(hi, (ph[i].p_vaddr + ph[i].p_memsz + 0xfff) &amp; ~0xfffUL);
+}
+void* base = mmap(NULL, hi - lo, PROT_READ | PROT_WRITE,
+                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>算成功</strong>：<code>grep frida</code> 与 <code>map_files</code> 两处都没有输出，无路径的 <code>r-xp</code> 段只多出 1～2 段，且脚本能正常 send——说明符号解析、TLS、init_array、BTI 全过了。<strong>算失败</strong>：一进构造函数就 SIGSEGV，多半是 RELATIVE 没处理完就跑了 init_array，或漏了 TLSDESC 让线程局部变量读写错乱；在开启 BTI 的机型上一调间接函数就 SIGILL，通常是蹦床或翻译块的目标缺 <code>BTI c</code> 标记；卸载之后 maps 里留下一块权限诡异的空白区，则说明资源表没按倒序清干净。</p>
+<div class="tbl"><table>
+<thead><tr><th>阶段</th><th>具体动作</th><th>提前或遗漏的后果</th></tr></thead><tbody>
+<tr><td>映射 PT_LOAD</td><td>按 p_flags 设 R/W/X</td><td>写 GOT 时直接 SIGSEGV</td></tr>
+<tr><td>RELATIVE</td><td>*target = base + addend</td><td>全局指针整体偏移</td></tr>
+<tr><td>GLOB_DAT / JUMP_SLOT</td><td>自解析符号</td><td>第一次外部调用就跳飞</td></tr>
+<tr><td>TLS</td><td>TLSDESC / TLS_TPREL</td><td>线程局部变量读到别人的值</td></tr>
+<tr><td>RELRO</td><td>mprotect 成只读</td><td>误写静默损坏，难定位</td></tr>
+<tr><td>init_array</td><td>按数组顺序调构造函数</td><td>读到未重定位的 NULL 崩溃</td></tr>
+<tr><td>卸载</td><td>倒序还原 + munmap</td><td>悬空指针、maps 留空白区</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>越“安静”的加载方式，越要求你把 linker 几十年的脏活全干一遍</strong>。绕开账本省下的那一行 maps，换来的是“任何一项漏了就随机崩”。而 <code>memfd + dlopen</code> 看着像折中，其实三份账一份没少，只是路径变成 <code>/memfd:name</code>——半吊子方案反而最显眼：既留了 solist 节点，又多了一个一眼可疑的 memfd 路径。</div></aside>
+<p>“自己管资源表、倒序回收”这套纪律，在 KPM 部 <strong>M01 KPM 模块设计、装载与生命周期</strong> 里几乎逐字重现：KPM 同样自带 loader、自己解决符号与重定位，也要求用资源登记表逐项注销，否则卸载之后崩溃最难定位；LSPosed 部 <strong>L06 Binder、FD 与 linker 账本收口</strong> 则从另一侧收口，把“账本里不该多出来的节点”当成必须抹平的痕迹，与本章的“根本不进账本”正好是一体两面。</p>
 </article>
 <div class="pager"><a href="f08-glib.html"><span class="dir">上一讲</span>F08 Frida 线程名称处理</a><a href="f10-bionic.html" style="text-align:right"><span class="dir">下一讲</span>F10 Frida 线程结构体处理</a></div>
 </main>

@@ -173,6 +173,49 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <tr><td>native 桩 + 蹦床</td><td>高</td><td>高</td><td>框架级</td></tr>
 <tr><td>替换整个方法体</td><td>高</td><td>中</td><td>静态改动</td></tr>
 </tbody></table></div>
+<h2>贴着 invoke-virtual 那一纳秒</h2>
+<p>把镜头压到 ART 解释器/编译代码执行 <code>invoke-virtual</code> 的那一纳秒。字节码里只有一个方法索引，ART 先拿它 resolve 出一个 <code>ArtMethod*</code>，再从这个结构的 <code>ptr_sized_fields_.entry_point_from_quick_compiled_code_</code> 里读出一个地址，最后一条 <code>BLR</code> 跳过去。<strong>一次 Java 方法调用，剥到底就是「查表 + 跳转」</strong>——和 native 里的 GOT 几乎是同一套戏法，只不过表换了个名字。</p>
+<p>于是一个指针的替换，就撑起了整个 Java 层注入生态：把那个 entrypoint 换成自己的桩，顺手把 <code>access_flags_</code> 置上 <code>kAccNative</code>，调用方毫无察觉地跳进了你的代码。但这套写法有个著名的「改了却没生效」，根子不在地址算错，而在 JIT——下面会讲到那一拍。</p>
+<h2>一次替换，ART 内部走过的六拍</h2>
+<ol><li><strong>调用者</strong> → 对 <code>invoke-virtual</code> 的方法索引 → 经解析缓存拿到 <code>ArtMethod*</code> → 结果：得到一个指向方法元数据的指针，还没决定跳哪。</li><li><strong>ART</strong> → 对 <code>ArtMethod</code> 的 entrypoint 字段 → 读出编译代码入口（或解释器的桥接入口）→ 结果：确定本次调用的目标地址。</li><li><strong>hook 方</strong> → 对目标方法 → 用反射 / JVMTI / 内存扫描定位 <code>ArtMethod*</code>，备份整个结构或至少备份 entrypoint → 结果：手里有了「原路」的副本。</li><li><strong>hook 方</strong> → 对 <code>access_flags_</code> → 置 <code>kAccNative</code>，并把 <code>data_</code> 指向自己的 JNI 回调 → 结果：ART 从此按 native 方法的约定去取参数、进桩函数。</li><li><strong>hook 方</strong> → 对 entrypoint → 写入蹦床地址，必要时让 ART 挂起所有线程、刷内存屏障 → 结果：新的调用路径接通，旧路径靠第 3 步的副本保留。</li><li><strong>桩函数</strong> → 对原方法 → 经备份的 <code>ArtMethod</code> 调回去，再改参数或改返回值 → 结果：调用方拿到被加工过的结果，全程没有 Java 层的感知。</li><li><strong>检测方</strong> → 对 <code>getModifiers()</code> / 调用耗时 / 方法列表 → 看有没有方法突然带 native 标志、有没有多出 backup 方法、p95 是否右移 → 结果：痕迹落在「元数据」而不是「字节」上。</li></ol>
+<h2>动手：让方法自己报出被改了</h2>
+<div class="code">
+<div class="code-title">flag_probe.js —— 挂钩前后读一次 native 标志</div>
+<pre><code>// frida -U -f com.target.app -l flag_probe.js
+Java.perform(function () {
+  var C   = Java.use(&#x27;com.target.SignUtil&#x27;);
+  var Mod = Java.use(&#x27;java.lang.reflect.Modifier&#x27;);
+ 
+  function nativeNames() {
+    var arr = C.class.getDeclaredMethods(), out = [];
+    for (var i = 0; i &lt; arr.length; i++) {
+      if (Mod.isNative(arr[i].getModifiers())) out.push(arr[i].getName());
+    }
+    return out;
+  }
+ 
+  console.log(&#x27;native before =&#x27;, JSON.stringify(nativeNames()));
+  C.sign.implementation = function (s) {
+    console.log(&#x27;hooked in =&#x27;, s);
+    return this.sign(s);
+  };
+  setTimeout(function () {
+    console.log(&#x27;native after  =&#x27;, JSON.stringify(nativeNames()));
+  }, 500);
+});</code></pre>
+<button class="copy" type="button">复制</button>
+</div>
+<p><strong>成功</strong>的唯一硬判据是触发一次签名后打印出 <code>hooked in = ...</code>，说明入口确实被换、桩函数确实被调到；<code>native before = []</code> 变成 <code>native after</code> 里多出 sign 则进一步说明这次实现走的是「置 native 位」的经典路线。<strong>失败</strong>按三种分：<code>Java.use</code> 抛 <code>ClassNotFoundException</code>，是目标类还没被加载——别加 sleep，改挂 <code>Java.enumerateClassLoaders</code> 等它真正出现；<code>after</code> 里没出现 <code>sign</code> 也不算失败，新版本可能只用跳板而不改标志位，此时仍以 <code>hooked in</code> 为准；打印了 <code>hooked in</code> 但业务结果没变，去查 JIT 是否把方法内联进了调用者，按下面这张表做去优化再试。</p>
+<div class="tbl"><table>
+<thead><tr><th>现象</th><th>真实原因</th><th>处理动作</th></tr></thead><tbody>
+<tr><td>ClassNotFoundException</td><td>类尚未被加载 / 在别的 ClassLoader</td><td>挂 ClassLoader 的加载方法，等它出现</td></tr>
+<tr><td>hooked in 打印，业务不变</td><td>JIT 已把方法内联进调用者</td><td>触发去优化，或 hook 更外层的调用点</td></tr>
+<tr><td>after 里 native 列表没变</td><td>实现走跳板而非置标志位</td><td>以 hooked in 为判据，别依赖标志位</td></tr>
+<tr><td>换 Android 版本后读到垃圾数据</td><td>ArtMethod 布局变了</td><td>运行时探测布局，别写死偏移</td></tr>
+<tr><td>调用原方法直接崩</td><td>没遵守 ART 调用约定</td><td>改用备份副本，别跳旧入口</td></tr>
+</tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>你把 entrypoint 改对了，hook 却可能完全不生效</strong>。因为 JIT 早把这个小方法内联进了调用者——调用者手里抄着一份方法体，根本不会再去查那张表。你编辑的是一张没人再读的表。这也是 Frida 的 <code>implementation</code> 比手写稳的原因：它顺手处理了去优化与类加载时机，而不只是写了一个指针。</div></aside>
+<p>这个「查表 + 跳转」的模型，前面第 09 章的 GOT hook 已经演过一遍，只是表从 <code>.got.plt</code> 换成了 <code>ArtMethod</code>；第 11 章的「调用耗时分布」正是本章桩函数＋蹦床开销的落点；第 14 章拆 dex 时会看到，<code>class_defs</code> 里指向 <code>class_data</code> 的那些方法，最终就是被解析成这里一个个 <code>ArtMethod</code>；第五部 L03 / L07 会把去优化与跨版本布局适配逐行展开。</p>
 </article>
 <div class="pager"><a href="11.html"><span class="dir">上一讲</span>11 Android 注入检测</a><a href="13-binder.html" style="text-align:right"><span class="dir">下一讲</span>13 Android IPC 相关内容</a></div>
 </main>
