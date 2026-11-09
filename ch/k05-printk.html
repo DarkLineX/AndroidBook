@@ -102,7 +102,8 @@
 <img src="../assets/k05_trace.png" alt="图 K5-1" width="1080">
 <figcaption><b>图 K5-1</b><span>六种追踪手段的特点与适用场景</span></figcaption>
 </figure>
-<h2>5.1 六件套怎么选</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核出问题时，你看不见它、也 print 不出来。所以内核自带了一整套“观测工具”：从最土的 printk（往日志里打一行字），到 ftrace（记录函数调用），到 kprobe（在任意函数上挂个钩子），到 perf（统计性能事件）。</p><p>这一章不讲全部细节，讲<strong>怎么选</strong>：什么情况下用哪个、以及一条实用的排查顺序（先看日志，再看调用链，最后才上探针）。这些工具本身也是检测方在用的工具——你熟悉它们，才知道自己留下的痕迹会被怎么看见。</p></div></aside>
+<h2 id="sec-1">5.1 六件套怎么选</h2>
 <div class="tbl"><table>
 <thead><tr><th>手段</th><th>特点</th><th>适用</th></tr></thead><tbody>
 <tr><td>printk / dmesg</td><td>最土但最稳</td><td>早期启动、panic 前</td></tr>
@@ -112,7 +113,7 @@
 <tr><td>perf</td><td>采样与硬件计数器</td><td>热点与频率</td></tr>
 <tr><td>pstore</td><td>崩溃后保留日志到 flash</td><td>重启后取证</td></tr>
 </tbody></table></div>
-<h2>5.2 一条实用的排查顺序</h2>
+<h2 id="sec-2">5.2 一条实用的排查顺序</h2>
 <ol><li><code>dmesg</code> 先定位“在哪个阶段出的问题”。</li><li><code>ftrace</code> 确认调用路径（<code>function_graph</code> 看谁调了谁）。</li><li><code>kprobe</code> 抓参数与返回值，确认数值。</li><li><code>perf</code> 量化开销，判断能不能长期开。</li></ol>
 <div class="code">
 <div class="code-title">ftrace 与 kprobe 的最小用法</div>
@@ -126,9 +127,10 @@ echo 1 &gt; events/kprobes/myopen/enable</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>内核 hook 类工程（M03–M05）几乎都要走这条链：先确认 hook 点选对了，再确认改的字节正确，最后才谈稳定性与隐藏。</div></aside>
-<h2>5.3 本章自测</h2>
+<h2 id="sec-3">5.3 本章自测</h2>
 <ul><li>ftrace 与 kprobe 的区别是什么？</li><li>为什么 pstore 对崩溃取证特别有用？</li><li>perf 采样能告诉你什么、不能告诉你什么？</li><li>如果 dmesg 里什么都看不到，你的下一步是什么？</li></ul>
-<h2>5.4 深入：ftrace 的 function_graph 怎么读</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>函数调用图看起来像一棵树：谁调了谁、进去多久、出来多久。可输出是一行行平铺的文本，得靠缩进和箭头才能还原成树。</p><p>这一节教你怎么读这份输出：先看缩进找层级，再看时间找瓶颈。读完你面对一屏密密麻麻的调用记录时，能几分钟内定位到慢在哪一层，而不是从头看到尾。</p></div></aside>
+<h2 id="sec-4">5.4 深入：ftrace 的 function_graph 怎么读</h2>
 <p><code>function_graph</code> 的输出是一棵树：缩进表示调用深度，<code>|</code> 表示还在同一层，每行末尾的 <code>{ }</code> 或 <code>;</code> 表示这是一个调用点。看懂缩进，就看懂了调用链。</p>
 <div class="code">
 <div class="code-title">一段典型的 function_graph 输出</div>
@@ -141,10 +143,11 @@ echo 1 &gt; events/kprobes/myopen/enable</code></pre>
  0)  18.772 us    |  }</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.5 实战：定位“谁在频繁调用某个函数”</h2>
+<h2 id="sec-5">5.5 实战：定位“谁在频繁调用某个函数”</h2>
 <ol><li>打开 <code>function</code> tracer 或 <code>function_graph</code>。</li><li>设置 <code>set_ftrace_filter</code> 只保留目标函数（减少开销）。</li><li>跑一段时间，读 <code>trace</code>。</li><li>看调用者（function_graph 的父节点）与调用频率。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>性能提示：<code>function</code> tracer 的开销比 <code>function_graph</code> 小得多。先用它做“有没有被调用”的判断，再用 graph 看“谁调的”，效率更高。</div></aside>
-<h2>5.6 原理推演：为什么“静态埋点”比“动态插桩”便宜</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>静态埋点是在编译时就留好了位置，运行时只要打开开关，成本几乎为零。动态插桩是运行中临时改代码，得停线程、改指令、管缓存，每一步都可能出错。</p><p>这笔账不只是快慢，更是「稳定」：越少动别人的代码，越不容易把系统弄崩。这一节讲的是这两种方式的边界在哪，读完你能判断什么时候该退一步用便宜的。</p></div></aside>
+<h2 id="sec-6">5.6 原理推演：为什么“静态埋点”比“动态插桩”便宜</h2>
 <p>tracepoint 是编译期就埋好的：调用点直接是一个函数调用或跳转，没有“替换指令”“处理断点”的开销。而 kprobe 需要在运行时替换指令、在异常里执行回调，成本高一个数量级。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>开销</th><th>灵活性</th></tr></thead><tbody>
@@ -154,7 +157,8 @@ echo 1 &gt; events/kprobes/myopen/enable</code></pre>
 <tr><td>perf 采样</td><td>低</td><td>统计而非明细</td></tr>
 </tbody></table></div>
 <p>所以“能先用 tracepoint 就用 tracepoint”。只有当已有埋点不够用时，才上 kprobe。</p>
-<h2>5.7 数据细节：一次 kprobe 的执行路径</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>埋一个点之后，命中时会发生一串事：先保存现场、再交给你的处理函数、然后恢复、最后继续执行。这张表按顺序把这一串列出来。</p><p>它的用处是算开销和理解限制：知道每一步都要花时间，就明白为什么不能埋太多、也明白处理函数里为什么不能干重活。</p></div></aside>
+<h2 id="sec-7">5.7 数据细节：一次 kprobe 的执行路径</h2>
 <div class="code">
 <div class="code-title">简化路径</div>
 <pre><code>1. 命中被替换的指令（BRK 或跳转）
@@ -167,7 +171,8 @@ echo 1 &gt; events/kprobes/myopen/enable</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>注意第 5 步：kprobe 必须“单步执行原指令”才能继续。所以每次命中都有一次单步开销——这就是它比 tracepoint 贵的原因。</p>
-<h2>5.8 深入：trace 文件的读取姿势</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>追踪的输出是流式的：你一边读它一边写。读太慢会丢，读太快会空转，读到一半关掉还可能留下半行。</p><p>这一节讲几种常见读法的差别。读完你采集数据时不会出现「明明跑了却什么都没记下来」这种白干的情况。</p></div></aside>
+<h2 id="sec-8">5.8 深入：trace 文件的读取姿势</h2>
 <p><code>trace</code> 文件是一个环形缓冲区的快照。读它有两个坑：<strong>读的时候会阻塞写入</strong>、<strong>读太快会丢数据</strong>。</p>
 <div class="tbl"><table>
 <thead><tr><th>读取方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
@@ -176,7 +181,8 @@ echo 1 &gt; events/kprobes/myopen/enable</code></pre>
 <tr><td>per_cpu/cpuN/trace</td><td>分核读</td><td>要自己合并</td></tr>
 </tbody></table></div>
 <p>需要“持续观测”时用 <code>trace_pipe</code>；需要“事后分析”时用 <code>trace</code>。混用会丢数据。</p>
-<h2>5.9 深入：为什么 filter 能大幅降低开销</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>追踪本身很贵：每命中一个点就要记一次。如果只关心百分之一的事件，却把所有事件都记下来再筛，等于为九十九份无用数据付了全价。</p><p>filter 是在源头就筛掉。这一节讲它筛在哪一层、能筛多细，读完你会先想清楚「我到底要哪个条件」，再开追踪。</p></div></aside>
+<h2 id="sec-9">5.9 深入：为什么 filter 能大幅降低开销</h2>
 <p>ftrace 的过滤是在“记录之前”做的：不匹配的调用根本不进入缓冲区。所以“只记录我关心的那一个函数”与“记录全部”在开销上差几个数量级。</p>
 <div class="code">
 <div class="code-title">设置过滤</div>
@@ -185,12 +191,13 @@ echo &#x27;vfs_*&#x27; &gt;&gt; set_ftrace_filter        # 支持通配
 echo function &gt; current_tracer</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.10 实战：定位“谁在频繁打开文件”</h2>
+<h2 id="sec-10">5.10 实战：定位“谁在频繁打开文件”</h2>
 <ol><li>开 <code>function_graph</code>，过滤 <code>do_sys_open</code>。</li><li>跑一段时间，读 trace。</li><li>看调用的父节点（谁调的）与频率。</li><li>如果需要进程信息，配合 <code>set_ftrace_pid</code>。</li></ol>
-<h2>凌晨三点，只剩黑匣子还活着</h2>
+<h2 id="sec-11">凌晨三点，只剩黑匣子还活着</h2>
 <p>一台设备重启了，你什么都来不及抓，只有 <code>/sys/fs/pstore/console-ramoops-0</code> 里躺着最后半屏内核日志，末尾是那句熟悉又讨厌的 <code>Unable to handle kernel paging request</code>。pstore 把这块内存留到了下一次开机——它是内核留给自己的黑匣子。先能看见，才谈得上改；而看见这件事，本身有六种代价完全不同的做法。</p>
 <p>别把追踪想成打印日志。ftrace 的 function tracer 是把每个函数入口那几条 <code>nop</code> 或 <code>fentry</code> 指令<strong>现场改成一次跳转</strong>；kprobe 是把目标地址的第一条指令换成断点，让 CPU 主动撞进来。它们都是往正在跑的 CPU 里插一脚，和 K03 那套异常入口用的是同一套硬件。</p>
-<h2>从一条 nop 到一个断点，五拍插完桩</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核调试最土也最有效的办法：把某条指令临时换成一个“陷阱指令”，CPU 跑到这儿就会停下来报告，你处理完再把原指令放回去。</p><p>难的不是替换，难的是<strong>替换期间的并发</strong>：这条指令可能正被别的 CPU 执行、它所在的页可能不许写、替换的瞬间缓存里可能还是旧指令。这五拍就是把这几件事按顺序处理掉。</p></div></aside>
+<h2 id="sec-12">从一条 nop 到一个断点，五拍插完桩</h2>
 <ol><li><strong>编译期的 `-pg` 或 `-fpatchable-function-entry`</strong> 对 <strong>每个函数入口</strong> 预留几个字节的 <code>nop</code> → 结果：内核镜像里天然留了可改写位置，不开追踪时几乎零开销。</li><li><strong>`echo function &gt; current_tracer`</strong> 对 <strong>这些 nop</strong> 做批量 patch：把选中函数的入口改成跳到 ftrace trampoline → 结果：每次进函数先记一条，trampoline 再跳回原逻辑。</li><li><strong>`function_graph`</strong> 对 <strong>返回地址</strong> 也动手：入口时把 <code>return_to_handler</code> 塞进栈上的返回槽 → 结果：函数返回时也被拦一次，于是能画出调用层级与耗时。</li><li><strong>写 `kprobe_events`</strong> 对 <strong>目标地址</strong> 写入断点指令 → 结果：CPU 执行到这里触发异常，<code>pre_handler</code> 拿到 <code>pt_regs</code>，可按 x0、x1 读参数。</li><li><strong>kretprobe</strong> 对 <strong>返回点</strong> 再插一脚：先劫持返回地址，函数返回后 <code>post_handler</code> 读 <code>regs[0]</code> → 结果：参数和返回值都到手；代价是每命中一次多吃一到两次异常。</li></ol>
 <p>第 4 拍有个真实的坑：老资料里的 <code>do_sys_open</code> 在新内核已经改名成 <code>do_sys_openat2</code>。照抄只会得到一个 <code>-ENOENT</code>。正确做法是<strong>先拿运行内核的符号表确认名字</strong>——这正好接上 K07 那套地址与符号的功夫：</p>
 <div class="code">
@@ -202,7 +209,7 @@ grep -E &#x27; (do_sys_openat2|do_sys_open|__arm64_sys_openat)$&#x27; /proc/kall
 # 失败：三行都没有 =&gt; 该内核已裁剪，改挂静态 tracepoint（syscalls:sys_enter_openat）</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>一条从调用链走到崩溃现场的排查顺序</h2>
+<h2 id="sec-13">一条从调用链走到崩溃现场的排查顺序</h2>
 <ol><li><strong>`dmesg -T` 与 pstore</strong> 对 <strong>时间线</strong> 先定阶段：看 panic 前的 Call trace → 结果：知道问题出在启动、装载还是运行期。</li><li><strong>`function_graph`</strong> 对 <strong>调用关系</strong> 画层级：确认是谁调了目标函数 → 结果：把可疑面从整个内核收窄到一条路径。</li><li><strong>kprobe 与 kretprobe</strong> 对 <strong>参数与返回值</strong> 取值：确认数值是否和预期一致 → 结果：把怀疑变成可复述的具体数据。</li><li><strong>`perf stat`</strong> 对 <strong>开销</strong> 量化：看每命中一次多花多少指令与周期 → 结果：判断这个探针能不能长期开着。</li><li><strong>关探针并回归</strong> 对 <strong>同一组用例</strong> 重跑一遍 → 结果：确认刚才看到的行为不是观测本身造出来的。</li></ol>
 <div class="code">
 <div class="code-title">动手：从调用链走到崩溃现场</div>

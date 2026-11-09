@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">M06</span><h1>SELinux 与 FD 安全扩展</h1><p class="ch-en">task_ext、avc_denied、inode/file/socket SID、f_security、FD__USE、xattr/SO_PEERSEC 长度 ABI</p></div>
 <p class="lead">avc_denied 是第一现场；f_security 与 SID 是第二现场。</p>
-<h2>6.1 一次访问判定的关键对象</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>SELinux 的判定发生在内核里，所以从内核里改它，比从用户态改策略文件要彻底得多。但这一章的重点不是“怎么改”，而是<strong>“改哪里才不会崩、才不会被发现”</strong>。</p><p>第一现场是 <code>avc_denied</code>——每次拒绝都会走这个函数，在这里放行最直接。第二现场是对象上挂的安全标记（SID）：文件的、fd 的、socket 的都各有一份，改一处不改另一处，两处就会互相矛盾。</p><p>这一章还讲一个特别隐蔽的坑：有些接口的长度参数是 ABI 约定死的，你多返回几个字节，调用方直接越界。</p></div></aside>
+<h2 id="sec-1">6.1 一次访问判定的关键对象</h2>
 <figure>
 <img src="../assets/m06_selinux.png" alt="图 M6-1" width="1080">
 <figcaption><b>图 M6-1</b><span>五个关键对象与两条实现路线</span></figcaption>
@@ -111,7 +112,7 @@
 <tr><td>f_security</td><td>file 结构上挂的安全 blob</td></tr>
 <tr><td>FD__USE / xattr</td><td>fd 使用与属性查询的检查</td></tr>
 </tbody></table></div>
-<h2>6.2 两条实现路线</h2>
+<h2 id="sec-2">6.2 两条实现路线</h2>
 <ol><li><strong>改判定结果</strong>：在 <code>avc_denied</code> 里放行，或在钩子里直接返回允许。见效快，但“策略本应拒绝却允许了”本身是异常。</li><li><strong>换身份干活</strong>：让操作发生在有权限的域里（内核线程、特定 context）。更干净，但实现更复杂。</li></ol>
 <div class="code">
 <div class="code-title">观察现场</div>
@@ -120,12 +121,13 @@ cat /proc/self/fdinfo/&lt;fd&gt;
 getfattr -n security.selinux /path/to/file</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.3 ABI 陷阱</h2>
+<h2 id="sec-3">6.3 ABI 陷阱</h2>
 <p><code>SO_PEERSEC</code> 与 xattr 的“长度语义”在不同版本有差异：有的返回实际长度，有的返回缓冲区所需长度，有的在缓冲区不足时返回截断值。取值前先查长度再分配，是最稳的写法。</p>
 <aside class="note"><span class="note-tag">要点</span><div>工程提醒：SELinux 相关代码最容易在“版本升级”时崩。把“取长度 → 分配 → 再取”写成固定套路，能省掉大量排查时间。</div></aside>
-<h2>6.11 本章自测</h2>
+<h2 id="sec-4">6.4 本章自测</h2>
 <ul><li>task SID 与 inode SID 分别代表什么？</li><li>两条实现路线各自的痕迹是什么？</li><li>SO_PEERSEC 的长度语义为什么容易出错？</li><li>如果策略拒绝了你需要放行的操作，你怎么定位是哪条规则？</li></ul>
-<h2>6.4 深入：一次 avc 判定的路径</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每次访问被拒，系统都会走同一条判断路：先看是谁、再看要碰什么、然后查规则、最后给结论。拒绝的时候还会往日志里写一行。</p><p>知道这条路怎么走，就知道该在哪一步插手、以及插手之后日志会变成什么样。这一节把这条路走一遍，读完你排查「为什么被拒」时，第一步就会去看那行日志。</p></div></aside>
+<h2 id="sec-5">6.5 深入：一次 avc 判定的路径</h2>
 <p>访问发生时，SELinux 取“主体 SID”（task 的）与“客体 SID”（inode/file 的），查访问向量缓存（AVC）；未命中就查策略库，得出允许/拒绝，并把结果缓存起来。拒绝时调用 <code>avc_denied</code>，同时打印 audit 日志。</p>
 <div class="code">
 <div class="code-title">这条路径上的 hook 点</div>
@@ -135,7 +137,7 @@ security_file_permission()  // LSM 钩子
 security_inode_permission()</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.5 实战：拿到一个 fd 的 SID</h2>
+<h2 id="sec-6">6.6 实战：拿到一个 fd 的 SID</h2>
 <div class="code">
 <div class="code-title">getpeercon / fgetxattr 思路</div>
 <pre><code>char buf[256]; socklen_t len = sizeof(buf);
@@ -145,7 +147,8 @@ getsockopt(fd, SOL_SOCKET, SO_PEERSEC, buf, &amp;len);
 getxattr(path, &quot;security.selinux&quot;, buf, sizeof(buf));</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.6 原理推演：为什么“改判定”比“改策略”危险</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改策略是在规则表里加一条允许，位置固定、有迹可循，出问题也好回滚。改判定是直接插手「这次访问到底放不放行」的那一刻，等于把裁判换掉。</p><p>后者更灵活，但也更容易把整个系统的判断逻辑带偏：一旦你在某个分支上答错，受影响的不只是你想放行的那一次。这一节讲这条风险的形状，读完你会先问「能不能只用加规则解决」。</p></div></aside>
+<h2 id="sec-7">6.7 原理推演：为什么“改判定”比“改策略”危险</h2>
 <p>改策略是“静态的、可审计的”；改判定是“动态的、隐藏的”。前者会留下文件与版本痕迹，后者只在运行时生效——但也意味着“一旦被发现在改判定”，就非常可疑。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>痕迹</th><th>可审计性</th></tr></thead><tbody>
@@ -154,7 +157,8 @@ getxattr(path, &quot;security.selinux&quot;, buf, sizeof(buf));</code></pre>
 <tr><td>换域执行</td><td>上下文变化</td><td>中</td></tr>
 </tbody></table></div>
 <p>所以“最干净”的其实是第三条：不改判定，只是“让操作发生在有权限的地方”。</p>
-<h2>6.7 数据细节：avc 日志的字段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每次访问被拒，系统会往日志里写一行，格式固定：谁、想干什么、对什么、结果如何、以及一个编号。</p><p>这张表逐字段解释这行日志。它的用处是「一眼定位」：看是谁和什么之间被拒，就知道缺哪条规则，不用把整个策略读一遍。</p></div></aside>
+<h2 id="sec-8">6.8 数据细节：avc 日志的字段</h2>
 <div class="code">
 <div class="code-title">一条 avc denied</div>
 <pre><code>avc: denied { ptrace } for
@@ -165,7 +169,8 @@ getxattr(path, &quot;security.selinux&quot;, buf, sizeof(buf));</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>四个关键字段：<code>scontext</code>（谁）、<code>tcontext</code>（对谁）、<code>tclass</code>（什么类型）、<code>perm</code>（什么操作）。写 allow 规则就是把这四个填进去。</p>
-<h2>6.8 深入：SID 是怎么算出来的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统判断「能不能碰」，靠的是一串编号而不是名字。这串编号是从上下文算出来的，同样的上下文永远算出同样的编号。</p><p>这一节讲这个算法怎么走。读完你就明白为什么「改个名字」不会改变判定结果，以及要改到哪一层才有用。</p></div></aside>
+<h2 id="sec-9">6.9 深入：SID 是怎么算出来的</h2>
 <p>SID 是一个 32 位整数，由“安全上下文”在策略编译时分配。所以同一个上下文，在不同设备上的 SID 数值可能不同——不要把它当作跨设备的稳定标识。</p>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>SID 来源</th><th>稳定性</th></tr></thead><tbody>
@@ -174,7 +179,8 @@ getxattr(path, &quot;security.selinux&quot;, buf, sizeof(buf));</code></pre>
 <tr><td>socket</td><td>创建时的上下文</td><td>随连接</td></tr>
 </tbody></table></div>
 <p>实用推论：跨设备比较 SID 没有意义；同设备内比较 SID 才有意义。写检测规则时要注意这一点。</p>
-<h2>6.9 深入：f_security 的位置与作用</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每个打开的文件在系统里都挂着一小块「安全相关的附加信息」。它跟着这个打开动作走，不跟着文件本身走。</p><p>所以同一个文件被打开两次，可能是两份独立的信息。这一节讲这块东西在哪、管什么，读完你排查「为什么这个进程能开、那个不能」时，会想到往这儿看。</p></div></aside>
+<h2 id="sec-10">6.10 深入：f_security 的位置与作用</h2>
 <p><code>struct file</code> 里有一个 <code>f_security</code> 指针，指向“这个打开实例的安全信息”。它通常存的是“打开时的 SID”以及一些策略相关的缓存。改它，等于改“这次打开被如何看待”。</p>
 <div class="code">
 <div class="code-title">概念上的访问</div>
@@ -184,7 +190,7 @@ void* sec = f-&gt;f_security;
 <button class="copy" type="button">复制</button>
 </div>
 <p>注意：不同 LSM（SELinux / AppArmor / 厂商自定义）的 <code>f_security</code> 布局不同。直接强转是危险的，必须先确认当前的 LSM 组合。</p>
-<h2>6.10 实战：验证一次权限改动是否生效</h2>
+<h2 id="sec-11">6.11 实战：验证一次权限改动是否生效</h2>
 <div class="code">
 <div class="code-title">三步</div>
 <pre><code>1. 改动前：执行目标操作，应失败
@@ -194,7 +200,7 @@ void* sec = f-&gt;f_security;
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>如果第 3 步成功但 dmesg 里仍有 denied，说明你的改动“绕过了检查”而不是“通过了检查”——这两种在检测方眼里是完全不同的信号。</div></aside>
-<h2>一次 open 被拒之前，内核已经问过五遍</h2>
+<h2 id="sec-12">一次 open 被拒之前，内核已经问过五遍</h2>
 <p>dmesg 里滚出一行 <code>avc: denied</code>，用户态只拿到一个轻描淡写的 <code>EACCES</code>。把镜头拉到 EL1：DAC 先按 uid/gid/mode 过了一遍，然后 LSM 钩子从 <code>current_cred</code> 取出主体域，从 <code>inode</code> 的安全 blob 取出客体类型，补上 class 与权限集合，最后在 AVC 缓存里查一次。<strong>五个要素排成一列，缺一个都判不出来</strong>——而日志里那一行，只是这列走完之后留下的尾注。</p>
 <p>也正因为判定发生在 EL1，用户态能做的只有“换一个身份去问”，内核态却能看见“问的是什么、按哪条规则判的、判定结果缓存在哪”。<code>f_security</code>、<code>FD__USE</code>、<code>SO_PEERSEC</code> 这些扩展点，本质上都是在这条判定链上补一次检查或换一个取值。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_selinux">
@@ -225,7 +231,8 @@ void* sec = f-&gt;f_security;
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_selinux.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["取出进程的 SELinux 域（主体）", "取出目标的类型与 SID（客体）", "确定操作类别与权限集合", "查 AVC 缓存与 policy 规则", "命中则放行，未命中拒绝并记 avc_denied"]</script>
-<h2>一次判定的逐拍拆解</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>被拒绝的时候，日志往往只有一行 <code>avc: denied</code>。想修，就得知道这次判定到底比对了什么——因为它不是一次比较，而是一串：先看进程属于哪个域，再看目标对象带什么标签，再查规则表里有没有允许这一对，最后还要看这次操作带没带额外条件。</p><p>这一节把这一串按顺序拆开。看完你应该能在看到一行 denied 时，立刻说出“缺的是哪一条规则的哪一半”，而不是盲目地加 <code>permissive</code>。</p></div></aside>
+<h2 id="sec-13">一次判定的逐拍拆解</h2>
 <ol><li><strong>系统调用 → 对 inode</strong>：先走 DAC，按 <code>i_uid</code>/<code>i_gid</code> 与 mode 位判断，结果是不过就直接返回 <code>EACCES</code>，根本进不了 SELinux；很多“以为是 SELinux 的问题”其实停在这一步，日志里连一行 avc 都没有。</li><li><strong>LSM 钩子 → 对 current</strong>：从 <code>cred</code> 与 task 的 security blob 取主体 SID，得到 <code>scontext</code>（如 <code>u:r:untrusted_app:s0</code>），结果是判定有了“谁在操作”；SID 是策略编译时分配的 32 位整数，同一域在不同设备上数值可能不同。</li><li><strong>LSM 钩子 → 对 inode / file / socket</strong>：取客体 SID、类型与 <code>tclass</code>（file、dir、sock_file…），结果是判定有了“对什么操作”；<code>file-&gt;f_security</code> 存的是打开那一刻的快照，与 inode 当前的 xattr 并不总是同步。</li><li><strong>AVC → 对 (ssid, tsid, tclass, requested) 四元组</strong>：先查缓存，未命中再查 policy 的 allow 规则，结果是生成 granted 位图；未命中且非 permissive 时调 <code>avc_denied</code> 写审计日志并拒绝，命中则把结果缓存下来供下次用。</li><li><strong>扩展点 → 对 f_security / FD__USE / SO_PEERSEC</strong>：在 fd 传递、跨进程 socket 取对端上下文时补一次 use 判定与长度探测，结果决定 fd 能否被对方使用、对端上下文能否被完整读出；长度语义按“先取长度、再分配、再取值”三段写，最稳。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>现场对象</th><th>内核结构</th><th>取值方式</th><th>常见误判</th></tr></thead><tbody>
@@ -236,12 +243,12 @@ void* sec = f-&gt;f_security;
 <tr><td>AVC 结论</td><td>avc_denied 日志</td><td>dmesg 四要素</td><td>只看 EACCES，忽略 permissive=1</td></tr>
 <tr><td>FD__USE</td><td>fd 使用检查点</td><td>fd 传递路径</td><td>漏检导致凭 fd 绕过判定</td></tr>
 </tbody></table></div>
-<h2>两条路线，痕迹落在不同的地方</h2>
+<h2 id="sec-14">两条路线，痕迹落在不同的地方</h2>
 <p>想在内核侧让一次被拒的操作放行，通常只有两种做法。第一种是改判定结果：在 <code>avc_denied</code> 路径或 LSM 钩子里直接返回允许，见效快，但会在审计里留下“策略本应拒绝却放行了”的异常，而且 AVC 缓存里那个 granted 位图与 policy 对不上，别人重查一次就能发现。第二种是换身份干活：让操作发生在本来就有权限的域里，例如交给一个内核线程或合适的 context，判定链从头到尾自洽，代价是要额外处理 cred、fd 与目录归属。</p>
 <p>实用判别法：改动后重跑同一操作，若 <code>dmesg</code> 里仍出现新的 <code>avc: denied</code> 但调用成功了，说明走的是第一条；若日志干净、且 <code>cat /proc/self/attr/current</code> 与操作发起者的域一致，才更像第二条。<strong>“绕过了检查”和“通过了检查”在日志里长得几乎一样，在检测方眼里却是完全不同的信号</strong>。</p>
-<h2>长度语义按三段写，别猜</h2>
+<h2 id="sec-15">长度语义按三段写，别猜</h2>
 <ol><li><strong>第一次调用 → 对 SO_PEERSEC / getxattr</strong>：传空缓冲区或极小长度，拿到内核给出的所需长度或实际长度，结果是知道要分配多大；不同版本这里返回的含义不同，必须当作“提示值”而不是直接拿来用。</li><li><strong>你 → 对缓冲区</strong>：按提示值加上余量分配，并把末位预留给结束符，结果是不管返回的是实际长度还是所需长度都装得下；按第一次返回值原样分配，恰好会在截断版本上少一个字节。</li><li><strong>第二次调用 → 对同一对象</strong>：用足量缓冲区再取一次，并核对返回长度不超过分配量，结果是拿到完整上下文串；两次返回不一致且第二次被截断，就说明第一次的语义是“所需长度”，要按这一支处理。</li></ol>
-<h2>可复现实验：制造一次拒绝，把四要素凑齐</h2>
+<h2 id="sec-16">可复现实验：制造一次拒绝，把四要素凑齐</h2>
 <div class="code">
 <div class="code-title">从 getenforce 到 fdinfo 的完整现场</div>
 <pre><code># 1. 确认策略状态与当前域

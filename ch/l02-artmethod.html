@@ -98,13 +98,15 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L02</span><h1>LSPlant Java Hook 原理</h1><p class="ch-en">ArtMethod、动态桩类、trampoline、backup、entrypoint、原方法调用</p></div>
 <p class="lead">一个 ArtMethod 背后，是一整套“桩类 + 蹦床 + 备份”的设计。</p>
-<h2>2.1 五个环节</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Java Hook 的核心动作只有一句：把方法“档案袋”里的代码地址换掉。但<strong>换了之后原方法就调不回去了</strong>——地址已经被你覆盖，你手里没有“原来的路”。</p><p>LSPlant 的解法是三步：先备份整个档案袋（或至少备份那个地址），再造一个“桩”来接住调用，最后在桩里需要的时候，用备份的档案袋把原方法调一遍。</p><p>为什么要造“桩”而不是直接写汇编？因为 Java 方法有参数、有返回值、有类型检查，手写汇编要处理所有这些约定，而生成一个“假的原方法”让运行时自己去处理，要稳得多。</p></div></aside>
+<h2 id="sec-1">2.1 五个环节</h2>
 <figure>
 <img src="../assets/l_l02.png" alt="图 L2-1" width="1080">
 <figcaption><b>图 L2-1</b><span>从定位 ArtMethod 到备份原方法的完整链路</span></figcaption>
 </figure>
 <ol><li><strong>定位 ArtMethod</strong>：反射或 JVMTI 拿到指针。</li><li><strong>生成桩类</strong>：动态 dex / 类，承载你的回调逻辑。</li><li><strong>写蹦床</strong>：汇编级跳板，保存现场、调用回调、恢复现场。</li><li><strong>替换 entrypoint</strong>：改 ArtMethod 的入口指针。</li><li><strong>备份原方法</strong>：保留一个可调用的原实现（backup）。</li></ol>
-<h2>2.2 为什么不能“直接跳回旧入口”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>看起来最省事的做法是「改完再跳回去，像什么都没发生」。可跳回去之后，调用方拿到的寄存器状态、栈布局已经不是它期待的样子了。</p><p>所以中间必须有一段「把现场恢复成原样」的活。这一节讲这段活为什么不能省，读完你会明白为什么这类实现总要多绕一层，而不是少写几行。</p></div></aside>
+<h2 id="sec-2">2.2 为什么不能“直接跳回旧入口”</h2>
 <p>因为 ART 的调用约定不是简单的函数调用：参数可能在寄存器与栈之间按特定规则分布，还有 <code>kAccNative</code> 标志、以及 quick 调用与 interpreter 调用的差异。所以备份方法要经过专门处理，才能被安全调用。</p>
 <div class="tbl"><table>
 <thead><tr><th>细节</th><th>不处理的后果</th></tr></thead><tbody>
@@ -113,7 +115,7 @@
 <tr><td>synchronized 方法</td><td>锁语义丢失，出现竞态</td></tr>
 <tr><td>@CriticalNative</td><td>跳过了部分检查，处理更特殊</td></tr>
 </tbody></table></div>
-<h2>2.3 检测视角</h2>
+<h2 id="sec-3">2.3 检测视角</h2>
 <div class="code">
 <div class="code-title">不用读内存也能查的三件事</div>
 <pre><code>1. Method.getModifiers() 里是否多了 native
@@ -122,9 +124,10 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>学习建议：先用 Frida 的 <code>implementation</code> 跑通“改行为”，再读 LSPlant 源码理解“为什么这么写”。顺序反了容易被细节淹没。</div></aside>
-<h2>2.4 本章自测</h2>
+<h2 id="sec-4">2.4 本章自测</h2>
 <ul><li>五个环节里，哪一步最容易出错？</li><li>为什么备份方法不能简单指向旧 entrypoint？</li><li>synchronized 方法被 hook 后，锁语义还在吗？</li><li>哪三件事不用读内存就能发现 Java Hook？</li></ul>
-<h2>2.11 深入：蹦床（trampoline）到底做什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改掉方法入口之后，原来的方法体还在那儿，只是没人跳过去了。蹦床就是那条「跳回去」的路：先把现场恢复成原样，再跳到原方法真正的开头。</p><p>没有它，被 hook 的方法就再也调不到原实现了。这一节讲这条路怎么搭、以及为什么它比「直接抄一段原指令」更可靠。</p></div></aside>
+<h2 id="sec-5">2.5 深入：蹦床（trampoline）到底做什么</h2>
 <p>蹦床是一小段汇编：保存会被破坏的寄存器、准备参数、调用你的 Java 回调（或 native 实现）、恢复寄存器、然后跳回原方法或返回。它的正确性完全依赖“对 ART 调用约定的精确理解”。</p>
 <div class="code">
 <div class="code-title">蹦床的概念结构</div>
@@ -137,9 +140,10 @@
     b   original_entry_or_return</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>2.5 实战：hook 之后方法变慢很多，怎么办</h2>
+<h2 id="sec-6">2.6 实战：hook 之后方法变慢很多，怎么办</h2>
 <ol><li>确认是不是每次调用都要走一遍 Java 回调（开销大）。</li><li>把热点逻辑移到 native 侧，减少跨语言调用。</li><li>只在必要时 hook（比如只在启动阶段）。</li><li>如果只是想“观察”，考虑用 trace 而不是 hook。</li></ol>
-<h2>2.6 原理推演：为什么需要“桩类”而不是“直接写汇编”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>直接写汇编能做的事很多，但每一处都要自己管：参数怎么接、返回值怎么给、异常怎么抛、栈怎么摆。写错一个字节就是随机崩溃。</p><p>桩类是先用「正常代码」把该有的形状搭好，再把跳转接上去。这样绝大部分麻烦交给编译器，你只管一处跳转。这一节讲这笔交换值不值，读完你知道什么时候该硬写、什么时候该搭桩。</p></div></aside>
+<h2 id="sec-7">2.7 原理推演：为什么需要“桩类”而不是“直接写汇编”</h2>
 <p>因为 hook 回调通常要访问 Java 对象（参数、this、返回值）。如果全部用汇编处理，就要手动处理 JNI 引用、GC、异常——成本极高。用桩类可以把这些交给 ART。</p>
 <div class="tbl"><table>
 <thead><tr><th>实现</th><th>处理 Java 对象</th><th>复杂度</th></tr></thead><tbody>
@@ -148,7 +152,8 @@
 <tr><td>纯 Java 替换</td><td>ART 代劳</td><td>低（但受限）</td></tr>
 </tbody></table></div>
 <p>所以主流框架都是“桩类 + 蹦床”的组合：蹦床负责“切换”，桩类负责“逻辑”。</p>
-<h2>2.7 数据细节：一次 hook 涉及的内存对象</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改一个方法，表面上是改一处，实际会牵动好几个对象：原方法、备份、桩、跳板、可能还有缓存。它们各有各的生命周期。</p><p>这张表把这些对象列出来。它的用处是排查「改了没生效」或者「撤销后还残留」——对着表一项项确认，比凭印象猜可靠。</p></div></aside>
+<h2 id="sec-8">2.8 数据细节：一次 hook 涉及的内存对象</h2>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>位置</th><th>生命周期</th></tr></thead><tbody>
 <tr><td>原 ArtMethod</td><td>dex 的 class_def 区</td><td>与类同生命周期</td></tr>
@@ -156,7 +161,8 @@
 <tr><td>蹦床代码</td><td>匿名可执行页</td><td>手动管理</td></tr>
 <tr><td>备份方法</td><td>动态类或匿名页</td><td>手动管理</td></tr>
 </tbody></table></div>
-<h2>2.8 深入：为什么“备份方法”要单独存在</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改完之后，原来的实现还得能调到：有的是为了在里面调原逻辑，有的是为了之后还原。可原来那份如果没有单独存起来，改完就真的没了。</p><p>这一节讲这份备份为什么要单独放、放哪儿才安全。读完你不会再把「备份」和「改后的那份」混成一个。</p></div></aside>
+<h2 id="sec-9">2.9 深入：为什么“备份方法”要单独存在</h2>
 <p>因为你要“既能拦，又能调原逻辑”。如果只替换入口、不留备份，那原逻辑就永远执行不到了。备份方法的作用就是“让原逻辑还能被调用”。</p>
 <div class="tbl"><table>
 <thead><tr><th>实现</th><th>能否调原方法</th><th>代价</th></tr></thead><tbody>
@@ -165,7 +171,8 @@
 <tr><td>蹦床里恢复原入口</td><td>能</td><td>高</td></tr>
 </tbody></table></div>
 <p>主流做法是第一种：复制一份 ArtMethod，把 entrypoint 指回原实现。这样调用备份就等于调用原方法。</p>
-<h2>2.9 深入：桩类为什么要“动态生成”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>桩的形状取决于被改的那个方法：参数几个、什么类型、返什么。手写就得每个方法写一份，几百个方法根本写不完。</p><p>动态生成是按需现造。这一节讲这套生成怎么保证不出错，读完你遇到「某个特定方法一改就崩」时，会先去看生成出来的形状对不对。</p></div></aside>
+<h2 id="sec-10">2.10 深入：桩类为什么要“动态生成”</h2>
 <p>因为你要 hook 的方法签名是运行时才知道的。预先写死的类覆盖不了任意签名，所以必须在运行时“按目标方法的签名，生成一个匹配的类”。</p>
 <div class="code">
 <div class="code-title">概念流程</div>
@@ -175,23 +182,24 @@
 4. 把目标方法的 entrypoint 指向它</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>2.10 实战：怎么确认“原方法调用”是通的</h2>
+<h2 id="sec-11">2.11 实战：怎么确认“原方法调用”是通的</h2>
 <div class="code">
 <div class="code-title">最小验证</div>
 <pre><code>// hook 一个纯函数（无副作用），比如 String.length
 // 在回调里调用原方法，比对返回值是否与不 hook 时一致</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>一次普通调用落到了哪里</h2>
+<h2 id="sec-12">一次普通调用落到了哪里</h2>
 <p>业务代码写下一行 <code>tv.setText(s)</code>，编译成 DEX 后是 <code>invoke-virtual</code>。ART 解释或执行这条指令时，做的事朴素得近乎粗暴：从方法的 <code>ArtMethod*</code> 里取出 <code>entry_point_from_quick_compiled_code_</code>，按调用约定摆好寄存器，然后跳过去。<strong>整个 Java Hook 的全部秘密，就是把这个指针换成别人。</strong>问题在于，换完之后原来的实现去哪了，谁来接住那些散落在寄存器和栈上的参数，以及怎么让 ART 别再用它自己缓存好的那份机器码。</p>
 <p>LSPlant 的答案不是&#x27;改一行指针&#x27;，而是造一整套替身：一个动态生成的桩类、一段汇编蹦床、一份完整的 ArtMethod 副本。四样东西凑齐，才能既拦下调用又安全地调回原方法。少了任何一样，表现都不是&#x27;功能不生效&#x27;，而是随机崩溃——这恰恰是这类框架最难调的地方。</p>
-<h2>一个 ArtMethod 被改成了什么</h2>
+<h2 id="sec-13">一个 ArtMethod 被改成了什么</h2>
 <ol><li><strong>JNI 层 → 目标 ArtMethod</strong>：用 <code>art::ArtMethod::FromReflectedMethod</code> 从反射拿到的 <code>Method</code> 解包出真实地址；结果是拿到一个可写的、长度等于 <code>art::ArtMethod</code> 大小的结构体。</li><li><strong>框架 → 动态桩类</strong>：生成一份极小的 DEX，里面有一个与目标方法签名一致的 stub，经 <code>InMemoryDexClassLoader</code> 加载；结果是回调逻辑有了一个 ART 认得的宿主类。</li><li><strong>框架 → 原结构体</strong>：<code>memcpy</code> 出一份完整的 ArtMethod 作为 backup，把它的 <code>declaring_class_</code> 指向桩类、清掉 native 标志、恢复原入口；结果是原实现有了一个能被反射安全调用的独立身份，GC 不会把两个方法搅在一起。</li><li><strong>框架 → 目标 access_flags_</strong>：给目标加上 <code>kAccNative</code>（及 fast-native 变体），把 quick 入口换成 <code>art_quick_generic_jni_trampoline</code>，<code>entry_point_from_jni_</code> 指向蹦床；结果是 ART 认为这是一个 JNI 方法，乖乖走带完整参数封送的路径。</li><li><strong>蹦床 → 回调分发器</strong>：保存现场后把参数转发进 C++ 分发器，再转给 Java 层的 <code>beforeHookedMethod</code>；结果是最外层的模块拿到 <code>MethodHookParam</code>，可以读参数、改参数、直接返回。</li><li><strong>分发器 → backup</strong>：模块不 <code>returnEarly</code> 时，分发器通过反射包装调用 backup；结果是原方法在正确的调用约定下执行，返回值沿链回传，锁语义与异常行为都还在。</li></ol>
 <p>第 3 拍值得停一下：backup 是<strong>副本</strong>，不是指针。因为目标 ArtMethod 接下来会被改成 native，若只留一个&#x27;旧入口地址&#x27;，ART 查 <code>declaring_class_</code> 时拿到的已经是改过的那份，<code>synchronized</code> 的锁对象、<code>@CriticalNative</code> 的快路径、<code>kAccNative</code> 的参数封送全部会错位。复制整个结构体并给它换一个声明类，才是最省事的正确做法。</p>
-<h2>蹦床逐拍走一遍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Java hook 有个绕不过去的麻烦：你替换了方法入口，可如果原来的逻辑里有人调用“原方法”，它就会又跑进你自己写的代码里，无限循环。</p><p>蹦床（trampoline）就是为解决这个：在别处造一份“原方法的备份”，让“调用原方法”这条路径指向备份，而不是指向被改过的入口。这样你改你的、它跑它的。这一节把备份怎么造、跳转怎么接、什么时候要重新造，一拍一拍走一遍。</p></div></aside>
+<h2 id="sec-14">蹦床逐拍走一遍</h2>
 <ul><li>调用者执行 <code>invoke-virtual</code>，ART 查 <code>ArtMethod</code>，发现 <code>kAccNative</code>，转入 generic JNI trampoline。</li><li>trampoline 按 ABI 把 x0–x7 与栈上参数、以及 <code>ArtMethod*</code> 一起交给 <code>entry_point_from_jni_</code> 处的蹦床。</li><li>蹦床保存 LR 与被调用者保存寄存器，建立可回溯的栈帧，然后跳进 C++ 回调分发器。</li><li>分发器组装 <code>MethodHookParam</code>（<code>thisObject</code> / <code>args</code> / <code>result</code>），按 priority 依次调用 before 回调。</li><li>若无人 <code>setResult</code> / <code>setThrowable</code>，分发器用反射包装调用 backup，把返回值写回 <code>param.result</code>。</li><li>after 回调逆序执行，蹦床恢复寄存器并返回；调用者看到的就是一次&#x27;正常&#x27;的方法调用。</li></ul>
 <p>这也解释了为什么 Java Hook 的开销不是固定的：一次调用走完六拍，比直接跳进 JIT 编译好的机器码多出参数封送、对象分配与至少两次跨层跳转。方法越热，这条增量在 p95 上越显眼——L03 的 deopt 和 L09 的时延侧信道，都是从这里长出来的。</p>
-<h2>用反射把改动照出来</h2>
+<h2 id="sec-15">用反射把改动照出来</h2>
 <div class="code">
 <div class="code-title">不用读内存，三行 Java 就能看到 hook 后的形态</div>
 <pre><code>// 在目标进程内执行（如模块 handleLoadPackage 里打日志）

@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">13</span><h1>Android IPC 相关内容</h1><p class="ch-en">常见服务与 Binder</p></div>
 <p class="lead">Android 的所有“系统状态”，都是某个 Binder 服务说了算。</p>
-<h2>13.1 一次跨进程调用的路径</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Android 里所有“系统状态”——现在前台是谁、装了什么 App、电量多少——都不是某个 App 自己算出来的，而是<strong>问系统服务要的</strong>。而“问”这个动作，走的是 Binder。</p><p>Binder 是 Android 的跨进程快递：你把请求打包成一个包裹，写上收件地址（哪个服务、哪个方法），内核负责送到，再把回执带回来。App 和系统服务之间隔着进程边界，谁也直接读不到对方的内存，所有信息都得走这个快递。</p><p>这就解释了一件事：想伪造系统信息，改 App 自己的代码没用，得在半路截下包裹。这一章讲这条路径具体怎么走、最常打交道的是哪五个服务、以及为什么“服务层”是隐藏方案的必争之地。</p></div></aside>
+<h2 id="sec-1">13.1 一次跨进程调用的路径</h2>
 <figure>
 <img src="../assets/f13_binder.png" alt="图 13-1" width="1080">
 <figcaption><b>图 13-1</b><span>App → libbinder → 驱动 → system_server 的调用路径</span></figcaption>
 </figure>
 <p>App 调 <code>getService(&quot;package&quot;)</code> 拿到一个代理对象，调用它的方法时：参数被写进 Parcel，通过 <code>ioctl(BINDER_WRITE_READ)</code> 交给驱动；驱动按 handle 找到目标进程的 Binder 节点，把事务投递到目标线程池；目标执行完后把结果写回 Parcel，驱动拷回调用方并唤醒它。</p>
-<h2>13.2 五个最常打交道的服务</h2>
+<h2 id="sec-2">13.2 五个最常打交道的服务</h2>
 <div class="tbl"><table>
 <thead><tr><th>服务</th><th>用途</th><th>检测/利用价值</th></tr></thead><tbody>
 <tr><td>package</td><td>包信息、签名、安装列表</td><td>root 应用是否可见</td></tr>
@@ -113,7 +114,8 @@
 <tr><td>keystore</td><td>密钥与证明</td><td>三绿相关</td></tr>
 <tr><td>servicemanager</td><td>服务枚举</td><td>隐藏的服务是否注册</td></tr>
 </tbody></table></div>
-<h2>13.3 为什么“服务层”是隐藏的必争之地</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>很多「这台设备上有什么」的信息，不是进程自己记的，而是由一个中心服务统一保管。想藏东西，光改自己那份没用，别人一问中心服务照样露。</p><p>所以战场会从「改进程」转到「改服务」。这一节讲这层为什么重要，读完你排查「明明改了怎么还被发现」时，会想到去问那一层。</p></div></aside>
+<h2 id="sec-3">13.3 为什么“服务层”是隐藏的必争之地</h2>
 <p>很多隐藏方案只改了文件视图，忘了服务层。结果本地 <code>ls</code> 看不到某个应用，但通过 <code>PackageManager</code> 一查还在；或者本地的 <code>/proc</code> 干净，但 <code>ActivityManager</code> 的运行进程列表里多了一个。</p>
 <p>所以完整的隐藏必须做到“四本账一致”：<strong>文件视图、包管理视图、进程视图、服务注册表</strong>。任何一本对不上，就是线索。</p>
 <div class="code">
@@ -125,9 +127,10 @@ ls /data/app | wc -l</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>工程习惯：写隐藏逻辑时，先把“四本账”各自的查询接口列出来，逐项对着改，不要凭感觉“应该差不多了”。</div></aside>
-<h2>13.4 本章自测</h2>
+<h2 id="sec-4">13.4 本章自测</h2>
 <ul><li>一次 Binder 调用经过哪四个角色？</li><li>为什么“只改文件视图”的隐藏是不完整的？</li><li>四本账分别是什么？各自怎么查？</li><li>如果某个服务被隐藏了注册，App 调用时会看到什么？</li></ul>
-<h2>13.5 深入：Binder 一次传输的数据上限</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>进程之间传数据，中间要经过内核的一块共享缓冲。这块缓冲有大小限制，而且这个限制不是「一个进程一个」，是全局共享的。</p><p>所以传大数据会失败，而且失败得很突然——别人正占着，你就没得用。这一节讲这个上限是怎么定的、超了会怎样，读完你知道该怎么把大数据拆开发，而不是一次塞进去然后收一个看不懂的错误。</p></div></aside>
+<h2 id="sec-5">13.5 深入：Binder 一次传输的数据上限</h2>
 <p>一次 Binder 事务的 Parcel 有大小限制（约 1MB 减去页开销）。超过就会抛 <code>TransactionTooLargeException</code>。这解释了很多“传大图/大列表就崩”的现象，也解释了为什么系统要用 ashmem / 文件描述符传大数据。</p>
 <div class="tbl"><table>
 <thead><tr><th>限制</th><th>数值</th><th>后果</th></tr></thead><tbody>
@@ -135,7 +138,7 @@ ls /data/app | wc -l</code></pre>
 <tr><td>共享内存传递</td><td>fd 传递</td><td>大数据走这条路</td></tr>
 <tr><td>线程池上限</td><td>15 个 binder 线程</td><td>并发高时排队</td></tr>
 </tbody></table></div>
-<h2>13.6 实战：抓一次 Binder 调用</h2>
+<h2 id="sec-6">13.6 实战：抓一次 Binder 调用</h2>
 <ol><li>用 <code>service list</code> 找到目标服务。</li><li><code>dumpsys &lt;service&gt;</code> 看它的接口与状态。</li><li>需要更细的调用时，用 <code>frida-trace -i ioctl</code> 抓 <code>BINDER_WRITE_READ</code>。</li><li>解析 Parcel 里的 interface token 与 code，判断调的是哪个方法。</li></ol>
 <div class="code">
 <div class="code-title">快速看服务表</div>
@@ -145,7 +148,8 @@ dumpsys activity processes | grep -i example</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>Binder 层是“隐藏”的最后一道关。很多方案把文件藏了、进程藏了，却在 <code>service list</code> / <code>dumpsys</code> 里露出来。验收时一定要把这几个命令跑一遍。</div></aside>
-<h2>13.7 原理推演：为什么 Binder 是“一次拷贝”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>两个进程的内存互相看不见，传数据最少要搬两次：从发送方搬到内核，再从内核搬到接收方。Binder 把第二步省掉了——内核把接收方的一块内存直接映射进自己的地址空间，写进去等于已经写到了对方那里。</p><p>「一次拷贝」说的就是这个省下来的那一步。理解它，你才能理解为什么有大小的天花板，以及为什么这条通路天生适合被拿来做检测。</p></div></aside>
+<h2 id="sec-7">13.7 原理推演：为什么 Binder 是“一次拷贝”</h2>
 <p>传统的 socket / pipe 是“两次拷贝”（用户 → 内核 → 用户）。Binder 用 mmap 把内核缓冲区映射到接收方进程，于是发送方写一次，接收方直接读——这就是“一次拷贝”。</p>
 <div class="tbl"><table>
 <thead><tr><th>机制</th><th>拷贝次数</th><th>适用</th></tr></thead><tbody>
@@ -154,7 +158,8 @@ dumpsys activity processes | grep -i example</code></pre>
 <tr><td>共享内存</td><td>0（需自己同步）</td><td>大数据</td></tr>
 </tbody></table></div>
 <p>这也解释了 Binder 的 1MB 限制：那个 mmap 区域大小有限。想传更大的数据，就得用 fd 传递共享内存。</p>
-<h2>13.8 数据细节：一次事务的 Parcel 布局</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>两个进程之间传的那包数据，是有固定排版的：先是几项头部信息，然后是参数，按类型一个个紧凑地排下去。</p><p>这张表就是这套排版的说明书。想手动构造一次调用、或者想读懂抓到的原始数据，都得照着它一个字段一个字段对。看的时候注意「对齐」——类型不同，占的宽度也不同。</p></div></aside>
+<h2 id="sec-8">13.8 数据细节：一次事务的 Parcel 布局</h2>
 <div class="code">
 <div class="code-title">请求 Parcel 的头部</div>
 <pre><code>u4  strict_mode_policy
@@ -165,7 +170,7 @@ u4  work_source_uid
 <button class="copy" type="button">复制</button>
 </div>
 <p>抓 Binder 调用时，看到 <code>interface token</code> 就能知道“调的是哪个接口”，看到 <code>code</code> 就知道“哪个方法”。这两个字段是逆向 Binder 通信的钥匙。</p>
-<h2>一句话问出去，四个角色接过来</h2>
+<h2 id="sec-9">一句话问出去，四个角色接过来</h2>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_binder">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -196,9 +201,10 @@ u4  work_source_uid
 <script type="application/json" class="anim-data">["Client 调 Proxy，参数写进 Parcel", "ioctl 发 BC_TRANSACTION，数据进内核", "驱动按 handle 找到目标 BBinder", "目标进程线程池取事务，Stub.onTransact 解包", "结果经 BR_REPLY 回到 Proxy，调用返回"]</script>
 <p>App 里那行 <code>getPackageInfo(...)</code> 看着像一次普通函数调用，其实一次都没在本进程里执行。把这条调用按成慢动作：参数先被一格格塞进 Parcel，然后一次 <code>ioctl(BINDER_WRITE_READ)</code> 把整包数据交给内核驱动；驱动按 handle 找到 system_server 里的那个 Binder 节点，把事务丢进它的线程池，某个线程被唤醒、反序列化、真正去查包信息，再把结果沿原路写回来。<strong>一次「本地调用」，实际上是四个角色接力跑完的一次往返</strong>。</p>
 <p>这个结构决定了 Android 里一件很根本的事：<strong>所有「系统说了算」的状态，都不在你自己的进程里</strong>。文件视图可以藏，属性的显示值可以改，但只要 <code>PackageManager</code> 那边还登记着，App 一问就能问出来。隐藏方案最后崩在哪，往往就崩在这一层没对上。</p>
-<h2>跟着一个 Parcel 走完一趟往返</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>两个 App 之间要传话，不能直接读对方的内存（系统不允许）。Binder 的做法是：把要传的东西<strong>打包成一段字节</strong>（这一段叫 Parcel），交给内核转一趟，对面再拆包。</p><p>这带来两个后果：第一，传的东西必须能被拍平成字节，所以不是什么都能传；第二，每传一次都要复制，所以有大小上限、有次数成本。这一节就是把“打包 → 过内核 → 拆包”这一趟走完，标出哪一步最贵、哪一步会被检测看到。</p></div></aside>
+<h2 id="sec-10">跟着一个 Parcel 走完一趟往返</h2>
 <ol><li><strong>App 侧代理</strong> → 对 <code>BPackageManager</code> 的代理对象 → 把 interface token、方法 code、参数依次 <code>writeString</code>/<code>writeInt</code> 进 Parcel → 结果：一次调用被压成一段扁平字节。</li><li><strong>libbinder</strong> → 对 <code>/dev/binder</code> → 把 Parcel 包进 <code>binder_transaction_data</code>，发 <code>ioctl(BINDER_WRITE_READ)</code> → 结果：数据从用户态拷进内核，调用线程开始等回复。</li><li><strong>Binder 驱动</strong> → 对 handle → 查本进程的 <code>binder_ref</code>，找到目标 <code>binder_node</code> 与 <code>binder_proc</code> → 结果：确定该把事务投递给哪个进程的哪条 todo 队列。</li><li><strong>驱动 → system_server 线程池</strong> → 对目标的一个空闲 binder 线程 → 唤醒它，把事务数据映射到它的用户空间 → 结果：等待中的线程拿到一份 Parcel。</li><li><strong>服务端桩 `onTransact`</strong> → 对 Parcel → 按 code 分派、调真正的 <code>PackageManagerService</code> 实现 → 结果：包信息被查出来，写进 reply Parcel。</li><li><strong>驱动回程</strong> → 对发起方 → 把 reply 拷回它的用户空间、唤醒调用线程 → 结果：App 侧代理从 Parcel 里读出 <code>PackageInfo</code>，那行普通函数终于返回。</li></ol>
-<h2>动手：抓一次真实的 Binder 往返</h2>
+<h2 id="sec-11">动手：抓一次真实的 Binder 往返</h2>
 <div class="code">
 <div class="code-title">用 dumpsys 看服务，用 trace 看 ioctl</div>
 <pre><code># 1) 先确认服务在册、接口长什么样

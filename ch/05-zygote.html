@@ -98,17 +98,18 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">05</span><h1>Android App 启动过程</h1><p class="ch-en">从 zygote 开始</p></div>
 <p class="lead">这一章是后面所有 Hook 内容的“地图”：知道每一步在哪，才知道能插在哪。</p>
-<h2>5.1 zygote 的准备工作</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>点一下图标，App 就开了。这中间发生了什么？</p><p>关键是要知道：App 不是“从零启动”的，它是从一个已经准备好的“母体”里复制出来的。这个母体叫 zygote，它开机时就起来了，已经把 Java 运行时、常用类库全都加载好了。你点图标，系统只是让 zygote 复制一份自己，然后把复制品改造成你的 App。</p><p>这个设计带来一个巨大的副作用：<strong>只要在母体里做了手脚，之后每一个 App 都会带着这个手脚出生</strong>。所有模块化方案（Zygisk、LSPosed）都建立在这一点上。这一章就是把“点图标”到“界面出现”这段路一步一步走完，标出哪几个位置可以插手。</p></div></aside>
+<h2 id="sec-1">5.1 zygote 的准备工作</h2>
 <p>zygote 启动时做了三件影响深远的事：预加载 framework 的类（<code>preloaded-classes</code>）、预加载资源、启动一个 socket 服务端（<code>zygote</code>）。预加载让后续 fork 出的进程启动更快——因为类是共享的。</p>
 <p>这也是为什么“注入 zygote 就能影响所有 App”：所有 App 进程都是它的 fork 产物，继承它已经加载的一切。</p>
-<h2>5.2 一次启动的完整时序</h2>
+<h2 id="sec-2">5.2 一次启动的完整时序</h2>
 <figure>
 <img src="../assets/f05_app_launch.png" alt="图 5-1" width="1080">
 <figcaption><b>图 5-1</b><span>四列时序：zygote、system_server、ActivityThread、主线程</span></figcaption>
 </figure>
 <p>把这张图拆成六句话：</p>
 <ol><li>AMS 通过本地 socket 向 zygote 发请求，带上 uid、gid、seinfo、nice 等参数。</li><li>zygote fork 出子进程，子进程继承已加载的 framework。</li><li>子进程跑 <code>RuntimeInit.commonInit()</code>，设置默认异常处理、时区、DNS 等。</li><li>进入 <code>ActivityThread.main()</code>，创建主线程 Looper，开启消息循环。</li><li><code>attachApplication</code> 把 <code>ApplicationThread</code> 的 Binder 代理交给 AMS，AMS 从此可以回调这个进程。</li><li>AMS 回调 <code>bindApplication</code> → 创建 Application → <code>scheduleLaunchActivity</code> → onCreate/onResume。</li></ol>
-<h2>5.3 四个可以插手的点</h2>
+<h2 id="sec-3">5.3 四个可以插手的点</h2>
 <div class="tbl"><table>
 <thead><tr><th>时机</th><th>能做什么</th><th>典型用途</th></tr></thead><tbody>
 <tr><td>fork 之后、specialize 之前</td><td>读模块目录、改配置</td><td>Zygisk pre-specialize</td></tr>
@@ -116,7 +117,8 @@
 <tr><td>ClassLoader 创建时</td><td>插入自定义 dex</td><td>模块加载</td></tr>
 <tr><td>Activity 启动前</td><td>改 Intent、改启动参数</td><td>自动化、埋点</td></tr>
 </tbody></table></div>
-<h2>5.4 为什么类加载是核心</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>App 启动过程中最花时间的一步，是把成千上万个类从磁盘读进来、解析、连好。这一步做完了，界面才可能出来。</p><p>所以做优化、做注入、做检测，最后都会绕到这一步上。这一节讲它为什么是必经之地，读完你分析启动耗时时会先看这一段，而不是从点击图标开始平均用力。</p></div></aside>
+<h2 id="sec-4">5.4 为什么类加载是核心</h2>
 <p>Java 世界里，“类从哪来”由 ClassLoader 决定。App 的 <code>PathClassLoader</code> 里有一个 <code>dexElements</code> 数组，按顺序查找类。往这个数组里插一个 dex，就等于给你的代码开了一扇门——这也是热修复与模块化方案的共同基础（见 L04）。</p>
 <div class="code">
 <div class="code-title">观察类加载器（Frida 脚本片段）</div>
@@ -131,9 +133,10 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>现场经验：如果 hook 明明写对了却不生效，八成是“目标类还没被加载”。解决办法不是加 sleep，而是挂到 ClassLoader 的加载方法上，等它真正加载时再动手。</div></aside>
-<h2>5.5 本章自测</h2>
+<h2 id="sec-5">5.5 本章自测</h2>
 <ul><li>zygote 预加载了哪三样东西？为什么这决定了它的战略价值？</li><li>bindApplication 与 attachApplication 的先后顺序是什么？各自能做什么？</li><li>为什么“往 dexElements 插一个 dex”能实现热修复？</li><li>如果目标类由另一个 ClassLoader 加载，<code>Java.use</code> 会失败吗？为什么？</li></ul>
-<h2>5.6 深入：Application 与 Activity 的创建顺序</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个 App 启动，先有「全局的那一份」还是先有「这个界面」？很多人想当然觉得同时，其实是有先后的，而且顺序会直接影响你的代码什么时候能跑。</p><p>这一节把这条顺序摆清楚。读完你写初始化逻辑时，不会把它放在一个「注定还没准备好」的位置上。</p></div></aside>
+<h2 id="sec-6">5.6 深入：Application 与 Activity 的创建顺序</h2>
 <p>很多人以为顺序是“先创建 Application，再创建 Activity”。这句话对，但不够精确：真正发生的是 <code>LoadedApk.makeApplication</code> 先被调用（可能由 <code>bindApplication</code> 触发），然后 <code>ActivityThread</code> 才通过 <code>Instrumentation.newActivity</code> 反射构造 Activity 实例。</p>
 <div class="code">
 <div class="code-title">顺序上的关键调用</div>
@@ -148,7 +151,7 @@ Instrumentation.newActivity(cl, className, intent)
 Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.7 ContentProvider 的“提前”陷阱</h2>
+<h2 id="sec-7">5.7 ContentProvider 的“提前”陷阱</h2>
 <p>ContentProvider 的 <code>onCreate</code> 在 <code>Application.onCreate</code> <strong>之前</strong>执行。这意味着：如果你的 hook 逻辑依赖 Application 已初始化，但目标在 Provider 里就开始干活了，就会踩空。</p>
 <div class="tbl"><table>
 <thead><tr><th>时机</th><th>早于</th></tr></thead><tbody>
@@ -157,7 +160,8 @@ Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code>
 <tr><td>Activity.onCreate</td><td>Activity.onStart</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>实战意义：需要“尽早介入”的场景，应该挂 <code>bindApplication</code> 或 <code>attachBaseContext</code>，而不是等 <code>onCreate</code>。很多“hook 晚了”的问题，根源就在这个顺序。</div></aside>
-<h2>5.8 原理推演：为什么“fork + 写时复制”让启动变快</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个 App 启动要把成千上万个类、资源、库从磁盘读进内存，老老实实做每次都要好几百毫秒。系统换了个办法：先让一个「母进程」读一遍，然后从它身上分叉出新进程——分叉几乎不搬东西，两边先共用同一份，谁要改谁再单独拷一页出来。</p><p>所以启动快不是因为做了什么优化，而是因为「少搬了」。看懂这一点，后面那些「为什么 hook 要盯着 fork 之后」的问题就都有了根。</p></div></aside>
+<h2 id="sec-8">5.8 原理推演：为什么“fork + 写时复制”让启动变快</h2>
 <p>App 启动的瓶颈之一是“加载 framework”。如果每个 App 都独立加载一遍，代价是几百毫秒。zygote 的做法是：只加载一次，然后 fork。fork 复制的是页表（标记 COW），所以新进程“看起来”拥有全部已加载的类，但实际上共享同一份物理内存。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>加载开销</th><th>内存占用</th></tr></thead><tbody>
@@ -165,7 +169,8 @@ Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code>
 <tr><td>zygote fork</td><td>接近 0</td><td>共享（COW）</td></tr>
 </tbody></table></div>
 <p>这也带来一个副作用：<strong>所有 App 进程的“已加载类”起点是一样的</strong>。所以“某个类在 App 里存在但 zygote 里不存在”这类判断，天然就是一个可用的检测维度。</p>
-<h2>5.9 数据细节：一个 App 启动期间的 Binder 调用</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>启动一个 App，它会跟系统里的好几个服务来回说话：问包信息、要资源、注册通知、报告状态。这张表把这几次往返按顺序列出来。</p><p>它的用处是给你一条时间轴：想在某一步之前插手，就得知道那一步排在第几个。看懂顺序，比记住每个调用叫什么更重要。</p></div></aside>
+<h2 id="sec-9">5.9 数据细节：一个 App 启动期间的 Binder 调用</h2>
 <p>用 <code>frida-trace -i ioctl</code> 抓启动过程，会看到几十到上百次 Binder 事务。其中有几个是“必然出现”的：</p>
 <div class="tbl"><table>
 <thead><tr><th>调用</th><th>时机</th><th>用途</th></tr></thead><tbody>
@@ -175,7 +180,8 @@ Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code>
 <tr><td>checkPermission</td><td>按需</td><td>权限校验</td></tr>
 </tbody></table></div>
 <p>如果有人 hook 了这几个调用，就会在“启动的第一个 100ms 内”留下痕迹。这也是为什么“启动阶段”是检测与反检测的高频战场。</p>
-<h2>把镜头推到 fork 那一瞬间</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>fork 这个词全书出现很多次，先用一句话记住它：<strong>把一个正在跑的进程原样复制一份</strong>。复制出来的那份，内存里的东西一模一样，只是它有了自己的一套身份（pid 不同）。</p><p>Android 的 App 启动为什么要用它？因为“从零开始”太慢：Java 运行时、几千个类、各种库都要重新加载。复制一份已经准备好的进程，就跳过了这段。代价也很直接——母体里被改过的东西，复制品全都继承。这正是注入类方案能一次影响所有 App 的原因。</p></div></aside>
+<h2 id="sec-10">把镜头推到 fork 那一瞬间</h2>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_zygote">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -207,9 +213,9 @@ Activity.attach(...)  -&gt;  onCreate(...)  -&gt;  onStart -&gt; onResume</code>
 <p>图标被点下去，屏幕还没来得及变。此刻 Launcher 只是把一个 Intent 递了出去；真正决定「会不会多出一个进程」的，是 system_server 里那句「这个包还没有活着的进程」。再往后几十微秒，zygote 收到一条 socket 消息，执行了一条 <code>fork</code>——从这一瞬间开始，一个新进程带着<strong>整套 framework 的类、资源和已打开的 fd</strong> 一起出生了。把这个瞬间放慢，App 启动的全部秘密都在这条 fork 的两侧。</p>
 <p>先纠正一个画法：zygote <strong>从不 exec</strong>。常规 Linux 是「fork 一个新进程，再 exec 换成另一个程序」；Android 反着来——fork 之后不换程序映像，子进程继续跑 zygote 的那份代码，只是沿着不同的分支走进 <code>RuntimeInit</code> 与 <code>ActivityThread.main()</code>，然后原地降权变成某个 App。正因为不 exec，预加载的类才能被全体 App 共享。</p>
 <p>这里还有个容易被忽略的经济账：那些预加载的类与资源页，在 zygote 里是<strong>共享的只读页</strong>，fork 时内核只把它们在新进程的页表里再指一遍，并不真的复制内存——靠的是写时复制。所以几十个 App 同时跑，framework 的代码在物理内存里大体只有一份。等到某个 App 往自己的堆上写对象，那一页才单独变成它的私有副本。这也解释了为什么 zygote 预加载的东西必须尽量只读：一旦有人在 zygote 里改了可写数据，后续所有 fork 出去的进程都会带着这份改动出生，改动面会被放大到全机。</p>
-<h2>一次冷启动，逐拍数出来</h2>
+<h2 id="sec-11">一次冷启动，逐拍数出来</h2>
 <ol><li><strong>Launcher</strong> → 对 AMS 的 Binder 代理 → 发 <code>startActivity</code>，带上 Intent 与 ActivityInfo → 结果：请求落到 system_server，AMS 开始查进程表。</li><li><strong>AMS</strong> → 对 <code>ProcessRecord</code> 表 → 查 <code>com.target.app</code> 是否已有活进程 → 结果：查不到，决定走冷启动，把 uid/gid/seinfo/nice 等参数打包成一条 zygote 请求。</li><li><strong>AMS</strong> → 对 <code>/dev/socket/zygote</code> → 通过本地 socket 写入参数行 → 结果：zygote 的 <code>ZygoteServer</code> 从 select 循环里被唤醒，读到一条完整的 fork 请求。</li><li><strong>zygote</strong> → 对自身 → 调用 <code>fork()</code> → 结果：子进程诞生，继承预加载的类、资源与 fd，此刻 Uid 仍然是 0，身份还没变成 App。</li><li><strong>子进程</strong> → 对自己 → 跑 specialize：setresuid/setgid、<code>setcon</code>、切 mount namespace、清 capability、改进程名 → 结果：uid 变成 <code>u0_aNNN</code>，正式成为 App 沙箱里的进程。</li><li><strong>子进程</strong> → 对 <code>ActivityThread.main()</code> → 建主线程 Looper、进入消息循环 → 结果：一个能收消息的 Java 主线程活了。</li><li><strong>子进程</strong> → 对 AMS → <code>attachApplication</code> 把 <code>ApplicationThread</code> 的 Binder 代理交过去 → 结果：AMS 从此有了回调这个进程的通道。</li><li><strong>AMS → 子进程</strong> → 回调 <code>bindApplication</code>、再 <code>scheduleLaunchActivity</code> → 结果：Application 被创建，Activity 走完 onCreate/onResume，第一帧画出来。</li></ol>
-<h2>动手：把冷启动的这三拍量出来</h2>
+<h2 id="sec-12">动手：把冷启动的这三拍量出来</h2>
 <div class="code">
 <div class="code-title">强制冷启动并抓证据</div>
 <pre><code>adb shell am force-stop com.target.app                    # 保证下次是冷启动

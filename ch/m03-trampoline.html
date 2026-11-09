@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">M03</span><h1>ARM64 指令 Hook 与 Text Shadow</h1><p class="ch-en">trampoline 重定位、BTI、PTE 双 PFN、fault/GUP、fork/mprotect、rmap/RSS</p></div>
 <p class="lead">代码页只读又共享，怎么办？——给它一张“影子页”。</p>
-<h2>3.1 朴素做法的三个问题</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>想改内核里的一段代码，会遇到三个问题：代码页是只读的（写就崩）、代码页是多进程共享的（改了大家都受影响）、改完还要能跑得对（跳转距离有限、指令不能随便搬）。</p><p>Text Shadow 就是对付这三个问题的方案：给这段代码做一张“影子页”，改动只发生在影子上，原来的页原封不动。听起来完美，但它有个副作用——同一个地址在两处指向不同的物理页，一对比就露馅。</p><p>这一章讲朴素做法的三个问题、影子页方案的五个步骤、以及跳转距离和 BTI 这些硬件层面的约束。</p></div></aside>
+<h2 id="sec-1">3.1 朴素做法的三个问题</h2>
 <figure>
 <img src="../assets/m03_text_shadow.png" alt="图 M3-1" width="1080">
 <figcaption><b>图 M3-1</b><span>朴素做法的问题与双 PFN 的五步方案</span></figcaption>
@@ -109,7 +110,7 @@
 <tr><td>改完不还原</td><td>其他进程看到被改代码</td><td>立刻被抓</td></tr>
 <tr><td>多核并发</td><td>改的瞬间别的核在跑</td><td>指令撕裂 / 崩溃</td></tr>
 </tbody></table></div>
-<h2>3.2 双 PFN 方案的五个步骤</h2>
+<h2 id="sec-2">3.2 双 PFN 方案的五个步骤</h2>
 <ol><li><strong>复制原页</strong>：分配新物理页，把原内容拷过去。</li><li><strong>改副本</strong>：在副本上写入跳转指令（或替换整段逻辑）。</li><li><strong>换 PTE 的 PFN</strong>：只对目标进程的页表替换，其他进程不受影响。</li><li><strong>处理 fault</strong>：写 fault 时给私有副本，保持 COW 语义。</li><li><strong>fork / mprotect</strong>：子进程继承与权限变更时，同步维护影子页。</li></ol>
 <div class="code">
 <div class="code-title">核心动作（示意）</div>
@@ -120,10 +121,10 @@ set_pte_at(mm, addr, ptep, mk_pte(newp, prot));
 flush_tlb_range(vma, start, end);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.3 trampoline 与 BTI</h2>
+<h2 id="sec-3">3.3 trampoline 与 BTI</h2>
 <p>被覆盖的指令不能丢——要搬到 trampoline 里执行，再跳回来。搬的时候要处理 PC 相对寻址：如果原来那条指令用的是 <code>ADR</code>/<code>ADRP</code>，搬到新地址后算出来的目标就错了，必须重算。</p>
 <p>ARM64 的 BTI 要求间接跳转目标的第一条指令必须是 <code>BTI</code> 或 <code>PACIASP</code>。所以 trampoline 的入口和目标函数的新入口都必须带上这个标记，否则一调就异常。</p>
-<h2>3.4 还要维护的三本账</h2>
+<h2 id="sec-4">3.4 还要维护的三本账</h2>
 <div class="tbl"><table>
 <thead><tr><th>账本</th><th>不维护的后果</th></tr></thead><tbody>
 <tr><td>rmap</td><td>反向映射查不到，回收/迁移时崩</td></tr>
@@ -131,9 +132,10 @@ flush_tlb_range(vma, start, end);</code></pre>
 <tr><td>GUP 路径</td><td>get_user_pages 拿到错的页，数据不一致</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>这一章是全书技术密度最高的一节。建议动手顺序：先做“单进程单页”的最小验证，再补 fork、mprotect、GUP。每加一项，都跑一遍回归。</div></aside>
-<h2>3.5 本章自测</h2>
+<h2 id="sec-5">3.5 本章自测</h2>
 <ul><li>为什么必须“复制页”而不是“改原页”？</li><li>换 PFN 之后为什么一定要 flush TLB？</li><li>trampoline 里的 PC 相对指令要怎么处理？</li><li>rmap、RSS、GUP 三者各自不维护会怎样？</li></ul>
-<h2>3.6 深入：fork 时影子页怎么继承</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>父进程用了一份「改过的副本」，子进程分出来时该拿哪一份？拿原来的，改动就白做了；拿副本，又得保证子进程看到的一切自洽。</p><p>这一节讲这个继承怎么处理。读完你会明白为什么这类方案在「多进程 App」上容易出问题——不是写错了，而是继承这一步本来就有一堆分叉要照顾。</p></div></aside>
+<h2 id="sec-6">3.6 深入：fork 时影子页怎么继承</h2>
 <p>子进程复制父进程的页表，所以默认会“继承”影子页——这通常是你想要的。但如果子进程不该被 hook（比如它是个检查进程），就要在 fork 时把它换回原页。</p>
 <div class="code">
 <div class="code-title">在 fork 路径上做判断（示意）</div>
@@ -143,10 +145,11 @@ if (should_not_inherit(child)) {
 }</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.7 实战：怎么验证“只改了目标进程”</h2>
+<h2 id="sec-7">3.7 实战：怎么验证“只改了目标进程”</h2>
 <ol><li>选两个都加载了同一个库的进程。</li><li>在 A 进程上应用 hook。</li><li>分别读 A、B 两个进程的同一虚拟地址对应的物理页（pagemap）。</li><li>PFN 不同 = 只改了 A；PFN 相同 = 改漏了（改了共享页）。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这个验证非常重要。如果没有做双 PFN，而是直接改了共享页，那么 B 进程会立刻执行到跳转指令，要么崩溃，要么行为异常——两种都很容易被发现。</div></aside>
-<h2>3.8 原理推演：为什么“只换 PTE”能骗过所有人</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个进程看到的内存，只由它自己那张映射表决定。同一份代码，A 的表指向原页、B 的表指向改过的页，两边各看各的，机器根本不会去比对。</p><p>所以在用户态眼里，改过的内容和原来一模一样。唯一能戳穿的是「跳出这张表去看物理页」的人——这需要内核能力。这一节讲的就是这条分界线在哪，读完你就明白为什么对抗最终都会升到内核层。</p></div></aside>
+<h2 id="sec-8">3.8 原理推演：为什么“只换 PTE”能骗过所有人</h2>
 <p>因为“进程看到什么内存”完全由它自己的页表决定。同一份代码页，A 进程的 PTE 指向页 X，B 进程指向页 Y，两者互不干扰。CPU 不会去问“别人看到的是什么”。</p>
 <div class="tbl"><table>
 <thead><tr><th>观察者</th><th>看到什么</th><th>能否发现</th></tr></thead><tbody>
@@ -155,7 +158,8 @@ if (should_not_inherit(child)) {
 <tr><td>内核（直接读物理页）</td><td>原页</td><td>能（如果它知道去读）</td></tr>
 </tbody></table></div>
 <p>最后一行是关键：如果检测方有内核能力，它可以直接读原始物理页，与“进程看到的”对比。这就是为什么“内核级对抗”是最高一档。</p>
-<h2>3.9 数据细节：一次 fault 的处理顺序</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>访问一个「还没真正落在物理内存上」的地址，会触发一次缺页，系统按固定顺序处理：判断类型、找到对应区域、按情况分配或读取、改映射、刷新缓存。</p><p>这张表就是这个顺序。想在这个时机插手，就得知道该插在第几步——插早了东西还没准备好，插晚了已经被别人处理完。</p></div></aside>
+<h2 id="sec-9">3.9 数据细节：一次 fault 的处理顺序</h2>
 <div class="code">
 <div class="code-title">写 fault 的关键步骤</div>
 <pre><code>1. 判断 fault 类型（读/写/执行）
@@ -166,7 +170,7 @@ if (should_not_inherit(child)) {
 <button class="copy" type="button">复制</button>
 </div>
 <p>Text Shadow 要在第 3 步“插一脚”：如果是目标进程、且地址在我们的 hook 范围，就给它影子页而不是普通 COW 页。</p>
-<h2>同一条虚拟地址，两套物理页</h2>
+<h2 id="sec-10">同一条虚拟地址，两套物理页</h2>
 <p>检测线程拿着 CRC 一页页读 <code>.text</code>，读到的是干净的原指令，逐字节全过；同一瞬间，CPU 从同一个虚拟地址取指，执行的却是另一张被打了桩的物理页。这不是幻觉，也不是缓存造成的错觉——页表项里的 PFN 被换掉了，<strong>“读到的内容”和“被执行的内容”从这一刻起分了家</strong>。</p>
 <p>之所以要绕这么大一圈，是因为内核与 so 的代码页通常同时具备三个属性：PTE 只读、多进程共享、且被 W^X 约束。直接改原页意味着要么临时开写权限留下窗口，要么让所有共享这个页的进程一起看到被改的字节；而多核上某一核正好在改的瞬间取指，还会读到半条指令。影子页把这三件事一次拆开。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_shadow">
@@ -197,9 +201,10 @@ if (should_not_inherit(child)) {
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_shadow.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["初始状态：一个虚拟地址对应一张物理页", "建立双 PFN：A 存原指令，B 存打桩指令", "普通读取走 PFN A，CRC 校验看到干净原页", "CPU 取指走 PFN B，hook 实际生效", "fork / mprotect / GUP / rmap 都必须同步维护两份映射"]</script>
-<h2>双 PFN 落地的五拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一段代码，通常所有进程共用一份物理内存——因为大家看到的内容一模一样，省内存。可你要 hook 其中一个进程，又不能影响别人，怎么办？</p><p>答案是把“共用”拆开：只给你要改的那个进程换一张新的物理页，内容和原来一样，但所有权归你了；别的进程还看旧的那页。这个手法叫双 PFN：同一个虚拟地址，两个进程看到的是两块不同的物理页。这五拍就是把“换页”按顺序做完，并保证换的瞬间没有别的线程读到半成品。</p></div></aside>
+<h2 id="sec-11">双 PFN 落地的五拍</h2>
 <ol><li><strong>模块 → 对目标进程的 mm</strong>：在 <code>mmap_read_lock</code> 下用 <code>follow_page</code> 或 <code>get_user_pages</code> 拿到虚拟地址对应的 <code>struct page</code> 与 PTE，结果得到原物理页 PFN A 及当前 prot（一般是 RO + EXEC 的共享文件页）；这一步同时记下 <code>vma</code> 与 <code>address</code>，后面补账本要用。</li><li><strong>模块 → 对伙伴系统</strong>：<code>alloc_page</code> 申请 PFN B，把 A 的 4KB 内容 <code>memcpy</code> 过去，结果是两张物理页的指令完全一致；副本必须建在内核线性映射或 <code>kmap</code> 出来的可写视图上，直接写只读映射会触发 fault。</li><li><strong>模块 → 对 B 的可写视图</strong>：在副本上写跳转槽并备份被覆盖的原指令到 trampoline，<code>flush_icache_range</code> 同步 I-Cache 与 D-Cache，结果是取指能看到新字节；ARM64 的 I/D cache 不保证硬件一致，漏了这步就会“地址对了但跑的是旧指令”。</li><li><strong>模块 → 对目标 mm 的 PTE</strong>：在 <code>mmap_write_lock</code> 下 <code>set_pte_at</code> 把 PFN 从 A 换成 B，紧接着 <code>flush_tlb_range</code>，结果是只有这个进程的这个虚拟地址取指走 B，其他进程仍指向 A；TLB 不刷，旧翻译还在，改动要等一次上下文切换才随机生效。</li><li><strong>模块 → 对 rmap / RSS / GUP 三本账</strong>：为 B 补反向映射、更新 <code>mm-&gt;rss_stat</code>、把已被 <code>FOLL_PIN</code> 的页登记为需同步，结果是 fork、页面迁移与回收路径都能找到这张页；漏一本，崩的时间点会从“立刻”推迟到“几小时后 kswapd 动它”。</li></ol>
-<h2>fork、mprotect 与 GUP 各来一脚</h2>
+<h2 id="sec-12">fork、mprotect 与 GUP 各来一脚</h2>
 <ul><li><strong>fork → 对子 PTE</strong>：<code>dup_mmap</code> 会原样复制指向 B 的页表项，结果是父子共用同一张被打桩的页；子进程退出或写时若按 COW 处理不当，父进程的 hook 会跟着失效。对策是在 fork 路径上为子进程另建影子页，或把子 PTE 指回 A 并重新登记新 mm。</li><li><strong>mprotect → 对权限位</strong>：检测方常用 <code>mprotect(PROT_READ)</code> 后再读一遍，此时若 PTE 已切回 A，CRC 通过；但它改回 <code>PROT_EXEC</code> 时必须切回 B，否则 hook 静默失效。权限变更路径要同时维护“读视图”与“执行视图”两个状态。</li><li><strong>GUP → 对已 pin 的页</strong>：<code>get_user_pages(FOLL_WRITE)</code> 拿到的 <code>struct page</code> 不受取指视图影响，结果是 DMA 或内核写落在 A、CPU 执行落在 B，两份内容从此分裂；pin 之后才换 PFN 是这类不一致最常见的原因。</li><li><strong>unmap / 回收 → 对 B 的 refcount</strong>：B 没有 <code>page-&gt;mapping</code> 与 <code>anon_vma</code> 的反向映射，kswapd 与迁移代码就不知道谁映射了它，结果是 <code>bad page</code> 或直接把还在执行的页回收掉。</li><li><strong>BTI / PAC → 对跳转目标</strong>：间接跳转落点的第一条指令必须是 <code>BTI</code> 或 <code>PACIASP</code>，trampoline 入口与被改函数的新入口都要补标记，否则一跳就触发 <code>BTI exception</code>。</li></ul>
 <div class="tbl"><table>
 <thead><tr><th>账本</th><th>对应内核结构</th><th>漏维护的表现</th><th>修复动作</th></tr></thead><tbody>
@@ -209,7 +214,7 @@ if (should_not_inherit(child)) {
 <tr><td>RSS / PSS</td><td>mm-&gt;rss_stat</td><td>smaps 数值跳变，被差分检测抓</td><td>换页时同步增减计数</td></tr>
 <tr><td>GUP</td><td>page-&gt;_refcount / FOLL_PIN</td><td>DMA 写 A、CPU 执行 B</td><td>pin 前换页，或登记双页同步</td></tr>
 </tbody></table></div>
-<h2>最小可复现实验：单进程单页</h2>
+<h2 id="sec-13">最小可复现实验：单进程单页</h2>
 <div class="code">
 <div class="code-title">先只做一页，再逐项加回归</div>
 <pre><code># 1. 找出目标代码页（4KB 对齐的 r-xp 行）

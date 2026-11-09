@@ -102,7 +102,8 @@
 <img src="../assets/l_l08.png" alt="图 L8-1" width="1080">
 <figcaption><b>图 L8-1</b><span>四个变化点与对应策略</span></figcaption>
 </figure>
-<h2>8.1 四个变化点</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>版本适配最容易被误解成“改个常量”。实际上 Android 14 到 16 变的是<strong>引用的语义</strong>：垃圾回收器会移动对象了（moving GC），你手里那个裸指针可能下一秒就指向别处；“谁声明了这个类”这件事的引用方式也变了。</p><p>这一类变化没法靠“试出来正确值”解决，只能靠<strong>分层</strong>：把“跟版本相关”的部分抽成一层，上层逻辑完全不感知版本。</p><p>这一章讲四个变化点分别动了什么、适配层为什么值这个钱、以及跨版本回归该怎么做。</p></div></aside>
+<h2 id="sec-1">8.1 四个变化点</h2>
 <div class="tbl"><table>
 <thead><tr><th>变化</th><th>风险</th><th>策略</th></tr></thead><tbody>
 <tr><td>moving GC</td><td>对象会移动，裸指针失效</td><td>用 handle 或每次重新解析</td></tr>
@@ -110,7 +111,7 @@
 <tr><td>API 36 gate</td><td>新 API 行为差异</td><td>按 SDK_INT 分支</td></tr>
 <tr><td>回归矩阵</td><td>多版本组合爆炸</td><td>固定机型 + 固定用例集</td></tr>
 </tbody></table></div>
-<h2>8.2 适配层的价值</h2>
+<h2 id="sec-2">8.2 适配层的价值</h2>
 <p>把版本相关的代码集中到一个“适配层”，上层业务逻辑只依赖适配层。这样新版本来了只改一处，而不是满项目找 <code>if (sdk &gt;= xx)</code>。</p>
 <div class="code">
 <div class="code-title">适配层的形状</div>
@@ -124,9 +125,10 @@ public:
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>回归矩阵不要贪多：选 3~4 个“有代表性”的机型/版本（最老支持版本、当前主流、最新）就够。覆盖太广反而维护不动。</div></aside>
-<h2>8.3 本章自测</h2>
+<h2 id="sec-3">8.3 本章自测</h2>
 <ul><li>moving GC 为什么会破坏裸指针方案？</li><li>适配层解决了什么问题？</li><li>回归矩阵该怎么选机型？</li><li>declaring-class 引用为什么不能跨 GC 缓存？</li></ul>
-<h2>8.4 深入：moving GC 为什么致命</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有的垃圾回收器会把还活着的对象「搬个家」来整理内存。你之前记下的地址，搬完就指向了空地。</p><p>这类问题最难查：它不出错则已，一出错就是随机崩，而且复现不了。这一节讲它为什么危险、以及什么写法能躲开它，读完你会对「保存对象地址」这件事格外小心。</p></div></aside>
+<h2 id="sec-4">8.4 深入：moving GC 为什么致命</h2>
 <p>在 moving GC 下，对象在内存里会“搬家”。你缓存了一个裸指针，GC 之后它指向的可能已经是别的对象——轻则读到垃圾，重则崩溃。</p>
 <div class="tbl"><table>
 <thead><tr><th>场景</th><th>后果</th><th>对策</th></tr></thead><tbody>
@@ -134,7 +136,7 @@ public:
 <tr><td>缓存 jobject</td><td>引用失效</td><td>用 global reference</td></tr>
 <tr><td>缓存 Class*</td><td>类可能被卸载</td><td>用 handle</td></tr>
 </tbody></table></div>
-<h2>8.5 实战：验证“GC 后仍有效”</h2>
+<h2 id="sec-5">8.5 实战：验证“GC 后仍有效”</h2>
 <div class="code">
 <div class="code-title">压测脚本</div>
 <pre><code>for (let i = 0; i &lt; 5; i++) {
@@ -144,7 +146,8 @@ public:
 // 之后再调用一次 hook，看是否仍然正常</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.6 原理推演：为什么“版本适配”会周期性变难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统每次大改，都会动到「内部结构长什么样」这件事：字段挪位置、语义换解释、某些东西从公开变成不公开。凡是靠猜结构工作的方案，这时候都会集体失灵。</p><p>这不是运气差，而是这类方案天生就贴着内部结构走。这一节讲这种「周期性」的规律，读完你能预判下一次会在哪儿疼，而不是等它坏了才临时找。</p></div></aside>
+<h2 id="sec-6">8.6 原理推演：为什么“版本适配”会周期性变难</h2>
 <p>因为 ART 的实现细节（对象布局、GC 策略、调用约定）会随版本演进。每到大版本，总有一批“依赖内部结构”的代码失效——这不是 bug，而是“依赖未公开实现”的必然代价。</p>
 <div class="tbl"><table>
 <thead><tr><th>年份</th><th>主要变化</th><th>影响面</th></tr></thead><tbody>
@@ -154,7 +157,8 @@ public:
 <tr><td>Android 14+</td><td>GC 与 ArtMethod 调整</td><td>Java hook</td></tr>
 </tbody></table></div>
 <p>应对策略只有一条：把“依赖内部结构”的代码集中到适配层，让上层不受影响。</p>
-<h2>8.7 数据细节：适配层的接口设计</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>版本一多，代码里到处是「如果是这一版就……」。适配层的做法是定义一组固定接口，每个版本各实现一份。这张表给的是这组接口大概该包含什么。</p><p>它的用处是动手前先想清楚「哪些东西会随版本变」——把会变的收进接口，不变的留在外层，代码才不会越改越乱。</p></div></aside>
+<h2 id="sec-7">8.7 数据细节：适配层的接口设计</h2>
 <div class="code">
 <div class="code-title">五个必须抽象的接口</div>
 <pre><code>get_entrypoint(ArtMethod*)
@@ -164,7 +168,8 @@ get_declaring_class(ArtMethod*)
 make_backup(ArtMethod*)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.8 深入：API 36 的门槛意味着什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统把「最低要求」往上提了一档，意味着一些老做法在这一档上直接不再被接受：不是变慢、不是警告，而是不给用。</p><p>这一节讲这条线画在哪。读完你能提前判断自己那套东西在下一版上会不会整体失效，而不是等用户升级了才发现。</p></div></aside>
+<h2 id="sec-8">8.8 深入：API 36 的门槛意味着什么</h2>
 <p>新 API 级别往往会带来“行为变更”而不是“接口变更”。也就是说，同样的调用，返回值或副作用可能不同。这类变化最难发现——因为代码没报错。</p>
 <div class="tbl"><table>
 <thead><tr><th>变化类型</th><th>表现</th><th>发现方式</th></tr></thead><tbody>
@@ -173,7 +178,8 @@ make_backup(ArtMethod*)</code></pre>
 <tr><td>默认值变更</td><td>边界情况不同</td><td>需边界用例</td></tr>
 </tbody></table></div>
 <p>所以“分层适配”的重点不是“处理报错”，而是“用回归测试覆盖行为变更”。</p>
-<h2>8.9 深入：一个适配层的目录结构</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>版本一多，代码里到处都是「如果是这一版就……」的判断，很快就没人看得懂。适配层的做法是把这些判断收进一处，按版本分文件。</p><p>这一节讲这个结构怎么分。读完你的代码在加第三、第四个版本时不会变成一团乱麻。</p></div></aside>
+<h2 id="sec-9">8.9 深入：一个适配层的目录结构</h2>
 <div class="code">
 <div class="code-title">按能力组织，而不是按版本</div>
 <pre><code>art/adapter.h              // 统一接口
@@ -184,7 +190,7 @@ art/factory.cpp            // 运行时按能力选择</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>注意最后一行：工厂是“按能力选择”而不是“按版本选择”。比如“有这个符号就用新路径”，而不是“SDK &gt;= 36 就用新路径”。前者能覆盖厂商定制，后者不能。</p>
-<h2>8.10 实战：回归矩阵的最小集合</h2>
+<h2 id="sec-10">8.10 实战：回归矩阵的最小集合</h2>
 <div class="tbl"><table>
 <thead><tr><th>设备</th><th>版本</th><th>用途</th></tr></thead><tbody>
 <tr><td>最低支持机型</td><td>老版本</td><td>保证不退化</td></tr>
@@ -192,16 +198,16 @@ art/factory.cpp            // 运行时按能力选择</code></pre>
 <tr><td>最新机型</td><td>最新版本</td><td>提前发现</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>三台设备足够。四台以上维护成本会超过收益——尤其是当每台都需要单独刷机、单独配置时。</div></aside>
-<h2>同一份代码，在两台机器上各崩一次</h2>
+<h2 id="sec-11">同一份代码，在两台机器上各崩一次</h2>
 <p>回归日，Android 14 的机器跑满八项用例全绿；Android 16 的机器在&#x27;full GC&#x27;那一格挂了：<code>SIGSEGV</code>，栈顶指向一个看起来完全合法的 <code>ArtMethod*</code>。把 L07 的根因都修完还是崩。最后发现问题不在 hook 逻辑，而在模块缓存了一个跨 GC 的裸指针——Android 14 的 GC 不常搬对象，它运气好；Android 16 的 moving GC 一挪，指针立刻指向旧地址。<strong>版本差异改的不是常量，是引用的语义。</strong></p>
 <p>另一台机器上，崩的是 <code>declaring-class</code> 引用：模块把 <code>GcRoot&lt;mirror::Class&gt;</code> 的裸值存进了自己的全局表，GC 之后类对象被移动，表里那份成了悬空引用。这两类问题的共同形状是&#x27;缓存了本该每次重新解析的东西&#x27;。适配层要解决的，就是让上层代码再也拿不到这种会过期的句柄。</p>
-<h2>四个变化点，谁动了什么</h2>
+<h2 id="sec-12">四个变化点，谁动了什么</h2>
 <ol><li><strong>moving GC → 对象地址</strong>：并发复制式 GC 在回收期搬动 Java 对象与类对象；结果是任何跨 GC 存活的裸 <code>ArtMethod*</code> / <code>mirror::Class*</code> 都可能失效。</li><li><strong>适配层 → 上层</strong>：用 <code>Handle</code> / <code>GcRoot</code> 包装，或干脆只存&#x27;类名 + 签名&#x27;，需要时现场解析；结果是上层永远拿不到会过期的地址。</li><li><strong>declaring-class 引用 → 类关系</strong>：新版本调整了 ArtMethod 与声明类之间的引用方式；结果是 backup 若沿用旧引用，GC 后类归属错乱。</li><li><strong>适配层 → backup</strong>：为不同版本分别构造 backup 的 declaring-class 装配逻辑，并在 full GC 后重新校验；结果是 backup 与本体始终指向同一份有效类元数据。</li><li><strong>API 36 gate → 隐藏 API 校验</strong>：新 SDK 对 <code>VMRuntime</code> / <code>DexFile</code> 等接口的访问限制再收紧；结果是原本能过的反射路径开始抛异常或被静默拒绝。</li><li><strong>适配层 → 工厂</strong>：<code>ArtAdapter</code> 按运行时能力选实现，上层只依赖 <code>get_entrypoint</code> 等纯虚接口；结果是新版本来了只加一个实现类，业务代码一行不动。</li></ol>
 <p>第 2 拍里&#x27;只存签名&#x27;是最省事的策略，代价是每次调用多一次查表。对热点方法这未必划算，所以适配层通常提供两档：<code>resolve_once()</code> 给冷路径，<code>Handle</code> 给热路径——由调用方自己声明&#x27;我这个引用要活多久&#x27;，比框架统一猜更可靠。</p>
-<h2>把回归矩阵收紧成三行</h2>
+<h2 id="sec-13">把回归矩阵收紧成五条</h2>
 <ul><li><strong>选机型</strong>：最老支持版本、当前主流、最新版本各一台；再加一台已知 moving GC 行为激进的 OEM 机型做压力项。</li><li><strong>固定用例集</strong>：L10 的八项用例原样跑，额外补&#x27;多轮 System.gc() 后重入&#x27;与&#x27;运行中切换模块&#x27;两项。</li><li><strong>固定环境</strong>：同一 App 版本、同一模块产物哈希、同一注入时机，冷启动前清 logcat 与 tombstone。</li><li><strong>记录路径</strong>：把 L07 能力探测选中的路径写进每份报告；不同路径的失败要分开统计。</li><li><strong>判据统一</strong>：全部以&#x27;回调次数 == 调用次数且无 native crash&#x27;为准，不靠肉眼看日志。</li></ul>
 <p>矩阵别贪多。机型铺到十几台之后，维护成本会超过它带来的信息量——因为差异几乎都集中在&#x27;GC 行为&#x27;与&#x27;隐藏 API 校验&#x27;两处，三到四台有代表性的机器足够把这两条轴覆盖完。真正容易漏的是第 4 条：不记录路径，你就分不清&#x27;这个实现在 16 上不行&#x27;还是&#x27;16 选中了另一条实现&#x27;。</p>
-<h2>可复现：一条命令跑出版本差异</h2>
+<h2 id="sec-14">可复现：一条命令跑出版本差异</h2>
 <div class="code">
 <div class="code-title">同一台 adb host 上对比两个版本</div>
 <pre><code># 1. 确认 SDK 与 GC 类型

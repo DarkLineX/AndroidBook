@@ -97,8 +97,9 @@
 <main class="content">
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">A01</span><h1>附录 A · 全书速查表</h1><p class="ch-en">按主题索引关键结论</p></div>
-<p class="lead">把 51 讲压缩成一张表，复习时只看这一页。</p>
-<h2>A.1 启动与运行链</h2>
+<p class="lead">把 65 讲压缩成一张表，复习时只看这一页。</p>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一页不是用来“读”的，是用来<strong>查</strong>的。</p><p>它的组织方式不是按章节，而是按“我现在遇到的是什么问题”：启动起不来查哪一行、hook 不生效查哪一行、脱壳脱不出来查哪一行。找到那一行，它会告诉你结论和对应的章节号。</p><p>用它的正确姿势：出问题时先来这里定位“大概在哪一层”，再跳过去看细节。别从头读。</p></div></aside>
+<h2 id="sec-1">A.1 启动与运行链</h2>
 <div class="tbl"><table>
 <thead><tr><th>环节</th><th>关键结论</th></tr></thead><tbody>
 <tr><td>boot.img</td><td>header / kernel / ramdisk / second / AVB footer 五段</td></tr>
@@ -108,7 +109,7 @@
 <tr><td>App 启动</td><td>fork → RuntimeInit → main → attach → bind → Activity</td></tr>
 <tr><td>linker</td><td>映射 → 重定位 → init_array → JNI_OnLoad</td></tr>
 </tbody></table></div>
-<h2>A.2 Hook 与检测</h2>
+<h2 id="sec-2">A.2 Hook 与检测</h2>
 <div class="tbl"><table>
 <thead><tr><th>主题</th><th>关键结论</th></tr></thead><tbody>
 <tr><td>GOT hook</td><td>只拦跨 so 调用，代码段不变但页变可写</td></tr>
@@ -117,7 +118,7 @@
 <tr><td>注入检测</td><td>六观测面：状态/映射/账本/线程/字符串/时序</td></tr>
 <tr><td>差分检测</td><td>不看特征看结构，唯一对策是让结构真的合理</td></tr>
 </tbody></table></div>
-<h2>A.3 内核与 KPM</h2>
+<h2 id="sec-3">A.3 内核与 KPM</h2>
 <div class="tbl"><table>
 <thead><tr><th>主题</th><th>关键结论</th></tr></thead><tbody>
 <tr><td>task_struct</td><td>cred 是权限唯一真相</td></tr>
@@ -127,7 +128,7 @@
 <tr><td>硬件断点</td><td>最干净但槽位只有 4~8 个</td></tr>
 <tr><td>KASLR</td><td>绝对地址变，相对偏移不变</td></tr>
 </tbody></table></div>
-<h2>A.4 模块化方案</h2>
+<h2 id="sec-4">A.4 模块化方案</h2>
 <div class="tbl"><table>
 <thead><tr><th>方案</th><th>注入点</th><th>关键机制</th></tr></thead><tbody>
 <tr><td>Magisk</td><td>ramdisk</td><td>magiskd + mount 覆盖</td></tr>
@@ -136,41 +137,56 @@
 <tr><td>LSPosed</td><td>Zygisk + forkCommon</td><td>LSPlant 改 ArtMethod</td></tr>
 <tr><td>KPM</td><td>内核</td><td>自带 loader 的 ELF 模块</td></tr>
 </tbody></table></div>
-<h2>A.5 一页纸的命令速查</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一页不是让你背下来的，是让你「想起来还有这么个命令」的时候来翻的。每条只给最常用的一种用法，省掉参数细节。</p><p>读完你至少知道遇到某类问题时该敲哪一条。真正的参数组合，还是得看手册——但知道该查哪个命令，已经省掉一半时间。</p></div></aside>
+<h2 id="sec-5">A.5 一页纸的命令速查</h2>
 <div class="code">
 <div class="code-title">最常用的 20 条</div>
-<pre><code>adb shell getprop ro.boot.verifiedbootstate
-adb shell cat /proc/self/maps
-adb shell ls /proc/self/task/*/comm
+<pre><code># —— 连接与状态 ——
+adb devices &amp;&amp; adb shell getenforce
+adb shell getprop ro.boot.verifiedbootstate
+adb shell getprop ro.build.version.sdk
+adb shell id &amp;&amp; adb shell ps -A | grep -i zygote
+# —— 进程与内存 ——
+adb shell cat /proc/&lt;pid&gt;/maps | head -40
+adb shell cat /proc/&lt;pid&gt;/status | grep -E &#x27;TracerPid|Threads|Seccomp&#x27;
+adb shell ls /proc/&lt;pid&gt;/task/*/comm
+adb shell ls -l /proc/&lt;pid&gt;/fd | wc -l
+adb shell cat /proc/&lt;pid&gt;/smaps_rollup
+# —— 服务与框架 ——
 adb shell service list
 adb shell dumpsys activity processes
+adb shell pm list packages -3
+adb shell dumpsys package &lt;pkg&gt; | grep -i codePath
+# —— 注入与追踪 ——
 frida-ps -U
+frida -U -f &lt;pkg&gt; -l probe.js --no-pause
 frida-trace -U -i open &lt;pid&gt;
-python -m uiautomator2 init
-# 内核侧：
+# —— 内核侧 ——
 cat /proc/kallsyms | grep &lt;sym&gt;
-dmesg | tail -50
-bpftool btf dump file /sys/kernel/btf/vmlinux</code></pre>
+dmesg | tail -50 &amp;&amp; dmesg | grep -i avc | tail -20
+bpftool btf dump file /sys/kernel/btf/vmlinux
+cd /sys/kernel/debug/tracing &amp;&amp; cat available_filter_functions | head</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>A.6 三条主线的完整对照</h2>
+<h2 id="sec-6">A.6 三条主线的完整对照</h2>
 <div class="tbl"><table>
 <thead><tr><th>主线</th><th>起点</th><th>终点</th><th>关键章节</th></tr></thead><tbody>
 <tr><td>可信链</td><td>BootROM</td><td>Play Integrity</td><td>02, 03, 04</td></tr>
 <tr><td>运行链</td><td>init</td><td>Activity 可见</td><td>05, 06, 08, 12, 14</td></tr>
 <tr><td>检测链</td><td>应用层</td><td>内核/硬件</td><td>04, 11, F11, L09</td></tr>
 </tbody></table></div>
-<h2>A.7 常见数值速查</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>书里反复出现的那些数字（页大小、偏移、位宽、上限），散在各章容易记混。这一页把它们聚在一起，方便你怀疑自己记错时来对一眼。</p><p>它的价值在「核对」而不在「记忆」。读完你写代码时若对某个常量没把握，会先来这里确认，而不是凭印象填一个。</p></div></aside>
+<h2 id="sec-7">A.7 常见数值速查</h2>
 <div class="tbl"><table>
 <thead><tr><th>量</th><th>数值</th><th>说明</th></tr></thead><tbody>
 <tr><td>Binder 单次事务上限</td><td>约 1MB</td><td>超过抛异常</td></tr>
 <tr><td>线程名长度上限</td><td>15 字节</td><td>comm 限制</td></tr>
 <tr><td>硬件断点槽位</td><td>4~8 个</td><td>架构相关</td></tr>
 <tr><td>ARM64 B 指令范围</td><td>±128MB</td><td>限制近跳转</td></tr>
-<tr><td>dex checksum</td><td>adler32</td><td>从偏移 12 开始</td></tr>
-<tr><td>dex signature</td><td>sha1</td><td>从偏移 32 开始</td></tr>
+<tr><td>dex checksum</td><td>adler32</td><td>存在 0x08，对 [0x0C, 文件末尾) 求值</td></tr>
+<tr><td>dex signature</td><td>sha1</td><td>存在 0x0C，对 [0x20, 文件末尾) 求值</td></tr>
 </tbody></table></div>
-<h2>A.8 检测与对抗的对照总表</h2>
+<h2 id="sec-8">A.8 检测与对抗的对照总表</h2>
 <div class="tbl"><table>
 <thead><tr><th>检测点</th><th>对抗手段</th><th>残留风险</th></tr></thead><tbody>
 <tr><td>maps 路径</td><td>过滤/伪装</td><td>dev/inode 不一致</td></tr>
@@ -180,7 +196,7 @@ bpftool btf dump file /sys/kernel/btf/vmlinux</code></pre>
 <tr><td>TracerPid</td><td>注入后 detach</td><td>注入瞬间</td></tr>
 <tr><td>证明链</td><td>证书替换</td><td>耗时分布</td></tr>
 </tbody></table></div>
-<h2>A.9 学习进度自检表</h2>
+<h2 id="sec-9">A.9 学习进度自检表</h2>
 <div class="tbl"><table>
 <thead><tr><th>能力</th><th>达标表现</th></tr></thead><tbody>
 <tr><td>能画启动链</td><td>不看资料写出八步</td></tr>
@@ -191,12 +207,12 @@ bpftool btf dump file /sys/kernel/btf/vmlinux</code></pre>
 <tr><td>能解释 KPM</td><td>说清双 PFN 与三本账</td></tr>
 <tr><td>能验证</td><td>给出八项用例的判定标准</td></tr>
 </tbody></table></div>
-<h2>凌晨两点，你不想翻六十五章</h2>
-<p>凌晨两点，实验又崩了。终端里一行红字，你明知道这本书里讲过，但完全想不起在第几章。这时候按目录从头翻是最慢的做法——六十五章、八万字，等你翻到那一页，思路早凉了。真正需要的是一张按「症状」而不是按「章节」组织的卡：先判断这件事发生在哪一层，再决定敲哪条命令。前面 A.1 到 A.4 已经把关键结论按主题压缩过一遍，这一页补的是反过来用的那一条路：从现象倒推层。</p>
+<h2 id="sec-10">凌晨两点，你不想翻六十五章</h2>
+<p>凌晨两点，实验又崩了。终端里一行红字，你明知道这本书里讲过，但完全想不起在第几章。这时候按目录从头翻是最慢的做法——六十五章、二十来万字，等你翻到那一页，思路早凉了。真正需要的是一张按「症状」而不是按「章节」组织的卡：先判断这件事发生在哪一层，再决定敲哪条命令。前面 A.1 到 A.4 已经把关键结论按主题压缩过一遍，这一页补的是反过来用的那一条路：从现象倒推层。</p>
 <p>把这张卡打印出来贴在显示器边上。它不解释原理，只回答三个问题：现在最可能是哪一层、第一条该敲的命令是什么、看到什么算排除。原理留给正文，卡只负责让你在两分钟内从「不知道」走到「有方向」。</p>
-<h2>五层倒推，一拍一拍定位</h2>
+<h2 id="sec-11">五层倒推，一拍一拍定位</h2>
 <ol><li><strong>你</strong> → 对 <strong>现象</strong> → 先问「进程还在吗、adb 还通吗」→ 结果是先排除连接层；这一层不过，后面所有判断都建立在空基础上。</li><li><strong>你</strong> → 对 <strong>连接层</strong> → 敲 <code>adb devices</code> 与 <code>adb shell getenforce</code> → 结果是确认设备在线、SELinux 状态，顺手把「权限类」问题从候选里划掉或坐实。</li><li><strong>你</strong> → 对 <strong>注入层</strong> → 敲 <code>frida-ps -U</code>，再让脚本 <code>send(&#x27;alive&#x27;)</code> → 结果是区分「server 没起 / 端口没转发 / 脚本根本没执行」三种完全不同的故障。</li><li><strong>你</strong> → 对 <strong>运行时层</strong> → 打印 ClassLoader 与目标类名，确认类真的被加载 → 结果是排掉最隐蔽的一类：<code>Java.use</code> 找错了加载器。</li><li><strong>你</strong> → 对 <strong>内核层</strong> → 读 <code>dmesg</code> 里新增的 avc 与错误码 → 结果是 <code>-ENOENT</code> / <code>-EINVAL</code> / <code>-ENOSPC</code> 各自指向符号、参数、槽位，不用猜。</li><li><strong>你</strong> → 对 <strong>结论</strong> → 把命中的那一层写进实验笔记 → 结果是下次同类故障直接跳到那一步，卡越用越短。</li></ol>
-<h2>三条命令把层分出来</h2>
+<h2 id="sec-12">三层各探一次，把故障锁在一层</h2>
 <div class="code">
 <div class="code-title">三分钟定位脚本（host 端，逐条看输出）</div>
 <pre><code># 1. 连接层：设备在线 + SELinux 状态
@@ -212,7 +228,7 @@ adb shell dmesg | tail -40
 adb shell &#x27;dmesg | grep -i avc | tail -20&#x27;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<p>看到什么算成功：三条命令里恰好有一条给出明确异常（设备 offline、<code>frida-ps</code> 空、<code>alive</code> 缺失、<code>dmesg</code> 有新的 avc），你据此把故障锁在单层，并且能用一句话说出「所以下一步该修哪儿」。看到什么算失败：三条全绿但现象照旧——那说明问题在目标逻辑本身（hook 了错的重载、方法被 JIT 内联、dump 时机不对），此时别再往上查环境，直接回到 A05 的排错手册按 Hook 类逐项走。</p>
+<p>看到什么算成功：上面三组里恰好有一组给出明确异常（设备 offline、<code>frida-ps</code> 空、<code>alive</code> 缺失、<code>dmesg</code> 有新的 avc），你据此把故障锁在单层，并且能用一句话说出「所以下一步该修哪儿」。看到什么算失败：三组全绿但现象照旧——那说明问题在目标逻辑本身（hook 了错的重载、方法被 JIT 内联、dump 时机不对），此时别再往上查环境，直接回到 A05 的排错手册按 Hook 类逐项走。</p>
 <div class="tbl"><table>
 <thead><tr><th>症状（倒推入口）</th><th>最可能的层</th><th>第一条命令</th><th>排除标准</th></tr></thead><tbody>
 <tr><td>adb 设备 offline</td><td>连接层</td><td>adb kill-server &amp;&amp; adb devices</td><td>状态变 device</td></tr>
@@ -224,7 +240,7 @@ adb shell &#x27;dmesg | grep -i avc | tail -20&#x27;</code></pre>
 <tr><td>冷启动才复现</td><td>工程层</td><td>force-stop 后完整重跑</td><td>三次结果一致</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>速查表的价值不在「快」，在「逼你先分类再动手」</strong>。人一着急就会同时改三处，改完现象变了却不知道是哪一处起的作用；一张按层组织的卡强迫你一次只排除一层，于是每次失败都真的减少了搜索空间。快是副产品，可证伪才是主功能。</div></aside>
-<h2>一页纸的携带版</h2>
+<h2 id="sec-13">一页纸的携带版</h2>
 <ul><li><strong>启动链</strong>：boot.img 五段 → AVB → init → zygote → App → linker，卡住就问「断在第几棒」。</li><li><strong>Hook 三型</strong>：GOT 只拦跨 so、Inline 要顾指令边界与 BTI、Java hook 记得 deopt 内联。</li><li><strong>注入六观测面</strong>：状态 / 映射 / 账本 / 线程 / 字符串 / 时序；差分检测看的是它们之间的关系。</li><li><strong>内核三件</strong>：cred 是权限真相、所有改动落到 PTE、KASLR 只平移不改相对偏移。</li><li><strong>验证八项</strong>：基本 Hook、冷启动、full GC、时延、回归、哈希、备份、已知限制清单。</li><li><strong>三条原则</strong>：先建模型再记细节；每个结论配一个可证伪实验；改完必须用同一套用例回归。</li></ul>
 <p>这张卡和 A02 的术语表是一对：卡告诉你该敲哪条命令，术语表告诉你日志里那个缩写到底指结构、动作还是状态。真到了「命令都对、就是没输出」的时候，直接翻到 A05——那里把这张卡摊开成了五层二分的排错手册。</p>
 </article>

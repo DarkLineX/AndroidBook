@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">M07</span><h1>Android Chrome 多进程多开</h1><p class="ch-en">OEM Custom Profile、AMS/zygote、独立 UID/CE/DE、Chrome child process、CDP、每-user VPN、KPM 与事务回滚</p></div>
 <p class="lead">一个 App、多套身份：难点不在启动，而在“隔离得干净、回滚得掉”。</p>
-<h2>7.1 五层要处理的东西</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个 App 在同一台手机上同时登录两个账号，难点不在“启动两次”，而在<strong>“隔离干净 + 能回滚”</strong>。</p><p>要隔离的东西有五层：身份（uid）、存储（两套数据目录）、进程（不能互相看见）、网络（各自的 VPN）、以及系统服务眼里的“这是两个不同的 App”。漏一层，两个账号就串了。</p><p>回滚的意思是：多开失败时，能不能干净地退回原状，而不是留下一堆改了一半的状态。这一章讲五层分别怎么处理、三个最容易翻车的点（Chrome 的子进程逃逸是典型）、以及一份验收清单。</p></div></aside>
+<h2 id="sec-1">7.1 五层要处理的东西</h2>
 <figure>
 <img src="../assets/m07_chrome.png" alt="图 M7-1" width="1080">
 <figcaption><b>图 M7-1</b><span>多开要处理的五个层次与三个易翻车点</span></figcaption>
@@ -111,9 +112,9 @@
 <tr><td>Chrome child</td><td>渲染/GPU/网络进程身份继承</td><td>子进程逃逸隔离</td></tr>
 <tr><td>调试通道</td><td>CDP 端口按实例隔离</td><td>端口冲突与暴露</td></tr>
 </tbody></table></div>
-<h2>7.2 三个容易翻车的点</h2>
+<h2 id="sec-2">7.2 三个容易翻车的点</h2>
 <ol><li><strong>VPN 按 user</strong>：每个 user 一个 VPN 实例，否则两个实例的网络身份会串味。</li><li><strong>KPM 与事务</strong>：内核侧改动必须可回滚，失败要原子撤销——半改状态是最难恢复的。</li><li><strong>数据归属</strong>：多开实例的缓存、凭据目录不能共享，否则等于没隔离。</li></ol>
-<h2>7.3 验收清单</h2>
+<h2 id="sec-3">7.3 验收清单</h2>
 <div class="code">
 <div class="code-title">四条硬指标</div>
 <pre><code>1. 两实例同时登录，互不影响会话
@@ -123,9 +124,10 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这一章的方法论可以迁移到任何“多实例隔离”场景：先把“身份、存储、网络、调试”四条线分开，再考虑性能与体验。</div></aside>
-<h2>7.11 本章自测</h2>
+<h2 id="sec-4">7.4 本章自测</h2>
 <ul><li>多开为什么必须给每个实例独立 UID？</li><li>CE 与 DE 存储的区别是什么？</li><li>KPM 改动为什么要“事务化”？</li><li>四条验收指标分别验证什么？</li></ul>
-<h2>7.4 深入：为什么要“每 user 一个 VPN”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统里同一时刻只能有一个「默认网络通道」。多个实例共用一条，就会互相抢、互相看见，隔离等于没有。</p><p>所以真正的隔离不是「各开各的」，而是「各自拥有一条独立的通道」。这一节讲这个约束从哪来，读完你设计多开方案时，会先问「通道够不够分」，而不是先问「名字改没改」。</p></div></aside>
+<h2 id="sec-5">7.5 深入：为什么要“每 user 一个 VPN”</h2>
 <p>Android 的 VPN 是“按 user 生效”的：<code>VPNService</code> 建立的 tun 接口属于某个 user。如果两个多开实例共用同一个 VPN，它们的流量会一起走同一条隧道，网络身份就串了。</p>
 <div class="tbl"><table>
 <thead><tr><th>方案</th><th>隔离度</th><th>复杂度</th></tr></thead><tbody>
@@ -133,7 +135,7 @@
 <tr><td>每 user 一个</td><td>高</td><td>中</td></tr>
 <tr><td>按 App 分流</td><td>最高</td><td>高</td></tr>
 </tbody></table></div>
-<h2>7.5 实战：验证隔离是否真的生效</h2>
+<h2 id="sec-6">7.6 实战：验证隔离是否真的生效</h2>
 <div class="code">
 <div class="code-title">四条验证</div>
 <pre><code># 1. 两个实例的网络出口 IP 是否不同
@@ -142,7 +144,8 @@
 # 4. 卸载后是否无残留</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.6 原理推演：多开的本质是“多套身份”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统认一个应用，不只认名字，还要几处一起对上：装在哪、归谁、签名是什么、数据放哪。只改名字，其余几处对不上，系统立刻发现这是同一个。</p><p>所以「多开」不是把一个复制成两个，而是让每一份都拥有一整套自洽的身份。这一节讲的是一套身份由哪几部分组成，读完你判断一个多开方案能不能过检测时，会先看它动了其中几处。</p></div></aside>
+<h2 id="sec-7">7.7 原理推演：多开的本质是“多套身份”</h2>
 <p>Android 的隔离建立在“UID + 用户 + 存储目录”这三者上。多开就是“让同一个 App 在不同身份下运行”，所以每一套身份都必须有独立的 UID、独立的存储、独立的进程。</p>
 <div class="tbl"><table>
 <thead><tr><th>维度</th><th>单实例</th><th>多开</th></tr></thead><tbody>
@@ -152,14 +155,16 @@
 <tr><td>VPN</td><td>一个</td><td>每 user/实例一个</td></tr>
 </tbody></table></div>
 <p>只要有一个维度没分开，就会“串味”——表现为“两个实例共享登录态”或“互相能看到对方的数据”。</p>
-<h2>7.7 数据细节：CE 与 DE 存储</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>设备上存密钥和数据的地方分两类：一类是加密的、跟着设备走的；一类是普通的、跟着用户走的。两类在换机、多用户时的表现完全不同。</p><p>这张表把两类的区别列清楚。它的用处是判断「这份数据换台机器还在不在」，以及为什么某些多开场景下数据会串。</p></div></aside>
+<h2 id="sec-8">7.8 数据细节：CE 与 DE 存储</h2>
 <div class="tbl"><table>
 <thead><tr><th>存储</th><th>全称</th><th>可用时机</th></tr></thead><tbody>
 <tr><td>CE</td><td>Credential Encrypted</td><td>解锁后</td></tr>
 <tr><td>DE</td><td>Device Encrypted</td><td>开机即可用</td></tr>
 </tbody></table></div>
 <p>多开实例如果要“开机自启”，就不能只依赖 CE 目录——那时用户还没解锁。这是很多“多开在重启后失效”问题的原因。</p>
-<h2>7.8 深入：OEM Custom Profile 是什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>厂商在标准之外又加了一套自己的配置档，用来描述「这个应用的网络该怎么走」。标准接口看不到它，但它确实在起作用。</p><p>这一节讲这套东西的存在形式。读完你不会再假设「标准接口就是全部」，而会在标准之外再找一层。</p></div></aside>
+<h2 id="sec-9">7.9 深入：OEM Custom Profile 是什么</h2>
 <p>部分厂商提供了“应用多开 / 应用分身”的系统能力，本质是“为同一个包创建多个用户档案（profile）”。理解它的实现，比自己从零做多开省力得多——但也受限于它的能力边界。</p>
 <div class="tbl"><table>
 <thead><tr><th>方案</th><th>实现层</th><th>能力边界</th></tr></thead><tbody>
@@ -168,7 +173,8 @@
 <tr><td>虚拟空间</td><td>应用内虚拟化</td><td>隔离弱</td></tr>
 </tbody></table></div>
 <p>选择依据：如果只是“两个账号”，厂商分身够用；如果需要“完全独立的环境 + 自定义行为”，就得自建。</p>
-<h2>7.9 深入：Chrome 的 child process 为什么会逃逸隔离</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>浏览器把不同的事拆到不同进程里跑，这些子进程有自己的一套启动路径。你在主进程上做的隔离设置，不一定传得到它们身上。</p><p>这一节讲这条漏网的路。读完你做多开时会去检查子进程，而不是只看主进程有没有分开。</p></div></aside>
+<h2 id="sec-10">7.10 深入：Chrome 的 child process 为什么会逃逸隔离</h2>
 <p>因为 Chrome 的渲染/GPU/网络进程是“由主进程 fork 出来的”，它们继承主进程的 UID 与部分环境。如果隔离逻辑只作用在“主进程启动时”，子进程就可能“继承到不该有的状态”。</p>
 <div class="code">
 <div class="code-title">验证子进程身份</div>
@@ -176,7 +182,7 @@
 # 看所有 child 的 UID 是否与主进程一致且符合预期</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.10 实战：CDP 端口隔离</h2>
+<h2 id="sec-11">7.11 实战：CDP 端口隔离</h2>
 <p>每个实例如果都开 CDP（Chrome DevTools Protocol），端口必须不同，且不能对外暴露。常见错误是“所有实例都用 9222”，结果第二个实例启动失败或连到了第一个。</p>
 <div class="code">
 <div class="code-title">按实例分配端口</div>
@@ -185,12 +191,13 @@
 # 并绑定到 127.0.0.1，不要 0.0.0.0</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>两个 Chrome 同时活着，谁也不认识谁</h2>
+<h2 id="sec-12">两个 Chrome 同时活着，谁也不认识谁</h2>
 <p>屏幕上并排两个窗口，各登着不同账号，SurfaceFlinger 只当它们是两个普通窗口。往下拆：两个 userId、两套 CE 密钥、两棵从 zygote fork 出来的进程树、两个错开的 CDP 端口、两张互不干扰的 VPN 规则，以及一张随时能倒序回滚的内核改动表。<strong>难点从来不是“把第二个启动起来”，而是“让它俩从头到尾不认识彼此”</strong>。</p>
 <p>Android 的多用户机制已经把最硬的那部分做完了——uid 由 <code>userId * 100000 + appId</code> 生成，存储按 CE/DE 分目录，SELinux 域按 user 细分。多开要做的，是把 Chrome 自己的 <code>--user-data-dir</code>、子进程身份与调试通道也按同一条线切开，再给内核侧的改动套一层事务。</p>
-<h2>身份落地的五拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个 App 装两份、同时开着，这在普通 Android 上是不行的——包名是唯一的。要做到，就得让系统“认不出它们是同一个”。而系统认一个 App，靠的不是包名一个字段，而是好几处一起对：包名、uid、数据目录、签名、任务栈。</p><p>所以“分身”不是改一个值，而是让这几处同时自洽。这一节把这几处按顺序摆出来，并指出哪一处最容易被检测抓到——通常是最不显眼的那一处。</p></div></aside>
+<h2 id="sec-13">身份落地的五拍</h2>
 <ol><li><strong>管理端 → 对 UserManager / AMS</strong>：<code>createUser</code> 并指定 OEM Custom Profile，结果得到 <code>userId=10</code>，系统为它建 <code>/data/user/10</code> 与 <code>/data/user_de/10</code>；这一步同时决定后续所有 uid 与目录前缀，选错 profile 类型会让实例被当成普通工作资料而受策略限制。</li><li><strong>zygote → 对启动请求</strong>：按 userId fork 并在 specialize 阶段写入 uid、gid、SELinux 域、进程名与 data 目录，结果是进程<strong>从出生起</strong>就带独立身份；事后改 cred 只能改 uid，改不回已经铺好的目录与域，也补不上子进程的继承关系。</li><li><strong>vold → 对 CE 存储</strong>：用该 user 的锁屏凭据派生密钥解密 <code>/data/user/10</code>，结果是锁屏状态下 DE 目录可读、CE 目录不可读；两个实例的 cookie、凭据与缓存因此天然隔离，谁也读不到对方那把钥匙。</li><li><strong>Chrome → 对子进程</strong>：用独立的 <code>--user-data-dir</code> 与各自的 <code>--remote-debugging-port</code> 拉起 renderer / GPU / utility，结果是子进程继承同一 uid、CDP 端口不冲突；端口若复用默认配置，第二个实例会静默连到第一个的调试通道上。</li><li><strong>KPM → 对内核侧改动</strong>：每张表记录 (旧值, 新值, 撤销函数)，失败时按逆序逐条回滚，结果是半改状态不残留；多实例并发时还要给事务加序号，避免两个实例的回滚互相覆盖。</li></ol>
-<h2>翻车点都在“隔离线”上</h2>
+<h2 id="sec-14">翻车点都在“隔离线”上</h2>
 <ul><li><strong>身份线</strong>：两实例的 uid、SELinux 域与 cgroup 若共用，剪贴板、ContentProvider 与文件访问会互相可见；用 <code>ps -A -o USER,PID,NAME</code> 看 USER 列是最快的判据。</li><li><strong>存储线</strong>：<code>/data/user/&lt;id&gt;</code> 与 CE/DE 密钥必须随 user 走；把缓存目录写死成 <code>/data/data/&lt;pkg&gt;</code>，等于两个实例共用一份 cookie。</li><li><strong>网络线</strong>：per-user VPN 要各建一套，否则两个实例的出口 IP、DNS 与代理规则完全相同，网络身份直接串味；<code>ip rule</code> 里应能看到按 uid 范围分流的规则。</li><li><strong>调试线</strong>：CDP 端口按实例错开并只绑本地回环；端口冲突会让“第二个实例”实际操控第一个页面，端口暴露到外网则等于把会话句柄送出去。</li><li><strong>回滚线</strong>：进程、端口、fd 会随 <code>kill -9</code> 消失，唯独 <code>/data/user/10</code> 下的目录与内核里改过的表项不会；卸载后不清，下次启动就带着上一轮的残影。</li></ul>
 <div class="tbl"><table>
 <thead><tr><th>隔离线</th><th>框架 / 内核对象</th><th>串味表现</th><th>校验命令</th></tr></thead><tbody>
@@ -200,7 +207,7 @@
 <tr><td>调试</td><td>CDP 监听端口</td><td>一个端口被两实例复用</td><td>ss -ltnp | grep -E &#x27;9222|9223&#x27;</td></tr>
 <tr><td>进程</td><td>zygote 子进程、cgroup</td><td>强杀一个拖死另一个</td><td>kill -9 后复查进程表</td></tr>
 </tbody></table></div>
-<h2>可复现实验：四条硬指标一次跑完</h2>
+<h2 id="sec-15">可复现实验：四条硬指标一次跑完</h2>
 <div class="code">
 <div class="code-title">建实例 → 验身份 → 验端口 → 验强杀</div>
 <pre><code># 1. 建第二个实例并启动

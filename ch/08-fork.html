@@ -98,13 +98,15 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">08</span><h1>Android zygisk 原理</h1><p class="ch-en">从 fork 到 Activity；magisk mount 与 neozygisk</p></div>
 <p class="lead">一次注入、全部继承：这是模块化方案最漂亮的杠杆，也是最明显的靶子。</p>
-<h2>8.1 为什么盯着 zygote</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>所有 App 都是从那一个母进程分出来的。你只要在母体里放一次东西，之后所有孩子天生带着它，不用一个个去改。</p><p>这个「一次管全部」的便利，也正是检测方最警惕的地方：一个改动能覆盖所有应用，那它就值得专门盯。这一节讲这道门为什么存在、又为什么总被盯。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Zygisk 这个词拆开就是“zygote + disk”，思路一句话说完：<strong>在母体里动手，让所有后代继承</strong>。上一章讲的 ptrace 是“挨个儿抓”，zygisk 是“在户口本上改一笔”。</p><p>它漂亮在哪？一次注入，之后所有 App 全覆盖，而且不用反复对抗每个 App 的加固。它危险在哪？因为它改的是所有人的共同祖先，检测方只要盯住“母体有没有被碰过”这一件事，就能一次性抓到全部。</p><p>这一章讲它的五个阶段、Magisk 的 mount 覆盖是怎么实现的、以及为什么“注入时机”在这套方案里是最要命的一个参数。</p></div></aside>
+<h2 id="sec-1">8.1 为什么盯着 zygote</h2>
 <p>所有 App 进程都是 zygote 的 fork 产物，并且继承它已加载的代码与已打开的 fd。只要在 zygote 里放一段代码，所有后续进程都会带着它出生——不需要逐个注入，不需要 ptrace 每个目标。</p>
 <figure>
 <img src="../assets/f08_zygisk.png" alt="图 8-1" width="1080">
 <figcaption><b>图 8-1</b><span>五个阶段与 pre / post specialize 的能力边界</span></figcaption>
 </figure>
-<h2>8.2 五个阶段</h2>
+<h2 id="sec-2">8.2 五个阶段</h2>
 <ol><li><strong>init 阶段</strong>：<code>magiskd</code> 在 post-fs-data 时挂载模块文件，让模块资源“看起来”在系统里。</li><li><strong>注入 zygote</strong>：让 zygote 加载 zygisk 的 so，并 hook <code>fork</code> / <code>forkAndSpecialize</code>。</li><li><strong>pre-specialize</strong>：fork 之后、降权之前。此时还是 root 身份，能读 <code>/data/adb</code> 和模块目录。</li><li><strong>post-specialize</strong>：已经 setuid/setgid 进入 App 沙箱，只能操作“已加载进内存”的东西。</li><li><strong>App 运行</strong>：模块代码在 App 进程里执行，开始做 Java/native hook。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>能做什么</th><th>不能做什么</th></tr></thead><tbody>
@@ -112,7 +114,7 @@
 <tr><td>post-specialize</td><td>hook 已加载的代码、替换方法</td><td>再打开 /data/adb</td></tr>
 <tr><td>App 进程内</td><td>业务层 hook、读写应用数据</td><td>跨 uid 直接访问</td></tr>
 </tbody></table></div>
-<h2>8.3 Magisk 的 mount 覆盖</h2>
+<h2 id="sec-3">8.3 Magisk 的 mount 覆盖</h2>
 <p>Magisk 隐藏改动的核心手法是 mount：在目标进程的 mount namespace 里，用 <code>mount --bind</code> 把系统文件替换成模块里的版本。读文件的人看到的是模块版本，但 <code>stat</code> 返回的 <code>st_dev</code> / <code>st_ino</code> 还是原来的——这就是破绽所在。</p>
 <div class="code">
 <div class="code-title">观察 mount 覆盖的三个入口</div>
@@ -121,12 +123,13 @@ stat -c &#x27;%d %i %n&#x27; /system/app/Foo/Foo.apk
 ls -l /proc/self/map_files/     # 映射对应的真实文件</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.4 neo-zygisk 的不同</h2>
+<h2 id="sec-4">8.4 neo-zygisk 的不同</h2>
 <p>neo-zygisk 的主要差异在于：<strong>把注入点前移到 init 进程处理的更早阶段</strong>。越早介入，fork 之后才产生的痕迹就越少，能控制的初始化顺序也越完整；代价是对系统版本的适配要求更高，出问题时的可观测性更差。</p>
 <aside class="note"><span class="note-tag">要点</span><div>工程取舍：越早注入 = 越干净但越脆弱；越晚注入 = 越稳但痕迹越多。实际项目里通常会在“能覆盖目标场景的最晚时机”下手，而不是一味求早。</div></aside>
-<h2>8.5 本章自测</h2>
+<h2 id="sec-5">8.5 本章自测</h2>
 <ul><li>zygisk 为什么能“一次注入覆盖所有 App”？</li><li>pre-specialize 与 post-specialize 的能力边界差在哪？</li><li>mount 覆盖留下了哪两个可查的破绽？</li><li>如果让你设计一个模块系统，你会选择在哪个时机注入？为什么？</li></ul>
-<h2>8.6 深入：specialize 到底做了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>新进程刚从母进程分出来时，用的还是母进程的身份信息。要让它变成「某个具体 App」，得把名字、编号、数据目录、权限这一整套换掉——这一步就叫 specialize。</p><p>它是整条启动链里身份真正落定的那一刻。这一节讲它换了哪几样东西，读完你就知道为什么很多检测都盯着这一刻，也知道了为什么「早一点」和「晚一点」差别那么大。</p></div></aside>
+<h2 id="sec-6">8.6 深入：specialize 到底做了什么</h2>
 <p><code>forkAndSpecialize</code> 是 zygote 的核心接口。它在 fork 之后做了一长串“降权”动作：设置 uid/gid、补充组、设置 SELinux 上下文、切换 mount namespace、设置 rlimit、清空 capability。这些事情做完，进程才真正成为“某个 App”。</p>
 <div class="tbl"><table>
 <thead><tr><th>动作</th><th>结果</th><th>为什么是分界线</th></tr></thead><tbody>
@@ -135,7 +138,7 @@ ls -l /proc/self/map_files/     # 映射对应的真实文件</code></pre>
 <tr><td>unshare mount ns</td><td>看到 App 自己的挂载视图</td><td>模块文件的可见性变化</td></tr>
 <tr><td>capset</td><td>清空 capability</td><td>失去大部分内核特权</td></tr>
 </tbody></table></div>
-<h2>8.7 一个常被忽略的细节：进程名与 cmdline</h2>
+<h2 id="sec-7">8.7 一个常被忽略的细节：进程名与 cmdline</h2>
 <p>fork 之后进程名会被改成目标包名，但 <code>/proc/pid/cmdline</code> 里仍然能看到 <code>zygote</code> 相关的痕迹（在 specialize 完成之前）。这个时间窗口很短，但如果检测方高频轮询，是能抓到的。</p>
 <div class="code">
 <div class="code-title">观察窗口期</div>
@@ -146,7 +149,8 @@ done</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这条给两个启示：注入方要尽量在 specialize <strong>之后</strong>再做明显动作；检测方要在 specialize <strong>之前</strong>就开始采样。谁抢到这个窗口，谁就占优。</div></aside>
-<h2>8.8 原理推演：为什么“一次注入覆盖全部”在原理上成立</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>手机上的 App 成百上千，但它们的进程几乎都是从同一个「母进程」分叉出来的。所以不用一个个去注入，只要在母进程里放一次，之后分叉出来的孩子天生就带着它。</p><p>这节讲的是这个「一次管全部」成立的前提，以及它在什么时候不成立：不是从母进程来的进程就没有这层继承。判断一个方案靠不靠谱，先看目标进程是不是这条血脉。</p></div></aside>
+<h2 id="sec-8">8.8 原理推演：为什么“一次注入覆盖全部”在原理上成立</h2>
 <p>因为进程是“复制”出来的，不是“创建”出来的。fork 之后，子进程拥有与父进程<strong>完全相同</strong>的虚拟地址空间副本；如果父进程已经加载了某个 so，并且它的某个函数指针被改过，那么子进程继承的就是“已改过”的状态。</p>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>是否被继承</th><th>说明</th></tr></thead><tbody>
@@ -156,7 +160,8 @@ done</code></pre>
 <tr><td>线程</td><td>否</td><td>只有调用 fork 的线程存活</td></tr>
 </tbody></table></div>
 <p>最后一项很关键：<strong>fork 只复制调用线程</strong>。所以如果你在 zygote 里起了一个后台线程做监控，fork 之后那个线程就不存在了——这是很多“注入了但没生效”问题的根源。</p>
-<h2>8.9 数据细节：zygote fork 之后子进程的线程数</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>新进程刚从母体分出来的时候，线程并不是从零开始长出来的：它继承了母体的一部分，然后随着初始化再长出几个。这张表给的是大致数量。</p><p>记这个数不是为了背，而是为了有个「正常大概是多少」的印象。检查的时候发现明显偏离，才有理由往下查。</p></div></aside>
+<h2 id="sec-9">8.9 数据细节：zygote fork 之后子进程的线程数</h2>
 <div class="code">
 <div class="code-title">验证“只复制调用线程”</div>
 <pre><code># 在 zygote 里看：
@@ -166,7 +171,8 @@ ls /proc/self/task | wc -l
 # 后者通常等于 1（加上后续创建的）</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.10 工程权衡：pre 与 post 之间的状态怎么传递</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一次启动里，「之前」和「之后」是两个不同的时刻，甚至可能已经是两个不同的进程。要在两者之间留一句话，就得挑一个两边都碰得到的地方存着——而那个地方往往别人也碰得到。</p><p>这一节比较几种存法：谁更稳、谁更不起眼、谁在重启之后还在。读完你能按「要不要跨进程、要不要跨重启」这两个问题，直接选出该用哪一种。</p></div></aside>
+<h2 id="sec-10">8.10 工程权衡：pre 与 post 之间的状态怎么传递</h2>
 <p>pre-specialize 阶段读到的配置、加载的 dex，需要“带进”post 阶段。传递方式有三种：<strong>全局变量</strong>（最简单，但要注意 fork 后的可见性）、<strong>环境变量</strong>（会被子进程继承）、<strong>文件描述符</strong>（最灵活，但要处理 CLOEXEC）。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
@@ -174,12 +180,12 @@ ls /proc/self/task | wc -l
 <tr><td>环境变量</td><td>天然继承</td><td>长度有限、可被读取</td></tr>
 <tr><td>fd 传递</td><td>灵活</td><td>要管理生命周期</td></tr>
 </tbody></table></div>
-<h2>一个 App 出生前的那零点几毫秒</h2>
+<h2 id="sec-11">一个 App 出生前的那零点几毫秒</h2>
 <p>把时间钉在 <code>fork()</code> 返回之后、<code>setresuid()</code> 执行之前。这个副本已经是一个独立进程，却还带着 zygote 的全部身份：uid 是 0，能读 <code>/data/adb/modules</code>，SELinux 还没切到 <code>untrusted_app</code>。再过几条指令，它就会被降权、改名、切 namespace，永远失去这个窗口。Zygisk 的全部设计，就是抢在这零点几毫秒里把该做的事做完。</p>
 <p>更妙的是杠杆：不用逐个 App 注入，只要把一段代码放进 zygote，之后<strong>每一个 fork 出来的副本都会自带它</strong>。一次动手，全机覆盖。代价也同样明显——这段代码的痕迹会被复制到成百上千个进程里，任何一处不干净，检测方随便挑一个进程都能看到。</p>
-<h2>模块代码是怎么跟着 fork 一起被复制的</h2>
+<h2 id="sec-12">模块代码是怎么跟着 fork 一起被复制的</h2>
 <ol><li><strong>`magiskd` 在 post-fs-data</strong> → 对模块目录 → 用 <code>mount --bind</code> 把模块文件铺到系统视图里 → 结果：模块的 .so / dex 在文件系统层面「看起来」已就位。</li><li><strong>`magiskd` 注入 zygote</strong> → 对 zygote 进程 → ptrace 附加后 <code>dlopen</code> 载入 <code>zygisk.so</code> → 结果：zygote 的地址空间里多了一段模块运行时，并在 JNI 层挂住 <code>nativeForkAndSpecialize</code>。</li><li><strong>Java 层发起 fork</strong> → 对 <code>Zygote.forkAndSpecialize</code> → 带着 uid、gid、seinfo、nice_name 等参数进来 → 结果：请求先经过被挂住的 JNI 入口，Zygisk 拿到 <code>preAppSpecialize</code> 回调。</li><li><strong>pre-specialize 回调</strong> → 对仍是 root 的子进程副本 → 读模块配置、把 dex/so 路径备好、决定这个包要不要启用模块 → 结果：该读的文件在降权之前就读完了。</li><li><strong>内核执行 specialize</strong> → 对新副本 → setresuid/setgid、<code>setcon</code>、切 mount ns、清 capability、改进程名 → 结果：uid 变成 <code>u0_aNNN</code>，<code>untrusted_app</code> 域生效，<code>/data/adb</code> 从此不可读。</li><li><strong>post-specialize 回调</strong> → 对已降权的副本 → 只操作内存里已有的对象：hook 已加载的类、替换方法实现 → 结果：模块业务逻辑在 App 沙箱内开始运行。</li><li><strong>需要特权时</strong> → 对 <code>magiskd</code> 的 companion 通道 → 由 App 进程发起请求，让特权侧代做文件操作 → 结果：沙箱里的模块仍能间接完成需要 root 的动作。</li></ol>
-<h2>动手：让模块自己报出 specialize 前后的 uid</h2>
+<h2 id="sec-13">动手：让模块自己报出 specialize 前后的 uid</h2>
 <div class="code">
 <div class="code-title">编一个只打印 uid 的模块并观察</div>
 <pre><code># 1) 用官方 zygisk-module-sample 模板，在 ModuleBase 里实现两个回调：

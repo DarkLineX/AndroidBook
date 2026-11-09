@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F09</span><h1>Frida 自定义 linker</h1><p class="ch-en">agent-mapper、PT_LOAD、relocation、init_array、agent_base/agent_size</p></div>
 <p class="lead">不走系统 dlopen，就没有 solist 记录，也没有 libc 的加载日志。</p>
-<h2>9.1 五个阶段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>正常情况下，.so 是被系统 linker 装进进程的，装完会在 linker 的账本上登记一笔。自己实现一个 linker，就能<strong>不登记</strong>——账本上没有名字，检测方按名字查就查不到。</p><p>但天下没有免费的午餐：系统 linker 顺手帮你做的事（重定位、跑初始化函数、注册析构），现在都得你自己干。少做一件，程序就在某个奇怪的地方崩。</p><p>这一章讲自建加载的五个阶段、额外要承担的几项责任，以及收益与代价的实际权衡——什么时候值得自建，什么时候不值得。</p></div></aside>
+<h2 id="sec-1">9.1 五个阶段</h2>
 <figure>
 <img src="../assets/f_f09.png" alt="图 F9-1" width="1080">
 <figcaption><b>图 F9-1</b><span>自定义加载的五个阶段与四项额外责任</span></figcaption>
 </figure>
 <ol><li>解析 ELF 头：读 <code>PT_LOAD</code>、<code>PT_DYNAMIC</code>、<code>PT_RELRO</code>。</li><li>自己 mmap 各段，控制权限与地址（不再由 linker 代劳）。</li><li>处理重定位：<code>RELATIVE</code>、<code>GLOB_DAT</code>、<code>JUMP_SLOT</code>、<code>TLSDESC</code>。</li><li>按 <code>DT_INIT_ARRAY</code> 顺序跑构造函数。</li><li>记录 <code>agent_base</code> / <code>agent_size</code>，供后续 hook 与卸载使用。</li></ol>
-<h2>9.2 自己加载要额外负责的事</h2>
+<h2 id="sec-2">9.2 自己加载要额外负责的事</h2>
 <div class="tbl"><table>
 <thead><tr><th>责任</th><th>难点</th><th>后果</th></tr></thead><tbody>
 <tr><td>符号解析</td><td>没有 dlsym，要自己找</td><td>找不到就崩在第一次调用</td></tr>
@@ -112,12 +113,14 @@
 <tr><td>BTI / CFI</td><td>间接调用目标必须带标记</td><td>一调就异常</td></tr>
 <tr><td>卸载</td><td>还原映射、清 hook</td><td>悬空指针、后续崩溃</td></tr>
 </tbody></table></div>
-<h2>9.3 收益与代价</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>自己加载库，好处是「不进别人的账本」；代价是所有别人替你做的事，现在都得自己做：修地址、处理依赖、管权限、管生命周期。</p><p>这一节把这两边摆在一起。读完你能判断「这件事值不值得自己做」——目标简单时，绕开系统反而更麻烦。</p></div></aside>
+<h2 id="sec-3">9.3 收益与代价</h2>
 <p>收益：maps 里只有一段匿名可执行映射，没有 soname，没有 libc 的加载日志——比 dlopen 安静得多。代价：所有原本由 linker 负责的脏活，现在都是你的。</p>
 <aside class="note"><span class="note-tag">要点</span><div>落地建议：先做“能加载、能调用一个导出函数”的最小闭环，再逐项补 TLS、BTI、卸载。一次性写完整套，调试成本会高十倍。</div></aside>
-<h2>9.4 本章自测</h2>
+<h2 id="sec-4">9.4 本章自测</h2>
 <ul><li>自定义 linker 需要处理哪四类重定位？</li><li>为什么 TLS 重定位最容易漏？</li><li>BTI 缺失会导致什么现象？</li><li>最小闭环应该包含哪几步？</li></ul>
-<h2>9.5 深入：重定位的四种类型怎么处理</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把库搬进内存之后，里面所有「指向别处」的地方都还没对上：有的要加上基址、有的要去别处查符号、有的要等线程起来才成立。</p><p>四种类型对应四套处理。这一节逐种讲，读完你自己写加载逻辑时，不会漏掉那一种「只有在特定条件下才出错」的。</p></div></aside>
+<h2 id="sec-5">9.5 深入：重定位的四种类型怎么处理</h2>
 <div class="tbl"><table>
 <thead><tr><th>类型</th><th>含义</th><th>处理方式</th></tr></thead><tbody>
 <tr><td>R_AARCH64_RELATIVE</td><td>基址 + 加数</td><td>直接写 base + addend</td></tr>
@@ -125,10 +128,11 @@
 <tr><td>R_AARCH64_JUMP_SLOT</td><td>GOT 表项</td><td>同 GLOB_DAT，惰性绑定</td></tr>
 <tr><td>R_AARCH64_TLSDESC</td><td>TLS 描述符</td><td>需要初始化 TLS 模块</td></tr>
 </tbody></table></div>
-<h2>9.6 实战：最小闭环的检查清单</h2>
+<h2 id="sec-6">9.6 实战：最小闭环的检查清单</h2>
 <ol><li>能 mmap 所有 PT_LOAD 段，权限正确。</li><li>能处理 RELATIVE 重定位（至少要能跑起来）。</li><li>能调用一个导出函数并拿到正确返回值。</li><li>能正确卸载（munmap + 清理）。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>先做到这四步，再补 TLS / BTI / 异常处理。一步到位写完整套，调试成本会高十倍。</div></aside>
-<h2>9.7 原理推演：为什么“自己加载”能绕开账本</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>系统的加载器把「我加载过谁」记在一本账上，谁想知道进程里有哪些库，翻这本账就行。你自己把库搬进内存、自己把地址对上，全程不经过它，账上自然没有你。</p><p>可账上没有，不等于别处没有：内存里多了一段映射、路径栏空着、符号表在别处，这些都能被反过来问。这一节讲的是「绕过一本账」和「绕过所有账」之间的距离。</p></div></aside>
+<h2 id="sec-7">9.7 原理推演：为什么“自己加载”能绕开账本</h2>
 <p>因为 <code>solist</code> 是 linker 的私有数据结构，只有走 <code>dlopen</code> 才会往里加节点。你自己 mmap、自己重定位，linker 根本不知道你存在——账本自然干净。</p>
 <div class="tbl"><table>
 <thead><tr><th>加载方式</th><th>进 solist</th><th>有 soname</th><th>maps 有路径</th></tr></thead><tbody>
@@ -137,7 +141,8 @@
 <tr><td>memfd + dlopen</td><td>是</td><td>是</td><td>是（/memfd:）</td></tr>
 </tbody></table></div>
 <p>注意最后一行：用 <code>memfd</code> 再 <code>dlopen</code> 还是会被记录，只是路径变成 <code>/memfd:name</code>。这是一个“半吊子”方案，容易被抓。</p>
-<h2>9.8 数据细节：重定位的处理顺序</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>自己把库搬进内存之后，里面所有「指向别处」的地方都要修。修是有顺序的：先修不依赖别人的，再修要找符号的，最后才处理那些要等线程起来的。</p><p>这张表就是这个顺序。顺序错了会出「修到一半用了还没修好的值」这种极难查的错，所以它是硬约束，不是建议。</p></div></aside>
+<h2 id="sec-8">9.8 数据细节：重定位的处理顺序</h2>
 <div class="code">
 <div class="code-title">必须遵守的顺序</div>
 <pre><code>1. 先映射所有 PT_LOAD（权限按 p_flags）
@@ -149,7 +154,8 @@
 <button class="copy" type="button">复制</button>
 </div>
 <p>顺序错了的典型表现：init_array 里访问了一个还没重定位的全局变量，读到 NULL，然后崩。</p>
-<h2>9.9 深入：PT_DYNAMIC 里的关键项</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个库文件里有一段「自我说明」：符号表在哪、重定位表在哪、依赖哪些别的库。自己加载时，这份说明就是你唯一的指引。</p><p>这一节把里面必须看的几项列出来。读完你面对一个不认识的库文件时，能自己把需要的信息挖出来，而不是等工具告诉你。</p></div></aside>
+<h2 id="sec-9">9.9 深入：PT_DYNAMIC 里的关键项</h2>
 <div class="tbl"><table>
 <thead><tr><th>标记</th><th>含义</th><th>用途</th></tr></thead><tbody>
 <tr><td>DT_SYMTAB</td><td>符号表地址</td><td>查符号</td></tr>
@@ -159,7 +165,8 @@
 <tr><td>DT_SONAME</td><td>库名</td><td>显示用（可伪造）</td></tr>
 </tbody></table></div>
 <p>自己加载时，这五项是“必读”的。少读一项，就会在某个环节失败——而且失败点往往离原因很远。</p>
-<h2>9.10 深入：为什么 TLS 重定位最容易漏</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>线程局部变量是「每个线程各有一份」的变量，它的地址要等线程真正跑起来才能算准。所以它是所有地址修正里最特殊的一个：别的都能在加载时一次算完，它不行。</p><p>漏掉它的表现是「大部分时候没事、偶尔崩」。这一节讲它特殊在哪，读完你自己写加载逻辑时，会记得给它单独留一步。</p></div></aside>
+<h2 id="sec-10">9.10 深入：为什么 TLS 重定位最容易漏</h2>
 <p>因为 TLS 变量的地址不是“绝对地址”，而是“相对线程指针的偏移”。不同线程的 TP 不同，所以同一个变量在不同线程里的地址不同。处理它需要“初始化 TLS 模块”这一步，而这一步在最小实现里经常被省略。</p>
 <div class="code">
 <div class="code-title">漏掉 TLS 的典型表现</div>
@@ -168,14 +175,14 @@
 // 因为 TLS 偏移没被正确设置</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>9.11 实战：先禁用 TLS 再逐步加回</h2>
+<h2 id="sec-11">9.11 实战：先禁用 TLS 再逐步加回</h2>
 <p>如果你的 payload 不依赖 TLS，可以先编译成“不使用 thread_local”的版本——这样最小实现就能跑通。等功能稳定后，再逐步加回 TLS 支持。</p>
-<h2>现场：dlopen 留下的三份账</h2>
+<h2 id="sec-12">现场：dlopen 留下的三份账</h2>
 <p><code>dlopen(&#x27;/data/local/tmp/frida-agent.so&#x27;)</code> 一执行，现场立刻多出三份互相印证的证据：<code>/proc/self/maps</code> 里多了一行带路径的映射，linker 私有的 <code>solist</code> 里多了一个节点，某些 ROM 的 logcat 里还有一条 dlopen 记录。你学聪明了，把 so 塞进 memfd 再 dlopen——路径变成 <code>/memfd:name</code>，可 <code>solist</code> 那个节点照样在，三份账只少算了半份。</p>
 <p>所以自定义 linker 不是为了“把路径藏起来”，而是为了<strong>根本不进 linker 的账本</strong>。自己 mmap、自己重定位、自己跑构造函数，linker 压根不知道有个模块存在。代价也很直白：原本由它代劳的符号解析、TLS、BTI、卸载清理，现在每一项都归你，漏一项就换一种随机崩溃。</p>
-<h2>把一次自加载拆成八拍</h2>
+<h2 id="sec-13">把一次自加载拆成八拍</h2>
 <ol><li><strong>agent-mapper → 对 ELF 文件头 → 读 e_phoff / e_phnum，遍历 PT_LOAD、PT_DYNAMIC、PT_RELRO、PT_TLS</strong> → 结果：拿到每个段的 p_vaddr、p_filesz、p_memsz、p_flags，一张待办清单成型。</li><li><strong>mapper → 对目标地址空间 → 按 p_align 一次 mmap 出整段跨度，再 mprotect 分段给 R/W/X</strong> → 结果：一段没有 back-file、没有 soname 的匿名映射；权限组合本身也会成为观测特征。</li><li><strong>mapper → 对每个 PT_LOAD → 从 p_offset 拷 p_filesz 字节，BSS 部分靠匿名页天然为 0</strong> → 结果：ELF 镜像在内存里成型，但此时所有绝对地址还指向错误位置。</li><li><strong>mapper → 对重定位表 → 先做 RELATIVE（base+addend），再 GLOB_DAT / JUMP_SLOT，最后 TLSDESC / TLS_TPREL</strong> → 结果：全局指针与外部调用目标全部落位；顺序颠倒会让构造函数读到还没修好的 NULL。</li><li><strong>mapper → 对符号查找 → 自己遍历已加载模块的 DT_SYMTAB / DT_HASH / DT_GNU_HASH，不调 dlsym</strong> → 结果：解析完成且不惊动 linker，solist 里一个节点都没多。</li><li><strong>mapper → 对 PT_GNU_RELRO → 重定位完成后 mprotect 成只读</strong> → 结果：GOT 与初始化数据不可再被改写，后续误写会当场 SIGSEGV 而不是静默损坏。</li><li><strong>mapper → 对 DT_INIT / DT_INIT_ARRAY → 按数组顺序逐个调用构造函数</strong> → 结果：Gum 与 JS 运行时被拉起来；这一拍跑得太早，前面所有重定位都白做。</li><li><strong>mapper → 对全局状态 → 记录 agent_base / agent_size 与一张资源表</strong> → 结果：后续 hook 能定位自身，卸载时按倒序还原 trampoline 并逐段 munmap，不留下空白区。</li></ol>
-<h2>复现：证明账本里真的没有你</h2>
+<h2 id="sec-14">复现：证明账本里真的没有你</h2>
 <p>分两组跑：一组走 dlopen 做对照，一组走自建 mapper。别只盯着 maps——<code>/proc/&lt;pid&gt;/map_files</code> 里的符号链接、匿名可执行段的数量、以及“脚本能不能正常 send”，要一起看才算验完。</p>
 <div class="code">
 <div class="code-title">对照命令 + PT_LOAD 映射骨架</div>

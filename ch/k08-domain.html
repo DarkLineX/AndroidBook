@@ -102,7 +102,9 @@
 <img src="../assets/x_selinux.png" alt="图 K8-1" width="1080">
 <figcaption><b>图 K8-1</b><span>一次判定的四个要素：主体域 × 客体类型 × 类别 × 权限</span></figcaption>
 </figure>
-<h2>8.1 为什么需要第二套权限系统</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>传统那套「你是 root 就什么都能干」太粗：一个程序被攻破，整台设备就没了。所以又加了一层：不看你是谁，只看你这一类程序能不能碰这一类资源。</p><p>这就是为什么「已经 root 了还是被拒」。这一节讲这第二套系统存在的理由，读完你不会再把它当成「多余的阻碍」，而会当成一套独立的规则去学。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Android 上其实有<strong>两套权限系统</strong>，而且它们是串联的。</p><p>第一套叫 DAC，就是你熟悉的那个：文件有 owner、有 rwx 权限位，root 能绕过它。第二套叫 MAC（具体实现是 SELinux），它不问“你是谁”，只问“你这个进程，允不允许对这个类型的对象做这个动作”。</p><p>关键点在这：<strong>root 只赢了第一场</strong>。就算你是 uid=0，SELinux 说“不允许”，你照样失败，而且失败信息长得很像“权限不足”，特别容易误判成没 root 成功。</p><p>这一章讲四个核心概念（主体、客体、类别、权限）、上下文长什么样、以及一次判定是怎么被记录的。</p></div></aside>
+<h2 id="sec-1">8.1 为什么需要第二套权限系统</h2>
 <p>DAC（自主访问控制）的模型是：文件有属主、有权限位，uid=0 可以无视一切。这在单用户时代够用，但在手机上是灾难——只要有任意一个进程拿到 root，整个系统就全开了。</p>
 <p>SELinux 是 MAC（强制访问控制）：它不看 uid，只看“<strong>主体处在哪个域</strong>”与“<strong>客体是什么类型</strong>”，然后查策略表决定允不允许。关键在于：<strong>这套判定 root 也绕不过去</strong>。</p>
 <div class="tbl"><table>
@@ -110,7 +112,7 @@
 <tr><td>DAC</td><td>uid / gid + 权限位</td><td>能</td><td>chmod / chown 即可</td></tr>
 <tr><td>MAC（SELinux）</td><td>domain × type × class × perm</td><td>不能</td><td>avc: denied</td></tr>
 </tbody></table></div>
-<h2>8.2 四个核心概念</h2>
+<h2 id="sec-2">8.2 四个核心概念</h2>
 <ol><li><strong>主体（subject）</strong>：发起访问的进程，带着一个“域”（domain），如 <code>untrusted_app</code>、<code>zygote</code>、<code>su</code>。</li><li><strong>客体（object）</strong>：被访问的东西，带着一个“类型”（type），如 <code>app_data_file</code>、<code>system_file</code>。</li><li><strong>类别（class）</strong>：客体的种类，如 <code>file</code>、<code>dir</code>、<code>process</code>、<code>socket</code>、<code>binder</code>。</li><li><strong>权限（perm）</strong>：具体动作，如 <code>read</code>、<code>write</code>、<code>open</code>、<code>ptrace</code>、<code>setcontext</code>。</li></ol>
 <p>一次判定的完整表达就是：<code>allow &lt;域&gt; &lt;类型&gt;:&lt;类别&gt; &lt;权限&gt;;</code>。策略文件里成千上万行，都是这个句式。</p>
 <div class="code">
@@ -119,7 +121,7 @@
 #      主体域        客体类型    类别   权限集合</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.3 上下文长什么样</h2>
+<h2 id="sec-3">8.3 上下文长什么样</h2>
 <p>每个进程、每个文件都有一个“安全上下文”，格式固定为四段：<code>user:role:type:level</code>。日常打交道的主要是第三段 <code>type</code>（对进程叫 domain）。</p>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>典型上下文</th><th>含义</th></tr></thead><tbody>
@@ -136,7 +138,7 @@ ls -Z /data/data             # 文件的上下文
 ps -Z -A | head -20          # 所有进程的域</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.4 一次拒绝是怎么发生的</h2>
+<h2 id="sec-4">8.4 一次拒绝是怎么发生的</h2>
 <p>访问发生时，内核里的 SELinux 取“主体的 SID”与“客体的 SID”，先查 AVC（Access Vector Cache）；没命中就查策略库，得出允许/拒绝并把结果缓存。拒绝时走 <code>avc_denied</code>，同时打印 audit 日志。</p>
 <div class="code">
 <div class="code-title">一条真实的拒绝日志</div>
@@ -155,7 +157,7 @@ ps -Z -A | head -20          # 所有进程的域</code></pre>
 <tr><td>permissive=0</td><td>是否宽容模式</td><td>0=真拒绝，1=只记录</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div><code>permissive=1</code> 很关键：它说明系统处在“只记录不拦截”的状态。这种情况下“功能正常”是假象——一旦切回 enforcing 就会失败。所以看到 <code>permissive=1</code> 的日志，不能当作“已经解决”。</div></aside>
-<h2>8.5 三种模式与它们的痕迹</h2>
+<h2 id="sec-5">8.5 三种模式与它们的痕迹</h2>
 <div class="tbl"><table>
 <thead><tr><th>模式</th><th>行为</th><th>留下的痕迹</th></tr></thead><tbody>
 <tr><td>Enforcing</td><td>拒绝并记录</td><td>avc denied + 功能失败</td></tr>
@@ -170,7 +172,7 @@ setenforce 1          # 切回 enforcing</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>把系统长期跑在 permissive 上，本身就是一个极强的检测信号：它意味着“这台设备的 MAC 已经失效”。所以它只能作为诊断手段，不能作为方案。</div></aside>
-<h2>8.6 Android 的域是怎么划分的</h2>
+<h2 id="sec-6">8.6 Android 的域是怎么划分的</h2>
 <p>Android 的策略把进程分成若干域，粗粒度上可以这样理解：</p>
 <div class="tbl"><table>
 <thead><tr><th>域</th><th>谁在里面</th><th>权限特点</th></tr></thead><tbody>
@@ -181,7 +183,7 @@ setenforce 1          # 切回 enforcing</code></pre>
 <tr><td>su / magisk</td><td>root 方案</td><td>各方案自定义，通常很宽</td></tr>
 </tbody></table></div>
 <p>同一个 uid、不同的域，权限可以完全不同——这就是为什么“root 了还是 Permission denied”。你拿到的可能只是“uid=0 但仍在受限域里”。</p>
-<h2>8.7 与检测/对抗的关系</h2>
+<h2 id="sec-7">8.7 与检测/对抗的关系</h2>
 <p>SELinux 在检测对抗里出现得非常频繁，因为它同时是“障碍”和“线索”：</p>
 <ul><li><strong>作为障碍</strong>：很多注入、跨进程读取、修改系统文件的动作，都会先被 SELinux 挡住。表现为“代码没错但就是失败”。</li><li><strong>作为线索</strong>：一旦有人为了绕过它而 patch 策略，就会留下痕迹——策略文件被改、<code>/sys/fs/selinux</code> 状态异常、或者出现大量 <code>permissive=1</code> 的日志。</li></ul>
 <div class="tbl"><table>
@@ -191,10 +193,10 @@ setenforce 1          # 切回 enforcing</code></pre>
 <tr><td>改系统分区</td><td><code>system_file:file write</code></td><td>只读挂载 + 类型保护</td></tr>
 <tr><td>加载内核模块</td><td><code>kernel:system module_load</code></td><td>几乎不允许</td></tr>
 </tbody></table></div>
-<h2>8.8 两条处理路线</h2>
+<h2 id="sec-8">8.8 两条处理路线</h2>
 <ol><li><strong>改策略</strong>：加 allow 规则，或把进程换到更宽的域。见效快，但策略改动本身是痕迹（文件被改、版本号变化、avc 日志消失）。</li><li><strong>换路径</strong>：不改判定，而是“让操作发生在本来就有权限的地方”——比如把动作挪到内核态（M06），或者复用一个已有权限的进程。更干净，但实现复杂。</li></ol>
 <p>选择依据很简单：如果目标是“把功能跑通”，第一条路够用；如果目标是“不被发现”，第二条才是正解。</p>
-<h2>8.9 本章自测</h2>
+<h2 id="sec-9">8.9 本章自测</h2>
 <ul><li>DAC 与 MAC 的根本区别是什么？为什么 root 绕不过 MAC？</li><li><code>scontext</code> / <code>tcontext</code> / <code>tclass</code> 分别指什么？</li><li>看到 <code>permissive=1</code> 的 avc 日志，说明什么？为什么不能当作已解决？</li><li>同一个 uid 的两个进程，权限为什么可能完全不同？</li><li>如果只能选一条路处理“被 SELinux 拒绝”，你会怎么选？依据是什么？</li></ul>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_selinux">
   <div class="anim-head">
@@ -224,13 +226,14 @@ setenforce 1          # 切回 enforcing</code></pre>
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_selinux.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["取出进程的 SELinux 域（主体）", "取出目标的类型与 SID（客体）", "确定操作类别与权限集合", "查 AVC 缓存与 policy 规则", "命中则放行，未命中拒绝并记 avc_denied"]</script>
-<h2>root 已经到手，第二道门还是没开</h2>
+<h2 id="sec-10">root 已经到手，第二道门还是没开</h2>
 <p>你已经拿到 root 了。<code>id</code> 打印 <code>uid=0</code>，<code>su</code> 能起，改 <code>/system</code> 里的文件却还是一句冷冰冰的 <code>Permission denied</code>。你把权限位 <code>chmod 777</code>、把属主改成 root，再试一次——还是不行。这时候该明白：赢下第一场的是 DAC，而第二场的裁判根本不看 uid。它在旁边翻一本策略表，只问两件事：你处在哪个域，你要碰的东西是什么类型。</p>
 <p>把 SELinux 想成一个从不被收买的门卫：DAC 管你是谁，MAC 管你被允许做什么。root 能让第一道门形同虚设，却连第二道门的表格都翻不到——因为那张表在内核里，判定发生在每一次 <code>open</code>、每一次 <code>ptrace</code>、每一次 binder 调用的路径上，谁都绕不开。</p>
-<h2>一次 open 背后的五要素判定</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>SELinux 的判定不看“你是谁”，看的是<strong>这一次动作的全部要素</strong>：谁在动（域）、动的是什么（类型）、做什么动作（权限）、动的是哪一类对象（类）、以及这次动作发生在什么条件下。五个凑齐，才得到允许或拒绝。</p><p>所以“同一个 App，有时打得开、有时打不开”不是玄学：很可能因为路径、标签或进程状态不同，凑出来的五要素本来就不一样。</p></div></aside>
+<h2 id="sec-11">一次 open 背后的五要素判定</h2>
 <ol><li><strong>用户态</strong> 对 <strong>内核</strong> 发起 <code>openat(path, O_RDONLY)</code> → 结果：先走 pathwalk，拿到目标 <code>dentry</code> 与 <code>inode</code>。</li><li><strong>DAC</strong> 对 <strong>inode 的 mode 与当前 `cred`</strong> 比对：uid、gid、权限位 → 结果：uid=0 直接通过；这一关 root 永远赢。</li><li><strong>LSM hook `security_file_open`</strong> 对 <strong>主体 SID 与客体 SID</strong> 取值：从 <code>cred</code> 里拿进程 domain，从 inode 的 <code>security.selinux</code> 扩展属性里拿文件 type → 结果：凑齐 <code>scontext</code>、<code>tcontext</code>、<code>tclass=file</code>、<code>perm=read</code> 四要素。</li><li><strong>AVC</strong> 对 <strong>缓存</strong> 查一次：命中就直接返回决策；未命中则进策略库按 TE 规则求值，再把结果写回缓存 → 结果：允许就继续，拒绝就走 <code>avc_denied</code>。</li><li><strong>`avc_denied`</strong> 对 <strong>audit 与返回值</strong> 双写：enforcing 时给调用方 <code>-EACCES</code> 并打一条 <code>avc: denied</code>；permissive 时只打日志、照样放行 → 结果：日志长得一模一样，功能却一个失败一个成功。</li></ol>
 <p>第 3 拍里最容易被忽略的是 <code>tclass</code>。同样是 read，<code>file:read</code>、<code>dir:read</code>、<code>process:read</code>、<code>binder:call</code> 是完全不同的规则条目；写 allow 规则时少写一个 class，规则就不会命中。而第 5 拍解释了为什么排查 SELinux 问题<strong>必须先 `getenforce`</strong>：不看模式，<code>avc: denied</code> 这行日志根本读不出结论。</p>
-<h2>zygote 怎么把同一个 uid 分进不同权限</h2>
+<h2 id="sec-12">zygote 怎么把同一个 uid 分进不同权限</h2>
 <ol><li><strong>zygote</strong> 对 <strong>新 App 进程</strong> 调 <code>selinux_android_setcontext</code>：按签名、包名、seinfo 算出目标域 → 结果：同一个模板 fork 出来的进程，被分到 <code>untrusted_app</code> 或 <code>platform_app</code>，权限差一大截。</li><li><strong>`ps -AZ`</strong> 对 <strong>每个进程</strong> 显示 <code>u:r:&lt;domain&gt;:s0</code> 加可选 category → 结果：一眼看出 root 了但仍在受限域里这个最常见的困惑。</li><li><strong>MLS/MCS 的 category</strong> 对 <strong>同域不同 App</strong> 再做隔离：level 里的 <code>c512,c768</code> 不同，即使 domain 相同也互相读不到 → 结果：这解释了为什么两个 <code>untrusted_app</code> 进程不能互看彼此的 <code>/data/data</code>。</li><li><strong>改策略路线</strong> 对 <strong>策略文件或 `/sys/fs/selinux/load`</strong> 加 allow、换更宽的域 → 结果：见效快，但策略版本号、文件哈希、avc 日志集体消失本身都是痕迹。</li><li><strong>换路径路线</strong> 对 <strong>动作发生的位置</strong> 做迁移：把操作挪到本来就有权限的进程，或挪到内核态 → 结果：判定没被改，痕迹少得多，代价是工程复杂度上去了。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>avc: denied 字段</th><th>读法</th><th>排查时拿它做什么</th></tr></thead><tbody>
@@ -242,7 +245,7 @@ setenforce 1          # 切回 enforcing</code></pre>
 <tr><td>comm=app_process</td><td>进程名</td><td>和 ps -AZ 对上，确认域与进程的一致性</td></tr>
 <tr><td>pid=1234</td><td>发起方 pid</td><td>回 /proc/&lt;pid&gt;/attr/current 复查当前上下文</td></tr>
 </tbody></table></div>
-<h2>把一次拒绝从日志里完整还原出来</h2>
+<h2 id="sec-13">把一次拒绝从日志里完整还原出来</h2>
 <div class="code">
 <div class="code-title">动手：先定模式，再凑齐四要素</div>
 <pre><code># 1. 先定模式：不看这行，后面的日志都读不出结论

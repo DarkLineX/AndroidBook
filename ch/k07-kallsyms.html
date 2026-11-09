@@ -102,7 +102,8 @@
 <img src="../assets/k07_kaslr.png" alt="图 K7-1" width="1080">
 <figcaption><b>图 K7-1</b><span>四种地址说法与符号来源的限制</span></figcaption>
 </figure>
-<h2>7.1 四种“地址说法”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核里的函数和数据，每次开机都会被搬到<strong>不同的地址</strong>——这是 KASLR，一个防攻击的设计：你不知道我在哪，就没法跳过来打我。</p><p>但“相对位置”是不变的：函数 A 在函数 B 前面 0x120 字节，这件事每次开机都一样。所以定位的办法不是“记住绝对地址”，而是“先找到任意一个已知点，再按相对距离推”。</p><p>这一章讲四种“地址”的说法有什么区别（链接地址、加载地址、运行地址、物理地址——这四个特别容易混）、符号可以从哪几个地方读、以及 GKI 带来的两道门槛（KMI 与 MODVERSIONS）。</p></div></aside>
+<h2 id="sec-1">7.1 四种“地址说法”</h2>
 <div class="tbl"><table>
 <thead><tr><th>说法</th><th>含义</th><th>是否随开机变</th></tr></thead><tbody>
 <tr><td>链接地址</td><td>vmlinux 里的静态地址</td><td>不变</td></tr>
@@ -110,7 +111,7 @@
 <tr><td>运行地址</td><td>链接地址 + slide</td><td>变</td></tr>
 <tr><td>相对偏移</td><td>函数间、字段间的距离</td><td>不变</td></tr>
 </tbody></table></div>
-<h2>7.2 符号从哪读</h2>
+<h2 id="sec-2">7.2 符号从哪读</h2>
 <div class="code">
 <div class="code-title">四种符号来源与限制</div>
 <pre><code>/proc/kallsyms        # 运行期符号表（可能被 kptr_restrict 清零）
@@ -119,7 +120,7 @@ EXPORT_SYMBOL         # 只有导出符号对模块可见
 kallsyms_lookup_name  # 新内核不再导出，需要自己找</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.3 KMI 与 MODVERSIONS：GKI 的两道门槛</h2>
+<h2 id="sec-3">7.3 KMI 与 MODVERSIONS：GKI 的两道门槛</h2>
 <p>先分清两个东西，它们经常被混为一谈：</p>
 <div class="tbl"><table>
 <thead><tr><th>概念</th><th>是什么</th><th>在哪一关生效</th></tr></thead><tbody>
@@ -129,9 +130,10 @@ kallsyms_lookup_name  # 新内核不再导出，需要自己找</code></pre>
 <p>所以“符号找不到”与“符号版本不匹配”是两类完全不同的失败：前者是名字不在（或没导出），后者是名字在、但 ABI 变了。排查时先看 <code>dmesg</code> 报的是哪一种。</p>
 <p>GKI（通用内核镜像）的意义就在于此：把“内核与 vendor 模块之间的接口”冻结成 KMI，这样同一份 vendor 模块能在多个内核版本上跑。而 KPM 类方案倾向于自己实现 loader，绕开这两道关——代价是所有正确性检查都要自己做。</p>
 <aside class="note"><span class="note-tag">要点</span><div>实用结论：做跨版本工具时，把“版本探测 + 能力探测 + 回退路径”做成三层。任何一层失败都要能优雅降级，而不是直接崩。</div></aside>
-<h2>7.4 本章自测</h2>
+<h2 id="sec-4">7.4 本章自测</h2>
 <ul><li>链接地址与运行地址的关系是什么？</li><li>为什么“相对偏移”不受 KASLR 影响？</li><li>GKI 的 MODVERSIONS 检查拦住了什么？</li><li>拿到一个陌生内核，你第一步会做什么探测？</li></ul>
-<h2>7.5 深入：KASLR 的随机化粒度</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>地址随机化不是把每个函数都挪到随机位置，而是把整块区域整体挪一个随机偏移。所以只要知道一个函数的真实地址，整块的偏移就全知道了。</p><p>「粒度」这个词说的就是这个：挪的是一整块，不是一个一个。这一节讲这个粒度有多粗，读完你就明白为什么「泄漏一个地址」等于泄漏一片。</p></div></aside>
+<h2 id="sec-5">7.5 深入：KASLR 的随机化粒度</h2>
 <p>KASLR 不是每一条指令都随机，而是把整个内核镜像在虚拟地址空间里挪一个偏移。所以“函数之间的相对距离”是固定的——这就是为什么相对偏移是稳定的定位基础。</p>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>随机化</th><th>影响</th></tr></thead><tbody>
@@ -140,7 +142,7 @@ kallsyms_lookup_name  # 新内核不再导出，需要自己找</code></pre>
 <tr><td>直接映射区</td><td>有</td><td>物理内存视图变</td></tr>
 <tr><td>函数相对距离</td><td>无</td><td>偏移稳定</td></tr>
 </tbody></table></div>
-<h2>7.6 实战：从 kallsyms 反推 slide</h2>
+<h2 id="sec-6">7.6 实战：从 kallsyms 反推 slide</h2>
 <div class="code">
 <div class="code-title">三种做法</div>
 <pre><code># 1. 已知符号 + 已知编译期地址：
@@ -152,7 +154,8 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意 <code>kptr_restrict</code>：设为 2 时，非特权用户读 <code>/proc/kallsyms</code> 会得到全 0。这时只能靠特征扫描或 BTF/符号表文件。</div></aside>
-<h2>7.7 原理推演：为什么“地址随机化”不能防住所有攻击</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>随机化是把东西藏起来，不是锁起来。藏得再好，只要程序自己知道它在哪，你就有办法从程序嘴里问出来——泄漏一次，后面全白搭。</p><p>所以它抬高的是「成本」，不是「门槛」。这一节讲的是这条线到底挡得住谁：挡得住盲猜的，挡不住能在本机反复试的。读完你会把注意力放到「哪里会泄漏」上。</p></div></aside>
+<h2 id="sec-7">7.7 原理推演：为什么“地址随机化”不能防住所有攻击</h2>
 <p>KASLR 让“绝对地址”不可预测，但它不改变“相对布局”。所以只要攻击者能泄露<strong>一个</strong>内核地址，就能算出 slide，进而算出所有符号的地址。这就是“信息泄露”在利用链里的价值。</p>
 <div class="tbl"><table>
 <thead><tr><th>泄露源</th><th>能算出</th><th>常见程度</th></tr></thead><tbody>
@@ -162,7 +165,8 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 <tr><td>侧信道</td><td>slide</td><td>难</td></tr>
 </tbody></table></div>
 <p>防御方因此会“抹掉”日志里的地址（<code>kptr_restrict</code>、<code>%pK</code>），而攻击方会想尽办法找一个泄露点。</p>
-<h2>7.8 数据细节：kallsyms 的三种权限状态</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>能让用户态读到内核符号地址这件事，是被分级管着的：全开、只给特权、彻底不给。三种状态下你能做的事完全不同。</p><p>这张表把三种状态列出来。它的用处是：拿不到符号地址时，先确认是被限制了，还是你查的方法不对——这两种情况的解法差得很远。</p></div></aside>
+<h2 id="sec-8">7.8 数据细节：kallsyms 的三种权限状态</h2>
 <div class="tbl"><table>
 <thead><tr><th>kptr_restrict</th><th>非特权用户看到</th><th>特权用户看到</th></tr></thead><tbody>
 <tr><td>0</td><td>真实地址</td><td>真实地址</td></tr>
@@ -170,7 +174,8 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 <tr><td>2</td><td>0</td><td>0</td></tr>
 </tbody></table></div>
 <p>所以在 <code>kptr_restrict=2</code> 的设备上，<code>/proc/kallsyms</code> 只能用来“看符号名”，不能用来“拿地址”。这时只能靠 System.map、BTF、或特征扫描。</p>
-<h2>7.9 深入：符号的三种绑定属性</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个名字可以被标成「全局的、谁都能用」「本地的、只在自己这儿用」「弱一点的、有就用没有就算了」。这三种标法决定了它在被查的时候会不会出现。</p><p>所以「找不到这个符号」可能不是它不存在，而是它没被标成能被找到。这一节讲这三种标法，读完你知道该换个什么法子去够它。</p></div></aside>
+<h2 id="sec-9">7.9 深入：符号的三种绑定属性</h2>
 <div class="tbl"><table>
 <thead><tr><th>绑定</th><th>含义</th><th>对模块的意义</th></tr></thead><tbody>
 <tr><td>STB_LOCAL</td><td>文件内可见</td><td>模块用不到</td></tr>
@@ -178,7 +183,8 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 <tr><td>STB_WEAK</td><td>弱符号</td><td>可被覆盖</td></tr>
 </tbody></table></div>
 <p><code>EXPORT_SYMBOL</code> 导出的就是“全局符号”。而 <code>EXPORT_SYMBOL_GPL</code> 多了一个“只给 GPL 模块用”的限制——这在写模块时要特别注意。</p>
-<h2>7.10 深入：为什么“符号版本”会变</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个名字，在不同版本的内核里可能对应不同的实现。为了不让老程序直接崩，系统给名字加了版本后缀，谁认哪个版本就给谁哪个。</p><p>这对写工具的人意味着：名字对了还不够，版本也得对上。这一节讲这套机制，读完你排查「换了个内核就找不到符号」时，会先去看版本而不是先怀疑拼写。</p></div></aside>
+<h2 id="sec-10">7.10 深入：为什么“符号版本”会变</h2>
 <p>因为内核结构体会变。比如 <code>task_struct</code> 加了一个字段，那么“访问 cred 的偏移”就变了。<code>MODVERSIONS</code> 通过“对符号的 CRC 校验”来发现这种不匹配。</p>
 <div class="code">
 <div class="code-title">看模块的版本信息</div>
@@ -186,15 +192,16 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 # vermagic 里包含内核版本与 SMP/PREEMPT 等配置</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.11 实战：一次“符号找不到”的排查</h2>
+<h2 id="sec-11">7.11 实战：一次“符号找不到”的排查</h2>
 <ol><li>确认符号名拼写（大小写、下划线）。</li><li>确认是否被导出（<code>grep EXPORT_SYMBOL</code> 源码）。</li><li>确认内核版本（新版可能删掉了）。</li><li>退路：用特征扫描找地址，或改用一个稳定导出的等价符号。</li></ol>
-<h2>两次开机，同一个符号给了两个地址</h2>
+<h2 id="sec-12">两次开机，同一个符号给了两个地址</h2>
 <p>同一台设备，连着开两次机，两次都去 <code>grep commit_creds /proc/kallsyms</code>。第一次是 <code>ffffffc0082a1b40</code>，第二次变成 <code>ffffffc009f31b40</code>。地址每次都在跳，可你心里一点都不慌——因为你知道这两个数各自减去 <code>System.map</code> 里 <code>_text</code> 的值，得到的差完全一样。KASLR 挪的是整块地基，不是楼里的房间。</p>
 <p>把内核镜像想成一栋被整体平移的楼：链接器给每个房间标了门牌（链接地址），开机时 bootloader 在 dtb 的 <code>/chosen</code> 里塞一个 <code>kaslr-seed</code>，早期启动代码据此算出 slide，把整栋楼连同门牌一起挪走。<strong>房间与房间之间的距离，一步没变</strong>。所有定位方法，最后都站在这句话上。</p>
-<h2>一次开机里 slide 是怎么落地的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核编译出来时，每个函数、每个变量的地址都是定好的。但每次开机，内核会被整体挪到一个随机偏移上（这就是 KASLR），于是“编译时的地址”和“这次的地址”差了一个数，这个差就叫 slide。</p><p>对你的影响很直接：模块里写死一个地址，换一次开机就偏了，一读就崩。所以要么在运行时把 slide 算出来再加上去，要么干脆不写死地址。这一节讲 slide 从哪儿来、怎么把它量出来。</p></div></aside>
+<h2 id="sec-13">一次开机里 slide 是怎么落地的</h2>
 <ol><li><strong>bootloader</strong> 对 <strong>dtb 的 `/chosen`</strong> 写 <code>kaslr-seed</code>（或由 EFI 随机源提供） → 结果：内核还没解压缩就拿到一份随机数。</li><li><strong>`kaslr_early_init`</strong> 对 <strong>随机数</strong> 取模并按段对齐：算出 <code>slide</code>，限定在 <code>CONFIG_RANDOMIZE_BASE</code> 允许的范围内 → 结果：得到一个每次开机都不同的整块偏移。</li><li><strong>早期重定位</strong> 对 <strong>所有绝对地址引用</strong> 加 slide：重定位表里的每一项被改写 → 结果：内核代码、只读数据、<code>kallsyms</code> 表整体搬到运行地址。</li><li><strong>`kallsyms`</strong> 对 <strong>压缩过的符号名表</strong> 展开：<code>kallsyms_expand_symbol</code> 用索引表与高频字符表还原名字，地址按相对基址加偏移还原 → 结果：<code>/proc/kallsyms</code> 里直接列出当前运行地址。</li><li><strong>`kptr_restrict`</strong> 对 <strong>输出</strong> 做遮挡：值 1 时非特权进程看到全 0，值 2 时连特权进程的 <code>%p</code> 也被 hash → 结果：地址被抹掉，但<strong>表里各符号的先后顺序与相对距离一点没动</strong>。</li></ol>
 <p>第 5 拍是整章的题眼：遮地址遮的是绝对值，遮不住关系。只要你能从任意一个渠道拿到<strong>一个</strong>符号的真实运行地址（一次未受保护的 <code>%px</code>、一个可读的 tracepoint、一段能读的内核内存），把它的运行地址减去 <code>System.map</code> 里的链接地址，slide 就到手；随后整张 <code>kallsyms</code> 表都能按链接地址加 slide 推出来。这也是为什么内核里 <code>printk</code> 用 <code>%p</code> 会打印成哈希值，而 <code>%px</code> 被反复强调只用于调试。</p>
-<h2>定位一个 hook 点的五步减法</h2>
+<h2 id="sec-14">定位一个 hook 点的五步减法</h2>
 <ol><li><strong>探测层</strong> 对 <strong>`/proc/kallsyms`</strong> 取值：先看 <code>_text</code>、<code>_stext</code> 是否非零，判断地址有没有被遮 → 结果：决定走直接读，还是先想办法拿 slide。</li><li><strong>算 slide</strong> 对 <strong>System.map</strong> 做减法：用运行地址减链接地址，再拿第二个符号校验差值是否一致 → 结果：两次一致说明版本匹配；不一致说明拿错了 System.map。</li><li><strong>定位 hook 点</strong> 对 <strong>目标函数名</strong> 查表：查 <code>/proc/kallsyms</code>，或按 K06 的特征扫描在 Image 里找指令模式 → 结果：拿到可 patch 的运行地址。</li><li><strong>校验 ABI</strong> 对 <strong>KMI 与 MODVERSIONS</strong> 过一遍：<code>modinfo</code> 看 <code>vermagic</code>，<code>dmesg</code> 看报的是 <code>Unknown symbol</code> 还是 <code>disagrees about version of symbol</code> → 结果：区分名字不在与名字在但 ABI 变了这两类完全不同的失败。</li><li><strong>回退层</strong> 对 <strong>陌生内核</strong> 降级：改用稳定的相对偏移，或换一个已导出的等价符号 → 结果：工具不崩，日志里写清究竟走了哪条路。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>地址说法</th><th>从哪来</th><th>随开机变吗</th><th>典型用途</th></tr></thead><tbody>
@@ -205,7 +212,7 @@ slide = kallsyms_addr(&#x27;_text&#x27;) - VMLINUX_TEXT_ADDR
 <tr><td>%p 输出</td><td>printk 里的哈希指针</td><td>看不出原值</td><td>日志里被遮挡的地址</td></tr>
 <tr><td>%px 输出</td><td>printk 里的真实指针</td><td>变</td><td>调试用，也是常见泄露点</td></tr>
 </tbody></table></div>
-<h2>自己把 KASLR 的 slide 算出来</h2>
+<h2 id="sec-15">自己把 KASLR 的 slide 算出来</h2>
 <div class="code">
 <div class="code-title">动手：两次开机，一个减法，一张表</div>
 <pre><code># 1. 看当前符号表有没有被遮

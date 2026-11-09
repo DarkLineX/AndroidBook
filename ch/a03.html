@@ -98,7 +98,9 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">A03</span><h1>附录 C · 学习路线与实验环境</h1><p class="ch-en">从零到能独立做项目的路径</p></div>
 <p class="lead">不要按章节顺序硬啃，按“能力阶梯”走。</p>
-<h2>C.1 四个阶段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这份路线不是「从第一页读到最后一页」，而是按「能干什么」分成四段：先能看懂现象，再能复现，再能改，最后能验证。每一段都有明确的出口。</p><p>所以你可以按需跳着走，但跳之前得确认上一段的出口达到了。这一节讲这四段的分界，读完你能给自己定位「现在在第几段、下一步该干什么」。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一页讲“怎么学”，不讲“学什么”。</p><p>核心建议只有一条：<strong>不要按章节顺序硬啃</strong>。这本书的章节是按知识体系排的，不是按学习难度排的。硬啃的结果通常是读到第三部就停了。</p><p>正确的走法按“能力阶梯”：先能看懂系统怎么跑起来（有产出：能画出启动链），再能改行为（有产出：能复现一个算法），再懂内核（有产出：能读懂一个模块源码），最后能交付（有产出：能跑完验证矩阵）。每个阶段都有可验收的产出，没有产出就不算学完。</p></div></aside>
+<h2 id="sec-1">C.1 四个阶段</h2>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>目标</th><th>对应章节</th><th>验收</th></tr></thead><tbody>
 <tr><td>筑基</td><td>看懂启动链与进程模型</td><td>01–08, K01–K05</td><td>能口述八步启动链</td></tr>
@@ -106,12 +108,13 @@
 <tr><td>深入</td><td>懂内核、懂模块化原理</td><td>K06–K07, M01–M07, F05–F11</td><td>能读懂一个 KPM 的源码</td></tr>
 <tr><td>工程</td><td>能交付可维护的方案</td><td>L01–L10, D01–D03</td><td>能通过八项验证矩阵</td></tr>
 </tbody></table></div>
-<h2>C.2 实验环境建议</h2>
+<h2 id="sec-2">C.2 实验环境建议</h2>
 <ul><li><strong>一台可解锁的测试机</strong>：Pixel 系列最省事，AOSP 资料全。</li><li><strong>一套 AOSP 源码</strong>（可选但强烈建议）：能对着源码读，效率高一个数量级。</li><li><strong>固定版本的测试 App</strong>：自己写一个带签名校验、反调试的靶场 App，比拿别人的 App 练手干净。</li><li><strong>记录习惯</strong>：每次实验都记“假设 → 操作 → 观察 → 结论”，四周后你会感谢自己。</li></ul>
-<h2>C.3 三条学习原则</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这三条不是励志话，是省时间的办法：一是每学一个概念就找一个能观察它的命令，二是先跑通再深究，三是每步都留一份可复现的记录。</p><p>违反任何一条，后面都会以「明明学过却用不上」的形式还回来。这一节讲这三条为什么重要，读完你会把「动手验证」排在「继续读」前面。</p></div></aside>
+<h2 id="sec-3">C.3 三条学习原则</h2>
 <ol><li><strong>先建模型，再记细节</strong>。模型对了，细节可以查；模型错了，细节全是散的。</li><li><strong>每个结论配一个可证伪实验</strong>。不做实验的“理解”，多半是错觉。</li><li><strong>改完必须回归</strong>。任何一次“应该没问题”的改动，都要用同一套用例重跑。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>最后一句：这份材料里所有“技巧”都会过期，但“分层建模 + 差分验证 + 可证伪实验”这三件事不会。把这三件事练成习惯，比记住任何一条命令都值。</div></aside>
-<h2>C.4 一份 8 周的学习计划</h2>
+<h2 id="sec-4">C.4 一份 8 周的学习计划</h2>
 <div class="tbl"><table>
 <thead><tr><th>周</th><th>内容</th><th>产出</th></tr></thead><tbody>
 <tr><td>1</td><td>01–04 + 图 01/04</td><td>能画启动链与检测矩阵</td></tr>
@@ -123,7 +126,7 @@
 <tr><td>7</td><td>F07–F11 + M01–M03</td><td>能说清 Text Shadow</td></tr>
 <tr><td>8</td><td>M04–M07 + L01–L10</td><td>能通过八项验证矩阵</td></tr>
 </tbody></table></div>
-<h2>C.5 常见卡点与对策</h2>
+<h2 id="sec-5">C.5 常见卡点与对策</h2>
 <div class="tbl"><table>
 <thead><tr><th>卡点</th><th>表现</th><th>对策</th></tr></thead><tbody>
 <tr><td>环境搭不起来</td><td>frida 连不上</td><td>按 4.5 的分层排查</td></tr>
@@ -131,26 +134,26 @@
 <tr><td>脱壳 dump 为空</td><td>jadx 打不开</td><td>换 dump 时机</td></tr>
 <tr><td>内核模块加载失败</td><td>dmesg 报错</td><td>查符号与 vermagic</td></tr>
 </tbody></table></div>
-<h2>C.6 推荐的源码阅读顺序</h2>
+<h2 id="sec-6">C.6 推荐的源码阅读顺序</h2>
 <ol><li>AOSP 的 <code>init</code>（看 rc 解析与 service 启动）</li><li><code>frameworks/base/core/java/android/app/ActivityThread.java</code>（看 App 启动）</li><li><code>bionic/linker/linker.cpp</code>（看 so 加载）</li><li><code>art/runtime/art_method.h</code>（看 ArtMethod）</li><li>Frida 的 <code>frida-gum/gum/interceptor.c</code>（看 hook 实现）</li><li>Linux 的 <code>kernel/fork.c</code>（看 task 创建）</li></ol>
 <p>每读一个文件，都问自己三个问题：<strong>它的输入是什么、输出是什么、谁调用它</strong>。这三个问题能让你不被细节淹没。</p>
-<h2>C.7 一份“自测题”清单</h2>
+<h2 id="sec-7">C.7 一份“自测题”清单</h2>
 <ul><li>不看资料，画出从开机到 App 可见的完整链路。</li><li>解释为什么“改 ramdisk”与“改 kernel”在能力上差一个数量级。</li><li>写出一个能抓 <code>strcmp</code> 两个参数的 Frida 脚本。</li><li>解释 Text Shadow 为什么必须“双 PFN”。</li><li>说明“三绿”的三个判定分别校验什么。</li><li>给出一个“结构差分”检测的例子，并说明怎么测量。</li></ul>
-<h2>C.8 三本值得反复读的材料</h2>
+<h2 id="sec-8">C.8 三本值得反复读的材料</h2>
 <ul><li><strong>AOSP 源码</strong>：所有“官方行为”的最终解释权。</li><li><strong>Linux 内核文档</strong>（Documentation/ 目录）：比任何二手资料都准确。</li><li><strong>各框架的源码</strong>：Frida、LSPosed、Magisk，读它们的 commit 历史比读文档更有收获。</li></ul>
-<h2>C.9 最后一段话</h2>
+<h2 id="sec-9">C.9 最后一段话</h2>
 <p>这本书里所有的“技巧”都会随版本过期。但有三件事不会：<strong>分层建模的能力</strong>、<strong>做可证伪实验的习惯</strong>、<strong>把结论写成可回归用例的工程素养</strong>。把这三件事练成肌肉记忆，你就再也不需要“记住某个具体命令”了——需要的时候，你会自己推出来。</p>
-<h2>C.10 一页纸的“开始动手”清单</h2>
+<h2 id="sec-10">C.10 一页纸的“开始动手”清单</h2>
 <ol><li>装好 adb、frida-tools，跑通 <code>frida-ps -U</code>。</li><li>写一个空脚本，能 <code>send(&#x27;alive&#x27;)</code>。</li><li>对自己写的靶场 App 做一次 hook，改一个方法的返回值。</li><li>用 <code>frida-trace</code> 抓一次 <code>open</code>，看输出。</li><li>把自己 App 的 dex 用 jadx 打开，找到 MainActivity。</li><li>对一个真实 App 做一次“抓输入输出”，记录步骤。</li><li>写一个三组对照的检测脚本，跑一遍。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这七步做完，你就“入门”了。剩下的都是在这条链上加深度——而深度是可以按需补的。</div></aside>
-<h2>桌上摆着一台二手机和三根线</h2>
+<h2 id="sec-11">桌上摆着一台二手机和三根线</h2>
 <p>桌上摆着一台刚到手的二手机、三根分不清用途的数据线、一台还装着旧版 frida-tools 的电脑。你很想立刻开始做实验，但请先忍住——前面 C.1 给了四个阶段的阶梯，C.10 给了七步动手清单，这一页补的是最容易低估的半天：把环境固定下来并写进文档。多少人卡在「昨天还能跑」上，不是技术不够，是没记下当时到底是哪一版 server、哪一个系统补丁、哪一台机器。</p>
 <p>拿一张纸当环境档案，抬头写日期。每装好一样东西就填一行：设备型号、Android 版本、安全补丁、bootloader 是否解锁、root 方案、frida-server 版本、host 端 frida-tools 版本。填完拍照存档。这半天会在第四周连本带利还给你。</p>
-<h2>从裸机到能 spawn，逐拍搭</h2>
+<h2 id="sec-12">从裸机到能 spawn，逐拍搭</h2>
 <ol><li><strong>你</strong> → 对 <strong>bootloader</strong> → 按厂商流程解锁并立刻记下解锁状态 → 结果是能刷镜像，同时明确这台机器从此不再代表「干净设备」，得另备一台做基线。</li><li><strong>你</strong> → 对 <strong>系统镜像</strong> → 刷入与 AOSP 资料对应的固定版本 → 结果是内核符号、BTF、KMI 都有确定参照，不会随 OTA 漂移。</li><li><strong>你</strong> → 对 <strong>root 方案</strong> → 选一套并固定，不中途换 → 结果是 <code>/data/adb</code>、SELinux 策略、挂载视图都稳定，检测实验才可比。</li><li><strong>你</strong> → 对 <strong>frida-server</strong> → 挑与 host 端 <code>frida-tools</code> 完全同版的可执行文件推入 <code>/data/local/tmp</code> → 结果是排掉最常见的一类「能连但脚本不执行」。</li><li><strong>你</strong> → 对 <strong>端口</strong> → <code>adb forward tcp:27042 tcp:27042</code> 并验证 <code>frida-ps -U</code> → 结果是注入层打通，可以开始写第一个 <code>send(&#x27;alive&#x27;)</code>。</li><li><strong>你</strong> → 对 <strong>靶场 App</strong> → 自己写一个带签名校验与反调试的最小工程，用固定 key 签名 → 结果是有了一个完全可控、可反复重装的对照物。</li><li><strong>你</strong> → 对 <strong>环境档案</strong> → 把上面六行连同哈希一起归档 → 结果是四周后你还能精确复现第一次实验。</li></ol>
-<h2>版本矩阵怎么选，别贪多</h2>
+<h2 id="sec-13">版本矩阵怎么选，别贪多</h2>
 <ul><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 1 周只做启动链与进程模型，验收是「不看资料口述八步」→ 结果是先把地图建起来，不碰工具细节。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 2~3 周写 hook、抓算法，验收是「复现一个 App 的签名」→ 结果是手上有了可证伪的第一次成功。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 4~6 周读内核与模块化源码，验收是「读懂一个 KPM」→ 结果是理解力从用户态抬到 EL1。</li><li><strong>你</strong> → 对 <strong>周次节奏</strong>：第 7~8 周做交付与验证矩阵，验收是「八项用例全跑过」→ 结果是从「能跑」升级到「能维护」。</li><li><strong>你</strong> → 对 <strong>版本矩阵</strong> → 只留最老、主流、最新三档，不要每台都测 → 结果是把适配成本压到可控，同时覆盖绝大多数行为差异。</li><li><strong>你</strong> → 对 <strong>实验笔记</strong> → 每次都写「假设 → 操作 → 观察 → 结论」四行 → 结果是失败也能复用，因为它排除了一种可能。</li></ul>
-<h2>可复现实验：环境自检一条龙</h2>
+<h2 id="sec-14">可复现实验：环境自检一条龙</h2>
 <div class="code">
 <div class="code-title">新机器到手先跑这七行，全绿才开工</div>
 <pre><code>adb devices                        # 期望：device，不是 offline

@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L07</span><h1>Android 16 ART / JVMTI 根因修复</h1><p class="ch-en">generated class 枚举、dex method index、隔离 ArtMethod backup、反射 Method 包装</p></div>
 <p class="lead">新版本把“生成类”藏得更深，反射和枚举都要换路子。</p>
-<h2>7.1 四个根因</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Android 16 把“动态生成的类”藏得更深了，原来靠反射枚举的办法直接失效。</p><p>这一章是四个根因的排查记录：为什么枚举不到、为什么方法索引对不上、为什么备份的档案袋在新版本里不成立、为什么反射拿到的包装对象跟以前不一样。每个根因配一种修法。</p><p>比结论更有价值的是方法论：<strong>先把它打出来，再决定改哪</strong>。也就是先加日志、先打印、先把“我看到的是不是真的”确认清楚，再动手改代码。跳过这一步，就会在四个可能的原因之间反复瞎猜。</p></div></aside>
+<h2 id="sec-1">7.1 四个根因</h2>
 <figure>
 <img src="../assets/l_l07.png" alt="图 L7-1" width="1080">
 <figcaption><b>图 L7-1</b><span>四个根因与四种修法</span></figcaption>
@@ -110,7 +111,7 @@
 <tr><td>ArtMethod 备份隔离</td><td>备份与本体温差明显</td><td>放进独立匿名页</td></tr>
 <tr><td>反射 Method 包装</td><td>拿到的是包装对象</td><td>先解包到真实 ArtMethod</td></tr>
 </tbody></table></div>
-<h2>7.2 方法论：先打出来，再决定改哪</h2>
+<h2 id="sec-2">7.2 方法论：先打出来，再决定改哪</h2>
 <p>遇到“新版本不工作”，第一步不是猜 API，而是用 JVMTI 把运行时的真实结构 dump 出来：有哪些类、每个方法的 ArtMethod 在哪、entrypoint 指向哪。看到真实数据，改动方向自然清楚。</p>
 <div class="code">
 <div class="code-title">JVMTI 枚举所有已加载类</div>
@@ -123,9 +124,10 @@ for (int i = 0; i &lt; count; i++) {
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>兼容工程的通用套路：<strong>能力探测 → 多路径实现 → 运行时选择</strong>。不要写“if (version == 16)”这种硬分支，写“if (有这个符号就用这条路”。</div></aside>
-<h2>7.3 本章自测</h2>
+<h2 id="sec-3">7.3 本章自测</h2>
 <ul><li>为什么动态生成的类用反射枚举不到？</li><li>备份 ArtMethod 为什么要“隔离”？</li><li>反射拿到的 Method 为什么可能是包装对象？</li><li>为什么建议用“能力探测”而不是“版本判断”？</li></ul>
-<h2>7.4 深入：为什么要“隔离 ArtMethod 备份”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改方法之前，得先把原来那份存起来，之后才能还原、也才能调原实现。可这份备份本身也是个对象，会被垃圾回收盯上、被枚举扫到。</p><p>所以它得放在一个「谁也碰不到」的地方。这一节讲这个隔离怎么做，读完你就能理解为什么有些实现看起来绕了一大圈，其实都是在保护这份备份。</p></div></aside>
+<h2 id="sec-4">7.4 深入：为什么要“隔离 ArtMethod 备份”</h2>
 <p>如果备份的 ArtMethod 就放在本体旁边，那么“扫描一段内存，发现两个长得一模一样的方法结构”，就是一个非常明显的信号。隔离的做法是把它放到另一个匿名页，或者用不同的形态保存（比如只存 entrypoint）。</p>
 <div class="tbl"><table>
 <thead><tr><th>保存方式</th><th>可枚举性</th><th>安全性</th></tr></thead><tbody>
@@ -133,7 +135,7 @@ for (int i = 0; i &lt; count; i++) {
 <tr><td>完整副本（独立页）</td><td>中</td><td>中</td></tr>
 <tr><td>只存 entrypoint</td><td>低</td><td>高</td></tr>
 </tbody></table></div>
-<h2>7.5 实战：能力探测代替版本判断</h2>
+<h2 id="sec-5">7.5 实战：能力探测代替版本判断</h2>
 <div class="code">
 <div class="code-title">好的写法与坏的写法</div>
 <pre><code># 坏：版本硬编码
@@ -144,7 +146,8 @@ if (has_symbol(&quot;art::mirror::ArtMethod::GetEntryPoint&quot;)) { ... }
 else if (offset_works(0x28)) { ... }</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.6 原理推演：为什么“生成类”是清单外的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有些类不是从文件里读出来的，是程序运行到一半临时造出来的。它们没有对应的文件，也不在「从文件加载的那些类」的名单里。</p><p>所以任何「按名单逐个检查」的做法都碰不到它们——不是漏了，是名单本身就不包含。这一节讲这类类从哪来、又被记在哪儿，读完你知道该换一份什么名单去查。</p></div></aside>
+<h2 id="sec-6">7.6 原理推演：为什么“生成类”是清单外的</h2>
 <p>因为它们是运行时“造”出来的，不在 APK 的 dex 里。反射 API 通常只枚举“已加载的、来自 dex 的类”，所以动态生成的类就漏掉了。</p>
 <div class="tbl"><table>
 <thead><tr><th>枚举方式</th><th>能看到动态类</th><th>原因</th></tr></thead><tbody>
@@ -153,7 +156,8 @@ else if (offset_works(0x28)) { ... }</code></pre>
 <tr><td>JVMTI GetLoadedClasses</td><td>全部</td><td>运行时真实列表</td></tr>
 </tbody></table></div>
 <p>所以“要完整枚举”就必须用 JVMTI——这也是它在逆向里价值高的原因。</p>
-<h2>7.7 数据细节：JVMTI 的常见能力</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这套接口本来是用来给调试器和分析工具用的，能做的事很多：列出所有类、读方法信息、设事件回调。这张表列了其中最常用的几项。</p><p>它的用处是判断可行性：想拿到某类信息，先查这张表有没有现成能力，有就不要自己去扫内存。</p></div></aside>
+<h2 id="sec-7">7.7 数据细节：JVMTI 的常见能力</h2>
 <div class="tbl"><table>
 <thead><tr><th>能力</th><th>用途</th></tr></thead><tbody>
 <tr><td>GetLoadedClasses</td><td>枚举全部类</td></tr>
@@ -161,7 +165,8 @@ else if (offset_works(0x28)) { ... }</code></pre>
 <tr><td>RetransformClasses</td><td>运行时改字节码</td></tr>
 <tr><td>SetBreakpoint</td><td>方法级断点</td></tr>
 </tbody></table></div>
-<h2>7.8 深入：为什么“反射枚举”拿不到全部类</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>反射能列出「已知的那些类」，但运行时临时造出来的、藏在非标准位置的，都不在这份名单里。名单本身就不完整，扫得再仔细也没用。</p><p>这一节讲名单的边界在哪。读完你不会再把「扫了一遍没发现」当成结论，而会问「还有哪些是扫不到的」。</p></div></aside>
+<h2 id="sec-8">7.8 深入：为什么“反射枚举”拿不到全部类</h2>
 <p>因为反射枚举的入口通常是 <code>ClassLoader.loadClass</code> + 已知名字，或者 <code>PackageManager</code> 里的 dex 列表。前者需要你知道名字，后者只覆盖“来自 dex 的类”。动态生成的类两条路都不在。</p>
 <div class="tbl"><table>
 <thead><tr><th>枚举方式</th><th>覆盖范围</th><th>漏掉什么</th></tr></thead><tbody>
@@ -170,7 +175,8 @@ else if (offset_works(0x28)) { ... }</code></pre>
 <tr><td>JVMTI GetLoadedClasses</td><td>全部已加载</td><td>几乎没有</td></tr>
 </tbody></table></div>
 <p>所以“要完整”就必须用 JVMTI。这是它不可替代的地方。</p>
-<h2>7.9 深入：方法索引为什么会失效</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有些地方用「第几个方法」来指代一个方法，而不是用名字。只要中间插进一个新方法，后面的编号全往后挪，原来的指代就指错了。</p><p>这一节讲这个错位怎么发生。读完你排查「改完别的地方坏了」时，会想到是不是索引被挪了。</p></div></aside>
+<h2 id="sec-9">7.9 深入：方法索引为什么会失效</h2>
 <p>因为 <code>dex method index</code> 是“dex 内部的编号”，不同 dex、不同版本、不同加载顺序都可能不同。把它当作“稳定标识”来缓存，换个环境就错位。</p>
 <div class="code">
 <div class="code-title">正确做法：用签名做键</div>
@@ -181,19 +187,19 @@ cache[method_index] = ArtMethod*;
 cache[class_sig + &#x27;#&#x27; + method_name + method_sig] = ArtMethod*;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.10 实战：一次“新版本不工作”的排查记录</h2>
+<h2 id="sec-10">7.10 实战：一次“新版本不工作”的排查记录</h2>
 <ol><li>确认是“完全没生效”还是“部分生效”——前者通常是加载失败，后者是布局变了。</li><li>用 JVMTI dump 出真实的 ArtMethod 布局，与代码里的假设比对。</li><li>发现某个字段偏移变了 8 字节。</li><li>改成“运行时探测偏移”，而不是“写死”。</li><li>回归：在三个版本上各跑一遍八项用例。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这个流程可以复用到所有“版本升级后失效”的场景：<strong>先分清“没进去”还是“进去但错了”</strong>，再决定是改加载逻辑还是改偏移假设。</div></aside>
-<h2>刷完 Android 16，模块集体失灵</h2>
+<h2 id="sec-11">刷完 Android 16，模块集体失灵</h2>
 <p>同一台机器、同一个模块包，Android 14 上跑得好好的，OTA 到 Android 16 后所有 hook 静默失效：没有崩溃，没有异常，日志里连一行错误都没有。模块入口执行了，<code>hookMethod</code> 返回了成功，可目标方法就是不走回调。第一反应往往是&#x27;入口指针写法变了&#x27;，于是把 <code>ArtMethod</code> 偏移表翻来覆去改了一整天——方向从一开始就错了。<strong>失效发生在找方法那一步，不是改入口那一步。</strong></p>
 <p>Android 16 的 ART 把动态生成的类从常规类表里挪了出去，反射拿到的 <code>Method</code> 也可能是包装对象，DEX 方法索引的语义还顺带调了。框架拿着一个&#x27;看起来对&#x27;的 ArtMethod 地址改了半天，改的其实是个影子。根因修复的第一步因此不是打补丁，而是<strong>把运行时真实结构 dump 出来看一眼</strong>。</p>
-<h2>四个根因，逐个照出来</h2>
+<h2 id="sec-12">四个根因，逐个照出来</h2>
 <ol><li><strong>ART → 生成类</strong>：动态生成的桩类、lambda 类、代理类不再出现在常规 <code>ClassLinker</code> 枚举里；结果是反射遍历 <code>getDeclaredClasses()</code> 拿不到它们，基于类表的 hook 定位直接落空。</li><li><strong>修复 → JVMTI `GetLoadedClasses`</strong>：改用 JVMTI 枚举所有已加载类并 <code>GetClassSignature</code> 过滤；结果是隐藏在非常规表里的类也能被逐个照出来，且不依赖私有偏移。</li><li><strong>ART → dex method index</strong>：新版本对索引语义与缓存做了调整；结果是旧版按索引缓存的 ArtMethod 映射失效，签到的方法与实际入口不是同一个。</li><li><strong>修复 → 按签名重新解析</strong>：放弃&#x27;记住一个整数索引&#x27;，每次按 <code>类名 + 方法名 + 签名</code> 现场解析；结果是缓存失效不会导致错挂，代价是每次多一次查表。</li><li><strong>ART → backup 温差</strong>：backup 若与目标 ArtMethod 落在同一页，页权限、脏页状态与访问局部性会暴露&#x27;这里有一份副本&#x27;；结果是结构差分能一眼看出两份相邻的方法体。</li><li><strong>修复 → 独立匿名页 + 反射解包</strong>：把 backup 放进独立的匿名映射页，反射拿到的 <code>Method</code> 先解包到真实 ArtMethod 再操作；结果是温差消失，且不再误改包装对象。</li></ol>
 <p>第 6 拍里的&#x27;解包&#x27;值得单独说：某些路径下 <code>Method</code> 对象只是一个句柄/包装，直接拿它的首字段当 <code>ArtMethod*</code> 会得到一个合法但错误的地址——所有后续写入都不会崩溃，也永远不会生效。这正好解释了开头那个&#x27;零报错的静默失效&#x27;。</p>
-<h2>能力探测，而不是版本判断</h2>
+<h2 id="sec-13">能力探测，而不是版本判断</h2>
 <ul><li>启动时用 <code>dlsym</code> 探测 <code>art::ArtMethod</code> 相关符号与 JVMTI 能力集是否存在，记录成一张能力表。</li><li>为每条能力准备两条以上实现：如&#x27;类枚举&#x27;分别有 ClassLinker 路径与 JVMTI 路径。</li><li>运行时按能力表选路径，而不是写 <code>if (SDK_INT == 36)</code>；同一个 OEM 的 15 与 16 可能行为不同。</li><li>把&#x27;选了哪条路&#x27;打进日志；出问题时第一件事是核对路径，而不是重读偏移表。</li><li>每加一条新路径，回归矩阵里补一行；路径可以共存，但必须可追踪、可回滚。</li></ul>
 <p>这套&#x27;能力探测 → 多路径 → 运行时选择&#x27;是兼容工程的通用骨架。它的价值不在少写几个 if，而在于<strong>把&#x27;哪个版本&#x27;的问题换成&#x27;有没有这个能力&#x27;的问题</strong>——前者随 ROM 分裂无限膨胀，后者永远只有有限几种取值。L08 的适配层就是这个骨架落到代码里的样子。</p>
-<h2>可复现：用 JVMTI 把真相打出来</h2>
+<h2 id="sec-14">可复现：用 JVMTI 把真相打出来</h2>
 <div class="code">
 <div class="code-title">枚举所有已加载类（agent 内，C++）</div>
 <pre><code>jclass* classes = nullptr; jint count = 0;

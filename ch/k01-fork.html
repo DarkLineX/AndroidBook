@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">K01</span><h1>Linux 进程、线程与调度</h1><p class="ch-en">task_struct、fork/clone/exec、runqueue、cgroup、cred</p></div>
 <p class="lead">内核眼里的“一个任务”长什么样，决定了你所有的 hook 手段能改到哪。</p>
-<h2>1.1 task_struct：内核的总账本</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核眼里没有“App”，只有“任务”。一个任务就是一坨数据结构，里面写着：我是谁（uid）、我的内存长什么样、我现在该不该跑、谁在等我。这坨结构叫 task_struct。</p><p>为什么先讲它？因为你在内核里做的所有手脚——改权限、藏进程、换返回值——最后都落在这坨结构的某个字段上。不知道字段在哪，就只能靠猜。</p><p>这一章讲三件事：这个结构里哪些字段最值钱、fork/clone/exec 这三个“造任务”的系统调用有什么区别、以及“谁先跑”这件事在内核里是怎么决定的。</p></div></aside>
+<h2 id="sec-1">1.1 task_struct：内核的总账本</h2>
 <p>Linux 不区分“进程”和“线程”，它们都是 <code>task_struct</code>。区别只在共享了什么：同一线程组的任务共享 <code>mm</code>、<code>files</code>、<code>sighand</code>；进程则各有一份。所以“创建一个线程”在内核看来就是“clone 时带上 CLONE_VM | CLONE_FILES | CLONE_THREAD”。</p>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>作用</th><th>为什么会关心它</th></tr></thead><tbody>
@@ -114,7 +115,10 @@
 <img src="../assets/k01_task.png" alt="图 K1-1" width="1080">
 <figcaption><b>图 K1-1</b><span>task_struct 关键字段与 fork/clone/exec 的分工</span></figcaption>
 </figure>
-<h2>1.2 fork / clone / exec 三兄弟</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这三个名字经常被混着说，其实是三件不同的事：</p><p><strong>fork</strong> = 复印一份自己。新进程和老的几乎一模一样，只是 pid 不同。
+<strong>clone</strong> = 复印，但你可以勾选“哪些东西共用、哪些东西各一份”。线程本质上就是“共用内存的 clone”。
+<strong>exec</strong> = 不改身份，只换内容。进程还是那个进程、pid 不变，但里面跑的代码整个换掉。</p><p>记法：fork/clone 是“生”，exec 是“换魂”。zygote 用的是 fork（生一个空壳），App 起来之后才把自己的代码塞进去。</p></div></aside>
+<h2 id="sec-2">1.2 fork / clone / exec 三兄弟</h2>
 <p><code>fork()</code> 复制一份 mm（用 COW 省内存）与 fd 表，返回两次；<code>clone()</code> 按 flags 决定共享哪些资源；<code>execve()</code> 不创建新进程，只是把当前进程的 mm 换成新程序的，pid 保留。</p>
 <div class="code">
 <div class="code-title">三条路径的内核差异</div>
@@ -123,15 +127,16 @@ clone()  -&gt; 按 flags 选择性共享（CLONE_VM / CLONE_FILES / CLONE_THREAD
 execve() -&gt; 换 mm、换用户栈、保留 pid，从 ELF 入口重新开始</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.3 调度：谁先跑</h2>
+<h2 id="sec-3">1.3 调度：谁先跑</h2>
 <p>每个 CPU 有一个 runqueue，里面的任务按调度类排队（stop &gt; dl &gt; rt &gt; fair &gt; idle）。普通进程走 CFS/EEVDF，用 <code>nice</code> 与 <code>cpu.weight</code>（cgroup）影响权重。</p>
 <p>这一节对做单步 trace（M04）很关键：<strong>单步必须绑定 CPU 亲和性</strong>，否则任务被迁到别的核，调试寄存器的状态就乱了。</p>
-<h2>1.4 cred：权限的唯一真相</h2>
+<h2 id="sec-4">1.4 cred：权限的唯一真相</h2>
 <p><code>cred</code> 是内核里“你是谁”的完整描述：uid、gid、补充组、capabilities、SELinux SID。提权操作的本质就是把 <code>cred</code> 换成一个 uid=0 的版本（<code>commit_creds(prepare_kernel_cred(0))</code> 是经典写法）。</p>
 <aside class="note"><span class="note-tag">要点</span><div>检测连接点：如果 cred 被改过，那么 <code>/proc/pid/status</code> 的 Uid 行、capability 集合、以及实际能做的操作之间会出现不一致。这种“能力与身份不匹配”比任何特征都可靠。</div></aside>
-<h2>1.5 本章自测</h2>
+<h2 id="sec-5">1.5 本章自测</h2>
 <ul><li>进程与线程在内核里的唯一区别是什么？</li><li>为什么 fork 比想象中便宜？</li><li>cred 里包含哪些信息？提权改的是哪几个字段？</li><li>为什么单步 trace 必须绑核？</li></ul>
-<h2>1.6 深入：一次 fork 到底复制了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「复制一个进程」听着像把内存整份拷一遍，其实不是：新进程先和老的共用同一份内存，谁要改谁再单独拷那一页出来。真正被完整复制的是「账本」——打开的文件、挂的信号处理、地址空间的目录。</p><p>这一节把「抄了什么、没抄什么」分开讲。读完你能解释为什么子进程里能看到父进程的文件，却看不到父进程后来才改的变量。</p></div></aside>
+<h2 id="sec-6">1.6 深入：一次 fork 到底复制了什么</h2>
 <p>fork 的开销之所以小，是因为它复制的是“表的指针”，而不是表里的内容：页表被标记为只读并被双方共享（COW），fd 表被 <code>copy_files</code> 处理（引用计数 +1，除非带了 CLONE_FILES），信号处理表也类似。</p>
 <div class="tbl"><table>
 <thead><tr><th>资源</th><th>fork（不带对应 flag）</th><th>带 flag 时</th></tr></thead><tbody>
@@ -141,7 +146,7 @@ execve() -&gt; 换 mm、换用户栈、保留 pid，从 ELF 入口重新开始</
 <tr><td>线程组</td><td>新建 tgid</td><td>CLONE_THREAD：加入同一线程组</td></tr>
 </tbody></table></div>
 <p>这里有个常见误解：<strong>fork 不是“引用计数 +1 共享 fd 表”，而是“真的复制一份表”</strong>——所以父子进程之后各自 open/close 互不影响，但已打开的 <code>struct file</code> 是共享的（refcount 各 +1）。只有 <code>CLONE_FILES</code> 才是共享同一个 <code>files_struct</code>。</p>
-<h2>1.7 实战：遍历所有进程的两种方式</h2>
+<h2 id="sec-7">1.7 实战：遍历所有进程的两种方式</h2>
 <div class="code">
 <div class="code-title">方式一：/proc（用户态）</div>
 <pre><code>for pid in $(ls /proc | grep -E &#x27;^[0-9]+$&#x27;); do
@@ -160,7 +165,8 @@ rcu_read_unlock();</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意方式二必须包在 <code>rcu_read_lock</code> 里，因为 <code>for_each_process</code> 遍历的是 RCU 保护的链表。少了这把锁，就是标准的 use-after-free。</div></aside>
-<h2>1.8 原理推演：为什么 Linux 不需要“线程”这个概念</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>在 Linux 里，「进程」和「线程」在核心里是同一个东西：一个可以被调度的执行体。区别只在于它跟别人共享多少——共享地址空间的几个执行体，用户态管它们叫线程。</p><p>所以内核里根本没有「创建线程」这个系统调用，创建的都是同一种东西，只是参数不同。理解这一点，你看到 /proc 里线程和进程长得一样时就不会困惑，也才知道该去哪儿找「谁和谁是一伙的」。</p></div></aside>
+<h2 id="sec-8">1.8 原理推演：为什么 Linux 不需要“线程”这个概念</h2>
 <p>因为“进程”与“线程”的差别，本质上只是“共享了哪些资源”。Linux 把这个问题交给 <code>clone</code> 的 flags，于是“线程”只是“共享 mm 与 files 的 task”，不需要单独的数据结构与调度逻辑。</p>
 <div class="tbl"><table>
 <thead><tr><th>概念</th><th>Linux 里的实现</th><th>共享</th></tr></thead><tbody>
@@ -169,7 +175,8 @@ rcu_read_unlock();</code></pre>
 <tr><td>容器</td><td>namespace + cgroup</td><td>内核视图</td></tr>
 </tbody></table></div>
 <p>这个设计的直接后果：<code>/proc</code> 里每个 task 都有自己的目录，但同组的线程共享 <code>tgid</code>。所以“数线程”和“数进程”是两个不同的操作。</p>
-<h2>1.9 数据细节：cred 的字段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个进程「是谁」，在内核里是靠一小块结构记着的：哪个用户、哪些组、有什么能力。这块东西就是 cred。</p><p>这张表列出里面最常被查的几个字段。它的用处是：判断「这个进程到底以什么身份在跑」，不要看命令行、不要看名字，看这块。改身份也是改这里。</p></div></aside>
+<h2 id="sec-9">1.9 数据细节：cred 的字段</h2>
 <div class="code">
 <div class="code-title">struct cred 的关键成员</div>
 <pre><code>kuid_t  uid, euid, suid, fsuid;
@@ -181,13 +188,13 @@ struct ucounts *ucounts;
 <button class="copy" type="button">复制</button>
 </div>
 <p>注意 <code>fsuid</code> 与 <code>euid</code> 的区别：文件访问用的是 <code>fsuid</code>。有些“提权”只改了 <code>euid</code>，结果读文件还是失败——这就是“改了但没生效”的经典原因。</p>
-<h2>把内核想成一个从不被询问的裁判</h2>
+<h2 id="sec-10">把内核想成一个从不被询问的裁判</h2>
 <p>凌晨两点，你在 adb shell 里敲下 <code>strace -f -e trace=clone,execve</code>，然后冷启动一个 App。屏幕上瞬间滚出几十行 clone——但真正的戏不在这几十行里，而在内核那本从不被询问的总账上：它一声不吭地给每个新任务发了一张身份证，又悄悄决定谁先上 CPU。你从来没问过它，它也不打算解释。</p>
 <p>把内核想象成一个从不被询问的裁判：它不关心你给进程起了什么名字，只盯着 <code>task_struct</code> 里那几个字段。谁排在 runqueue 前面、谁的 <code>cred</code> 写着 uid=0、谁的 <code>mm</code> 和别人共用一份——这三件事定下来，后面所有 hook、注入、隐藏能改到哪，就全定了。</p>
-<h2>一次 fork，两次返回，谁拿到 0</h2>
+<h2 id="sec-11">一次 fork，两次返回，谁拿到 0</h2>
 <ol><li><strong>父进程</strong> 对 <strong>内核</strong> 发起 <code>fork()</code>：陷入 EL1 后走 <code>kernel_clone</code>，内核先 <code>copy_process</code> 造一个新的 <code>task_struct</code>，把 <code>mm</code>、<code>files</code>、<code>sighand</code> 按 flags 复制或共享 → 结果：系统里多了一个任务，但它的状态还是新建，一次都没跑过。</li><li><strong>内核</strong> 对 <strong>子进程的现场</strong> 写死返回值：在新任务的 <code>pt_regs</code> 里把 <code>x0</code> 置 0，<code>pid</code> 填成新分配的 tid；回头在 <strong>父进程的 `pt_regs`</strong> 里把 <code>x0</code> 填成这个 tid → 结果：同一段 <code>if (pid == 0)</code> 代码，父子各走一支，这就是所谓返回两次。</li><li><strong>内核</strong> 对 <strong>页表</strong> 做 COW：父子页表项都指向同一批物理页，但双方都清掉可写位 → 结果：谁先写，谁才在缺页里拿到自己的副本；<code>fork</code> 因此几乎不复制内存内容。</li><li><strong>内核</strong> 对 <strong>父进程</strong> 收尾时调 <code>wake_up_new_task</code>：把新任务挂到某个 CPU 的 runqueue → 结果：子进程第一次有了被调度的资格，此刻它才真正活着。</li><li><strong>`execve`</strong> 对 <strong>当前 `mm`</strong> 动手：不新建任务，直接把 <code>mm</code> 换成新 ELF 的，用户栈重铺，pid 原封不动 → 结果：ps 里那个 pid 没变，进程里跑的却是完全另一个程序。</li></ol>
 <p>注意第 2 拍：<code>getpid()</code> 拿到的其实是 <code>tgid</code>，不是 <code>task_struct-&gt;pid</code>。一个多线程进程里，主线程的 pid 等于 tgid，其余线程的 pid 各不相同、<code>tgid</code> 全都相同。内核眼里的 pid 是线程号，用户眼里的 pid 是线程组号——两套编号从一开始就错开了半格。</p>
-<h2>一个新任务是怎么被推上 CPU 的</h2>
+<h2 id="sec-12">一个新任务是怎么被推上 CPU 的</h2>
 <ol><li><strong>时钟中断</strong> 对 <strong>当前 CPU</strong> 打一拍：定时器 IRQ 到，<code>scheduler_tick</code> 更新当前任务的 <code>vruntime</code>（CFS/EEVDF 按权重折算虚拟运行时间） → 结果：跑得久的任务在红黑树里往右挪。</li><li><strong>调度器</strong> 对 <strong>runqueue</strong> 挑人：<code>pick_next_task</code> 按 stop、dl、rt、fair、idle 的顺序，先在 fair 类里取 <code>vruntime</code> 最小的那个 → 结果：拿到下一个 <code>task_struct</code> 指针。</li><li><strong>`context_switch`</strong> 对 <strong>两套上下文</strong> 分开处理：<code>switch_mm</code> 换 <code>TTBR0_EL1</code>（用户页表基址），<code>switch_to</code> 保存并恢复 x19–x30、sp 与 per-CPU 状态 → 结果：地址空间和寄存器现场同时切到新任务。</li><li><strong>被换下的任务</strong> 对 <strong>自己</strong> 只剩一件事：它的内核栈上留着上一次 <code>switch_to</code> 的现场，下次被选中时从这里接着跑 → 结果：在它看来自己从没停过，只是 <code>schedule()</code> 一直没返回。</li><li><strong>绑核操作</strong> 对 <strong>任务</strong> 收紧 <code>cpus_allowed</code>：<code>sched_setaffinity</code> 之后只在某一个 CPU 的 runqueue 上排队 → 结果：任务不再迁移，per-CPU 的调试寄存器状态才不会丢。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>clone 带上的 flag</th><th>共享了什么</th><th>task_struct 里的变化</th><th>观察命令</th></tr></thead><tbody>
@@ -197,7 +204,7 @@ struct ucounts *ucounts;
 <tr><td>CLONE_SIGHAND</td><td>信号处理函数表</td><td>一边 sigaction，另一边同步生效</td><td>grep Sig /proc/self/status</td></tr>
 <tr><td>一个都不带</td><td>几乎全复制</td><td>新 tgid、新 mm（COW）、新 fd 表</td><td>strace -f -e clone 看到独立 pid</td></tr>
 </tbody></table></div>
-<h2>在 /proc 里把它抓住</h2>
+<h2 id="sec-13">在 /proc 里把它抓住</h2>
 <div class="code">
 <div class="code-title">动手：把 fork 与调度现场录下来</div>
 <pre><code># 1. 冷启动一个程序，只看进程创建与 exec

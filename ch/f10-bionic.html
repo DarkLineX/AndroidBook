@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F10</span><h1>Frida 线程结构体处理</h1><p class="ch-en">bionic pthread_internal_t、start_routine、libc decoy、pthread list 清洗</p></div>
 <p class="lead">每个线程在 TLS 顶端都挂着一个结构体，里面写着它是怎么来的。</p>
-<h2>10.1 结构体里的关键字段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>线程名只是一个标签，改掉它成本很低；但系统在内存里还留着一份「这个线程是什么、从哪儿开始跑」的登记表，那份东西不是改个名字就能变的。</p><p>麻烦就在这：名字洗白了，登记表还是原样。而且登记表和名字之间、和栈的位置之间必须能对上——只改一处，另外几处就露馅。</p><p>这一章讲这个结构体的关键字段、检测怎么利用它、以及要洗干净得动哪四处（少洗一处，另外三处就会互相矛盾）。</p></div></aside>
+<h2 id="sec-1">10.1 结构体里的关键字段</h2>
 <figure>
 <img src="../assets/f_f10.png" alt="图 F10-1" width="1080">
 <figcaption><b>图 F10-1</b><span>pthread_internal_t 的字段与要洗干净的四处</span></figcaption>
@@ -115,10 +116,10 @@
 };</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>10.2 检测原理</h2>
+<h2 id="sec-2">10.2 检测原理</h2>
 <p>遍历所有线程，检查 <code>start_routine</code> 指向哪里。正常的 <code>start_routine</code> 一定落在 libc 或已知 so 内；如果它落在一段匿名可执行映射里，那就很可疑了。</p>
 <p>另一个入口是 TLS 里的 libc decoy 字段（例如全局线程链表），顺着链表就能枚举所有线程，绕开 <code>/proc</code> 遍历。</p>
-<h2>10.3 要洗干净的四处</h2>
+<h2 id="sec-3">10.3 要洗干净的四处</h2>
 <div class="tbl"><table>
 <thead><tr><th>目标</th><th>做法</th><th>风险</th></tr></thead><tbody>
 <tr><td>pthread list</td><td>从全局链表摘掉自己的节点</td><td>写错就崩在下一个遍历者手里</td></tr>
@@ -127,9 +128,10 @@
 <tr><td>栈与 TLS</td><td>让栈落在正常 mmap 区</td><td>贴太近 agent 就露</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>改链表是双刃剑：先备份、再改、后校验。务必在“没有其他线程正在遍历”的时机动手，否则就是给自己埋一个随机崩溃。</div></aside>
-<h2>10.4 本章自测</h2>
+<h2 id="sec-4">10.4 本章自测</h2>
 <ul><li>pthread_internal_t 里哪个字段最能暴露来源？</li><li>除了遍历 /proc，还有什么方式能枚举线程？</li><li>改链表前必须做哪三件事？</li><li>为什么“栈地址”也是线索？</li></ul>
-<h2>10.5 深入：TLS 是怎么找到 pthread_internal_t 的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每个线程都有一块自己的小存储，系统在里面固定放了一个指针，指向这个线程的档案。想知道「我现在是哪个线程、我的档案在哪」，读那个位置就行。</p><p>这条路径是系统自己用的，绕不过去，所以也成了识别的入口。这一节讲怎么顺着它找到档案，读完你就明白为什么「改名字」这类表面功夫挡不住会读档案的人。</p></div></aside>
+<h2 id="sec-5">10.5 深入：TLS 是怎么找到 pthread_internal_t 的</h2>
 <p>在 bionic 里，TLS 的布局是：线程指针（TP）指向 <code>TLS_SLOT_SELF</code>，而 <code>pthread_internal_t</code> 就在 TP 附近（具体偏移由 <code>__get_tls()</code> 与结构布局决定）。所以“拿到 TP 就能拿到结构体”。</p>
 <div class="code">
 <div class="code-title">拿 TP 的方式（示意）</div>
@@ -138,9 +140,10 @@ register void* tp asm(&quot;tpidr_el0&quot;);
 auto self = *(pthread_internal_t**)((char*)tp - TLS_OFFSET);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>10.6 实战：检测“start_routine 落在匿名段”</h2>
+<h2 id="sec-6">10.6 实战：检测“start_routine 落在匿名段”</h2>
 <ol><li>遍历所有线程，读 <code>start_routine</code>。</li><li>在 maps 里查这个地址属于哪一段。</li><li>如果该段是“匿名 + 可执行”，就是可疑项。</li><li>排除 JIT 缓存等已知合法匿名段。</li></ol>
-<h2>10.7 原理推演：为什么“线程结构体”能暴露来源</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每个线程在系统里都有一份档案：谁创建的、栈在哪、叫什么名、属于哪个进程。这些东西工具改不了，因为它得靠它们活着。</p><p>所以哪怕名字改得干干净净，档案里的其它字段还会互相印证：栈的位置来自哪块内存、创建顺序对不对得上。这一节讲怎么从这些「必须存在」的字段反推来源，读完你就知道为什么「全部抹掉」这条路走不通，只能收敛。</p></div></aside>
+<h2 id="sec-7">10.7 原理推演：为什么“线程结构体”能暴露来源</h2>
 <p>因为它记录了“这个线程是怎么被创建的”——<code>start_routine</code> 指向创建时传入的函数地址。正常的线程入口在 libc 或业务 so 里；注入的线程入口在你的匿名映射里。这个差异无法用“改名”消除。</p>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>正常值</th><th>注入后</th></tr></thead><tbody>
@@ -150,7 +153,8 @@ auto self = *(pthread_internal_t**)((char*)tp - TLS_OFFSET);</code></pre>
 <tr><td>comm</td><td>业务命名</td><td>框架默认名</td></tr>
 </tbody></table></div>
 <p>所以“洗干净”的本质是：让这四个字段都落在正常范围内。其中最难的是 <code>start_routine</code>——因为它是真实地址，不能随便编。</p>
-<h2>10.8 数据细节：TLS 偏移的取法</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每个线程自己那块小存储，在什么位置、怎么算出来——不同架构、不同系统上方法不一样。这张表把几种取法列出来。</p><p>它的用处是：写跨架构的代码时，别假设「都是一个写法」。拿不准就按表里对应的一项去取，取错了表现是读到一片垃圾。</p></div></aside>
+<h2 id="sec-8">10.8 数据细节：TLS 偏移的取法</h2>
 <div class="code">
 <div class="code-title">在 aarch64 上拿 pthread_internal_t</div>
 <pre><code>// TP 寄存器（tpidr_el0）指向 TLS 块
@@ -159,7 +163,8 @@ auto self = *(pthread_internal_t**)((char*)tp - TLS_OFFSET);</code></pre>
 register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>10.9 深入：为什么“栈地址”也是线索</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>线程的栈是系统分配的一块内存。它分配在哪儿、和谁挨着，是有规律的。一个「来路不明」的线程，它的栈位置往往和周围的格格不入。</p><p>这一节讲这条线索怎么读。读完你多了一个不用看名字、不用看内容的判断依据。</p></div></aside>
+<h2 id="sec-9">10.9 深入：为什么“栈地址”也是线索</h2>
 <p>线程栈是从 mmap 区分配的，正常情况下会落在“常规匿名映射区”。而注入的线程，栈可能紧贴着 agent 的映射，或者落在一个不常见的高地址——这两种都会在“栈地址分布”上体现出来。</p>
 <div class="tbl"><table>
 <thead><tr><th>观察</th><th>正常</th><th>可疑</th></tr></thead><tbody>
@@ -168,7 +173,8 @@ register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
 <tr><td>相邻映射</td><td>其他栈</td><td>agent 段</td></tr>
 </tbody></table></div>
 <p>检测方只要遍历所有线程、读它们的栈指针、看落在哪个 VMA 里，就能得到一张“栈分布图”。这张图上的离群点，就是可疑线程。</p>
-<h2>10.10 深入：libc decoy 是什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有的工具会故意在进程里摆一份「看起来像系统库」的假货，用来把查的人引到错的地方。它名字对、位置对，但内容是假的。</p><p>这一节讲怎么识破。读完你不会再拿「我找到了这个库」当结论，而会再验一步它是不是真的那一份。</p></div></aside>
+<h2 id="sec-10">10.10 深入：libc decoy 是什么</h2>
 <p>bionic 在 TLS 附近维护了一些“看起来像全局变量”的字段（例如线程链表头）。它们的作用本来是给 libc 自己用的，但因为位置固定、语义明确，就成了“枚举线程的旁路入口”。</p>
 <div class="code">
 <div class="code-title">思路示意</div>
@@ -178,7 +184,7 @@ register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>所以“洗链表”不只是为了“骗过 /proc 遍历”，也是为了“骗过这种旁路枚举”。两条路径都要处理，才算真的干净。</p>
-<h2>10.11 实战：改造前后的自检</h2>
+<h2 id="sec-11">10.11 实战：改造前后的自检</h2>
 <div class="code">
 <div class="code-title">三查</div>
 <pre><code>1. 遍历 /proc/self/task，看有没有异常线程
@@ -187,12 +193,12 @@ register void* tp asm(&quot;tpidr_el0&quot;);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>第 2 步最关键：如果两条路径数出来的线程数不一致，说明你的“洗链表”把某一方骗过去了，但没有把两方都骗过去——这种不一致本身就是最强的检测信号。</div></aside>
-<h2>现场：改名改不掉的那一列</h2>
+<h2 id="sec-12">现场：改名改不掉的那一列</h2>
 <p>名字改完了，maps 也过滤了，检测方还是一口报出“发现注入”。它没读 <code>/proc/self/task/*/comm</code>，而是顺着 TLS 顶端的 <code>pthread_internal_t</code> 双向链表走了一遍，看到某个节点的 <code>start_routine</code> 落在一片没有文件名的可执行页里。那一列是运行时留给自己看的，不像 comm 那样能随手涂改。</p>
 <p>bionic 把每个线程的元信息放在 TLS 块附近：<code>next</code> / <code>prev</code> 串成全局链表，<code>start_routine</code> 记着“这条线程是怎么被造出来的”，栈基址与大小也在同一片结构里。正常的线程入口一定落在 libc 或某个带路径的 so 内；注入线程的入口落在匿名映射里，这个差异<strong>改名字消除不了</strong>，过滤 maps 也只是让它换个地方露出马脚。</p>
-<h2>把一次枚举拆成七拍</h2>
+<h2 id="sec-13">把一次枚举拆成七拍</h2>
 <ol><li><strong>检测方 → 对当前线程的 TP 寄存器（aarch64 的 tpidr_el0）→ 读出 TLS 基址</strong> → 结果：拿到自己这条线程的 pthread_internal_t 起点，整套枚举不需要打开任何 /proc 文件。</li><li><strong>检测方 → 对 pthread_internal_t 的 next / prev → 沿全局双向链表逐个走</strong> → 结果：不碰 /proc 就把所有线程列全，连刚创建还没来得及出现在 task 目录里的也算上。</li><li><strong>检测方 → 对每个节点的 start_routine → 与 maps 中带路径的可执行区间比对</strong> → 结果：落在 libc / 业务 so 的判为正常，落在匿名 r-xp 段的当场标记异常。</li><li><strong>检测方 → 对 stack_base / stack_size 或 TLS 里的 decoy 字段 → 查栈落在哪个 VMA</strong> → 结果：贴着 agent 映射分配的栈同样可疑；栈地址分布是改名之后仍存在的硬线索。</li><li><strong>检测方 → 对 tid、comm、join_state → 与 /proc/&lt;tid&gt;/stat 交叉核对</strong> → 结果：名字改得漂亮但 start_routine 没动，两份数据自相矛盾，反而坐实了伪造。</li><li><strong>你的清洗代码 → 对全局链表 → 先备份指针、选没有其它线程在遍历的时机、再摘节点</strong> → 结果：遍历者看不到这条线程；改错一步，崩溃会出现在几分钟后一个完全无关的 pthread_join 里。</li><li><strong>你的清洗代码 → 对 start_routine 与栈 → 让入口指向合法区间、栈落在常规 mmap 区</strong> → 结果：粗查通过；但用入口地址反查 so 的符号表，一个“看起来像 libc 却没有符号”的地址更可疑。</li></ol>
-<h2>复现：把入口地址打出来看</h2>
+<h2 id="sec-14">复现：把入口地址打出来看</h2>
 <p>先用 Frida 自己观察自己：枚举线程与可执行区间，把 PC / 入口和带文件路径的映射对上号。再用 gdb 或 bionic 的私有接口读 TLS，确认偏移——<strong>这一步千万别硬编码常数</strong>，<code>pthread_internal_t</code> 相对 TP 的位置随 Android 版本变。</p>
 <div class="code">
 <div class="code-title">自查脚本与 TLS 取法</div>

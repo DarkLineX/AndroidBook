@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F01</span><h1>Frida 整体启动、进程注入与 Zygote 门控</h1><p class="ch-en">frida-tools、server/HostSession、ptrace/bootstrap/loader、zygote/USAP、子进程 agent、mapper 与自卸载</p></div>
 <p class="lead">先建立整条链的心理模型：谁发起、谁中转、谁落地、谁执行。</p>
-<h2>1.1 五层结构</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>用 frida 的人多，能说清“它到底是怎么进到目标进程里的”人少。这一章先把整条链的心理模型建起来：谁发起、谁中转、谁落地、谁执行。</p><p>一句话概括：电脑上的命令行把指令发给手机里的 server，server 负责把一小段代码塞进目标进程，这段代码里带着 JS 运行时，然后它执行你写的脚本。四个角色，三跳通信。</p><p>建好这个模型之后，后面所有“脚本没反应”“attach 失败”“权限被拒”的问题，你都能立刻定位到是哪一跳断了。</p></div></aside>
+<h2 id="sec-1">1.1 五层结构</h2>
 <figure>
 <img src="../assets/f_f01.png" alt="图 F1-1" width="1080">
 <figcaption><b>图 F1-1</b><span>host → server → 注入器 → agent → 脚本的五层结构</span></figcaption>
@@ -111,9 +112,10 @@
 <tr><td>agent</td><td>frida-agent.so</td><td>Gum + JS 运行时</td></tr>
 <tr><td>脚本</td><td>你的 JS</td><td>Interceptor / Java.perform</td></tr>
 </tbody></table></div>
-<h2>1.2 三个对象模型</h2>
+<h2 id="sec-2">1.2 三个对象模型</h2>
 <p>Device 管连接，Session 管“连上了哪个进程”，Script 管“跑哪段代码”。这三个对象把问题切得很干净——出问题先判断是哪一层断了。</p>
-<h2>1.3 zygote 门控为什么存在</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>如果一个工具能在母进程里随便动手脚，那它就能影响之后所有 App——对使用者是便利，对平台是风险。所以系统在这里设了一道门：能不能进、以什么身份进，都得先问过。</p><p>这一节讲这道门管什么。读完你就明白为什么注入这件事有时「一行命令就行」、有时「怎么都不行」——差别不在工具，在门开没开。</p></div></aside>
+<h2 id="sec-3">1.3 zygote 门控为什么存在</h2>
 <p>常规 attach 只能注入“已经跑起来的进程”，而大量反调试是在进程最早期的几百毫秒内完成的。zygote 门控的做法是：attach 到 zygote，拦截 <code>fork</code>，在子进程“刚出生”时就注入 agent。这样目标从第一条指令起就在视野里。</p>
 <div class="code">
 <div class="code-title">spawn 与 gating 的差别</div>
@@ -124,12 +126,13 @@ frida -U -n com.app -l a.js       # attach：进程已在跑，只能“后半�
 # 否则目标 fork 出的子进程不会被自动接管</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.4 mapper 与自卸载</h2>
+<h2 id="sec-4">1.4 mapper 与自卸载</h2>
 <p>Frida 的 agent 不是简单 dlopen 进来的——它有自研的 mapper，处理 PT_LOAD 映射、重定位、以及“卸载时把自己清干净”。后者对“低痕迹”很重要：agent 卸载后，理论上不该在 maps 里留下空白区。</p>
 <aside class="note"><span class="note-tag">要点</span><div>学习顺序建议：先读第 10 章（整体启动）建立直觉，再读本章（细节），最后读 F09（自定义 linker）理解“为什么不用系统 dlopen”。</div></aside>
-<h2>1.5 本章自测</h2>
+<h2 id="sec-5">1.5 本章自测</h2>
 <ul><li>五层结构各自负责什么？哪一层出错会导致“脚本没反应”？</li><li>spawn 和 attach 的本质区别是什么？</li><li>zygote 门控解决了什么具体问题？</li><li>自卸载的目标是什么？能做到“完全无痕”吗？</li></ul>
-<h2>1.6 深入：agent 的映射与初始化顺序</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把一段代码放进别人进程，不是拷进去就能用：得先有内存、再有权限、再对地址、最后才能跑。顺序错了，要么跑不起来，要么跑到一半崩。</p><p>这一节把这几个步骤的先后讲清楚。读完你排查「注入成功了但脚本没反应」时，能按这个顺序一段段往回查，而不是从头再来。</p></div></aside>
+<h2 id="sec-6">1.6 深入：agent 的映射与初始化顺序</h2>
 <p>agent 被映射进目标后，不是立刻就能跑 JS。它要经历：重定位 → 初始化 GLib/Gum → 建立线程 → 连回 server → 才开始接受脚本。任何一个环节失败，表现都是“连上了但脚本不跑”。</p>
 <div class="tbl"><table>
 <thead><tr><th>环节</th><th>失败表现</th><th>排查</th></tr></thead><tbody>
@@ -138,7 +141,7 @@ frida -U -n com.app -l a.js       # attach：进程已在跑，只能“后半�
 <tr><td>Gum 初始化</td><td>脚本不执行</td><td>线程创建失败</td></tr>
 <tr><td>回连 server</td><td>消息发不出</td><td>socket 被拦</td></tr>
 </tbody></table></div>
-<h2>1.7 实战：验证 agent 是否真的在跑</h2>
+<h2 id="sec-7">1.7 实战：验证 agent 是否真的在跑</h2>
 <div class="code">
 <div class="code-title">三个层次的验证</div>
 <pre><code># 1. 进程里有没有 agent 的映射
@@ -151,7 +154,8 @@ ls /proc/&lt;pid&gt;/task/*/comm | xargs -n1 basename | sort -u
 #    脚本里 send(&#x27;alive&#x27;) 是最直接的证据</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.8 原理推演：为什么注入必须“先停后写”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>往一个正在跑的进程里改东西，等于在别人写字的时候去抢他的笔。你改到一半，他正好执行到那半条改了一半的指令，程序当场就散架。</p><p>所以顺序必须是「先让他停住，改完，再放他走」。这一节讲的是这条顺序为什么不能省，以及停住之后还有哪些坑：停的位置不对，改完一放，照样崩。</p></div></aside>
+<h2 id="sec-8">1.8 原理推演：为什么注入必须“先停后写”</h2>
 <p>在目标进程还在运行时往它的地址空间里写数据，等于一边读一边改一本书。你写进去的路径字符串可能被目标当成数据读走，你分配的栈空间可能正在被使用。所以注入的标准流程一定是“先让它停下，再动手”。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>目标状态</th><th>为什么</th></tr></thead><tbody>
@@ -161,7 +165,8 @@ ls /proc/&lt;pid&gt;/task/*/comm | xargs -n1 basename | sort -u
 <tr><td>detach</td><td>继续运行</td><td>恢复业务</td></tr>
 </tbody></table></div>
 <p>这也解释了为什么“注入失败的代价很高”：如果中途出错而没有 detach，目标会永久停在 T 状态，只能重启。</p>
-<h2>1.9 数据细节：host 与 server 的握手</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>客户端连上设备上的服务，不是连上就能用：中间要交换几句、确认版本、确认身份。这张表把这几个来回列出来。</p><p>它的用处是排查「连不上 / 连上就断」：看是卡在哪一句上，就知道是网络、版本、还是认证的问题。</p></div></aside>
+<h2 id="sec-9">1.9 数据细节：host 与 server 的握手</h2>
 <div class="code">
 <div class="code-title">一次连接的关键步骤</div>
 <pre><code>1. TCP 连接（adb forward 出来的端口）
@@ -172,7 +177,7 @@ ls /proc/&lt;pid&gt;/task/*/comm | xargs -n1 basename | sort -u
 <button class="copy" type="button">复制</button>
 </div>
 <p>排查时，如果卡在第 3 步，表现通常是“能连上但所有命令都失败”——这与“端口不通”的表现完全不同，可以据此快速区分。</p>
-<h2>现场：回车之后的两百毫秒</h2>
+<h2 id="sec-10">现场：回车之后的两百毫秒</h2>
 <p>你在终端敲下 <code>frida -U -f com.example.app -l hook.js</code>，回车。屏幕上一片安静：没有进度条，没有日志，只有光标在闪。可这两百毫秒里，手机上已经跑完了一整条流水线——CLI 把参数打包成一条spawn 请求，顺着 adb forward 出来的 TCP 端口递给设备端的 frida-server；server 向 zygote 要来一个新进程并让它停在入口；注入器把 agent 的字节映射进这个还没开始跑 Application 的地址空间；Gum 拉起JS 线程；最后 host 才把脚本源码送进去编译。</p>
 <p>最折磨人的是：这条链上任意一环断掉，终端给出的表现几乎一样——<strong>卡住，或者脚本没反应</strong>。所以排查的第一步从来不是改脚本，而是先问“断在哪一层”。把这两百毫秒拆成看得见的动作，你才能把“没反应”翻译成“第几拍没发生”。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_frida">
@@ -203,9 +208,10 @@ ls /proc/&lt;pid&gt;/task/*/comm | xargs -n1 basename | sort -u
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_frida.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["frida-tools 发起 spawn / attach 请求", "设备端 frida-server 建立 HostSession", "ptrace 暂停目标，或由 zygote 门控抢占 fork 窗口", "bootstrap / loader 把 frida-agent 映射进目标", "agent 启动 Gum 与 JS 线程，脚本开始注册 hook"]</script>
-<h2>把两百毫秒拆成八拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>“frida 启动慢”这句抱怨没法排查，因为它没说慢在哪。两百毫秒听着不多，但拆开之后你会发现它由七八段组成，每段都有各自的瓶颈：有的在传文件，有的在等进程起来，有的在等 JS 引擎初始化。</p><p>这八拍的价值不在于记住数字，而在于给你一把尺子：下次再遇到“慢”，你打几个时间戳就能指出是哪一拍变长了，而不是靠猜。</p></div></aside>
+<h2 id="sec-11">把两百毫秒拆成八拍</h2>
 <ol><li><strong>frida-tools（host）→ 对 USB 传输 / adb forward 的端口 → 发出 spawn 请求与能力协商</strong> → 结果：server 收到一条待办，host 进入等待；此时设备上的目标进程还不存在。</li><li><strong>frida-server → 对 zygote / ActivityManager → 请求 fork 出一个带暂停语义的新进程</strong> → 结果：目标 PID 有了，但它停在入口，连第一行 Application 代码都没跑；这就是 <code>-f</code> 比 <code>-n</code> 早的全部原因。</li><li><strong>server 的注入器 → 对目标 PID → ptrace attach（spawn 时目标本就处于停止态）</strong> → 结果：所有线程被冻住，寄存器现场可读可写，接下来写内存才是原子的。</li><li><strong>bootstrap → 对目标地址空间 → 远程调用 mmap 申请一段可执行页，写入一小段引导机器码与参数</strong> → 结果：目标里多出一块不属于任何 so 的可执行内存，这块内存后面会成为 agent 的落脚点。</li><li><strong>Frida 自研 mapper → 对 agent 的 ELF → 逐段 PT_LOAD 映射、重定位、按 DT_INIT_ARRAY 跑构造函数</strong> → 结果：linker 的 solist 里没多出节点，maps 里只有匿名映射，没有 soname。</li><li><strong>agent → 对 Gum 运行时 → 初始化 QuickJS / V8、建独立 JS 线程与 GLib 消息循环</strong> → 结果：目标进程多出一条线程、一个主循环、若干 pipe 与 socket；这些是固定开销，与你的脚本无关。</li><li><strong>host → 对 server → create_script 传源码、load 触发编译、执行顶层代码注册 hook</strong> → 结果：hook 已经挂好，但进程仍然停着，什么业务逻辑都还没发生。</li><li><strong>host → 对 server → 发出 resume（REPL 里的 `%resume`）</strong> → 结果：目标从入口继续，Application 的第一行开始就落在 hook 视野里，终端终于开始滚日志。</li></ol>
-<h2>一次能分清层次的复现实验</h2>
+<h2 id="sec-12">一次能分清层次的复现实验</h2>
 <p>准备一个只有三行打点的探针，它的价值不在于 hook 了什么，而在于<strong>每一行对应链条上的一层</strong>：有 <code>script-loaded</code> 说明 agent 落地并跑完顶层代码，有 <code>vm-ready</code> 说明 ART 已经能 attach，两者都缺就别再往脚本里找 bug 了。</p>
 <div class="code">
 <div class="code-title">probe.js 与分层验证命令</div>

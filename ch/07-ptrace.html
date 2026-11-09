@@ -98,15 +98,16 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">07</span><h1>Android ptrace 原理</h1><p class="ch-en">ptrace 加载 so、特征与检测</p></div>
 <p class="lead">注入的“祖师爷”手法：让别人的进程替你执行你的代码。</p>
-<h2>7.1 ptrace 能做什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>ptrace 是 Linux 给“调试器”准备的一个后门：允许一个进程伸进另一个进程里，看它的内存、改它的寄存器、甚至让它停在某一行不许动。</p><p>调试器用它来调试，注入工具用它来干别的事——既然能改别人的寄存器，就能让别人替你执行你的代码。这是最古老、最通用、也最容易被发现的注入手法。</p><p>这一章讲三件事：它能做什么、注入的七个步骤分别是什么、以及每一步会在系统里留下什么痕迹。最后那部分才是重点——因为攻防的胜负，往往就取决于“痕迹有没有被抹干净”。</p></div></aside>
+<h2 id="sec-1">7.1 ptrace 能做什么</h2>
 <p><code>ptrace</code> 是内核提供的一套调试接口：一个进程（tracer）可以附加到另一个进程（tracee）上，读它的寄存器、读写它的内存、单步执行、拦截信号。合法的调试器、崩溃收集、以及各种注入器，都建立在它上面。</p>
 <figure>
 <img src="../assets/f07_ptrace.png" alt="图 7-1" width="1080">
 <figcaption><b>图 7-1</b><span>ptrace 注入的七步时序</span></figcaption>
 </figure>
-<h2>7.2 注入的七步</h2>
+<h2 id="sec-2">7.2 注入的七步</h2>
 <ol><li><code>PTRACE_ATTACH</code>：目标被停下，状态变成 T (stopped)，<code>TracerPid</code> 变成注入器的 pid。</li><li><code>PTRACE_GETREGS</code>：读出 PC、SP 等寄存器，记下现场。</li><li>在目标里找到 <code>dlopen</code> / <code>mmap</code> / <code>__system_property_get</code> 等函数的地址（可借助 <code>/proc/pid/maps</code> 算偏移）。</li><li><code>PTRACE_POKEDATA</code> 往目标栈或空闲区写入 shellcode 与参数字符串。</li><li><code>PTRACE_SETREGS</code> 把 PC 指向 shellcode，继续执行。</li><li>shellcode 调用 <code>dlopen</code> 加载目标 so，然后触发一个断点（<code>BRK</code> 或非法指令）。</li><li><code>PTRACE_DETACH</code> 恢复现场并断开，目标继续跑，so 已经在自己进程里了。</li></ol>
-<h2>7.3 会留下什么痕迹</h2>
+<h2 id="sec-3">7.3 会留下什么痕迹</h2>
 <div class="tbl"><table>
 <thead><tr><th>痕迹</th><th>在哪看</th><th>说明</th></tr></thead><tbody>
 <tr><td>TracerPid ≠ 0</td><td>/proc/&lt;pid&gt;/status</td><td>最直接，注入期间必然存在</td></tr>
@@ -116,7 +117,7 @@
 <tr><td>solist 无名项</td><td>遍历 link_map</td><td>dlopen 的副作用</td></tr>
 <tr><td>seccomp 拦截</td><td>dmesg / 返回值</td><td>部分系统禁止 ptrace</td></tr>
 </tbody></table></div>
-<h2>7.4 Yama 与 SELinux：两道门一起关</h2>
+<h2 id="sec-4">7.4 Yama 与 SELinux：两道门一起关</h2>
 <p>很多人把“ptrace 失败”归因于某一个机制，实际上它是两道门叠加的结果，而且<strong>两道门都没被放宽</strong>。</p>
 <div class="tbl"><table>
 <thead><tr><th>机制</th><th>默认状态</th><th>允许什么</th></tr></thead><tbody>
@@ -139,9 +140,10 @@ while (1) {
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>顺序很重要：<strong>先能看见，再能判断，最后才谈隐藏</strong>。很多新手一上来就想“怎么绕过检测”，结果连自己的痕迹长什么样都不知道，改了半天全是无效功。</div></aside>
-<h2>7.5 本章自测</h2>
+<h2 id="sec-5">7.5 本章自测</h2>
 <ul><li>ptrace 注入的七个步骤，哪一步最容易失败？为什么？</li><li>为什么“注入后 detach”不能消除所有痕迹？</li><li>Yama 的 level 0/1/2 分别意味着什么？</li><li>如果目标是 64 位进程，但注入器是 32 位，会发生什么？</li></ul>
-<h2>7.6 深入：为什么要“注入 + 自卸载”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>注入进去的那段代码，本身就是最明显的痕迹：内存里多一块、线程多一个。自卸载的意思是：活干完就撤，把借来的位置还回去。</p><p>听起来很美，但「撤干净」比「进去」难得多。这一节讲哪些东西能还、哪些还不了，读完你对「无痕」这个词会有更准确的预期。</p></div></aside>
+<h2 id="sec-6">7.6 深入：为什么要“注入 + 自卸载”</h2>
 <p>长期挂着一个 <code>TracerPid</code> 是最糟的形态。所以成熟的注入器都会做“注入后立刻 detach，让 so 自己跑”。这样目标进程恢复常态，<code>/proc/self/status</code> 干净了——但代价是失去了对目标的直接控制。</p>
 <div class="tbl"><table>
 <thead><tr><th>形态</th><th>TracerPid</th><th>控制力</th><th>稳定性</th></tr></thead><tbody>
@@ -149,10 +151,10 @@ while (1) {
 <tr><td>注入后 detach</td><td>归零</td><td>中（靠 so 自己）</td><td>好</td></tr>
 <tr><td>门控注入</td><td>短暂非 0</td><td>强（早期介入）</td><td>中</td></tr>
 </tbody></table></div>
-<h2>7.7 实战：手写一个最小注入器要做的事</h2>
+<h2 id="sec-7">7.7 实战：手写一个最小注入器要做的事</h2>
 <ol><li>找到目标 pid（<code>ps -A</code> 或遍历 <code>/proc</code>）。</li><li><code>PTRACE_ATTACH</code> + <code>waitpid</code> 等它停下。</li><li><code>PTRACE_GETREGS</code>，记下 pc / sp / 寄存器现场。</li><li>读 <code>/proc/pid/maps</code>，算 <code>libc.so</code> 基址，加 <code>dlsym</code> 偏移得到 <code>dlopen</code> 地址。</li><li>把 so 路径字符串与一小段 shellcode 写入目标栈（<code>PTRACE_POKEDATA</code>）。</li><li><code>PTRACE_SETREGS</code> 把 pc 指向 shellcode，<code>PTRACE_CONT</code>。</li><li>等断点（<code>BRK #0</code>）触发，读返回值确认加载成功。</li><li>恢复全部寄存器，<code>PTRACE_DETACH</code>。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>难点不在“写对”，而在“出错时能恢复”。每一步失败都要能回到上一个安全状态，否则目标进程会永久停在 T 状态，只能重启。</div></aside>
-<h2>7.8 64 位 / 32 位混合的坑</h2>
+<h2 id="sec-8">7.8 64 位 / 32 位混合的坑</h2>
 <p>在 64 位系统上跑 32 位 App 是常见的。此时注入器必须也是 32 位，或者使用能够处理混合位宽的接口。表现为“注入成功但 so 加载失败”或“一 attach 就崩”，排查时先确认位宽。</p>
 <div class="code">
 <div class="code-title">确认位宽</div>
@@ -161,7 +163,8 @@ cat /proc/&lt;pid&gt;/exe
 # 或者直接看 maps 里是不是 /system/lib64 还是 /system/lib</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.9 原理推演：ptrace 的“双向可见性”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>调试的本质是「一方停下来看另一方」。但这件事对双方都是可见的：看的能看，被看的也能察觉有人在看——进程状态里就摆着「谁在跟踪我」。</p><p>所以对抗分两层：藏「我做了什么」和藏「有人在看我」。前者改行为就行，后者得处理关系，难得多。读完这一节，你排查时至少知道该先问哪一层。</p></div></aside>
+<h2 id="sec-9">7.9 原理推演：ptrace 的“双向可见性”</h2>
 <p>ptrace 有一个容易被忽略的性质：它不只是“tracer 能看到 tracee”，<strong>tracee 也能看到 tracer 的存在</strong>（通过 <code>TracerPid</code>、通过信号行为、通过 <code>wait</code> 语义）。</p>
 <div class="tbl"><table>
 <thead><tr><th>观测方</th><th>能看到什么</th><th>怎么用</th></tr></thead><tbody>
@@ -169,7 +172,8 @@ cat /proc/&lt;pid&gt;/exe
 <tr><td>tracee</td><td>TracerPid、被暂停、信号被拦截</td><td>反调试</td></tr>
 </tbody></table></div>
 <p>这种双向性是设计使然（调试器需要被调试者配合），但它也意味着“隐蔽注入”在原理上就有上限：你不可能让 tracee 完全不知道自己被跟踪，只能缩短“被跟踪”的时间窗口。</p>
-<h2>7.10 数据细节：一次注入的 syscall 序列</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>注入不是一条命令，而是一串系统调用：先挂上、再读寄存器、再分配内存、再写进去、再改执行位置、最后放开。这张表按顺序列出这一串。</p><p>它的用途是「反查」：你在日志或追踪里看到某一串调用按这个顺序出现，就知道有人在注入。反过来，你也知道要藏就得在这条链上想办法。</p></div></aside>
+<h2 id="sec-10">7.10 数据细节：一次注入的 syscall 序列</h2>
 <div class="code">
 <div class="code-title">典型的 ptrace 调用序列</div>
 <pre><code>ptrace(PTRACE_ATTACH, pid, 0, 0)
@@ -184,12 +188,13 @@ ptrace(PTRACE_DETACH, pid, 0, 0)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>这条序列里的每一步都可以被观测（比如通过 seccomp 或 LSM 的审计）。所以“留痕最少”的注入器，会尽量把这串调用压缩到最短时间，甚至用一次 <code>PTRACE_SEIZE</code> + <code>PTRACE_INTERRUPT</code> 完成。</p>
-<h2>把目标进程按下暂停键的那一刻</h2>
+<h2 id="sec-11">把目标进程按下暂停键的那一刻</h2>
 <p>想象一台正在跑的机器，某个 App 的主线程正在循环里取消息。你从外面按下「暂停」：内核给它补发一个 <code>SIGSTOP</code>，它停在当前那条指令上，状态从 R/S 变成 <code>T</code>，<code>/proc/&lt;pid&gt;/status</code> 里 <code>TracerPid</code> 从 0 变成你的 pid。此刻它既没死也没退出，只是把寄存器、内存、信号全部交到你手里。<strong>ptrace 的全部能力，都来自这个「暂停」状态</strong>。</p>
 <p>接下来能做的事有点反常识：读写它的内存、改它的寄存器、把 PC 拨到一段你写进去的字节上，再让它继续跑。等它执行完你的那段字节，恢复现场、断开附加，它甚至不知道自己被人借用过几十毫秒。把每一拍摊开看，谁对谁做了什么，一眼就清楚。</p>
-<h2>一次附加，寄存器是怎么被借走的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>ptrace 最反直觉的地方是：它没有给调试器开任何特权通道。调试器干的事，是把目标线程按停，然后<strong>直接读写对方的寄存器</strong>——像趁人站着不动的时候，过去把他的手臂摆成别的姿势再放开。</p><p>所以注入的每一步都能用一句话描述：停下来、改寄存器、放一条指令进去、跑一步、再改回来。这一节就是把这几个动作和具体的寄存器对上号。</p></div></aside>
+<h2 id="sec-12">一次附加，寄存器是怎么被借走的</h2>
 <ol><li><strong>tracer 调 `PTRACE_ATTACH`</strong> → 对目标 pid → 发请求并附带一次 SIGSTOP → 结果：内核把 tracee 标记为被跟踪，写入 <code>TracerPid</code>，进程进入 tracing stop。</li><li><strong>tracer `waitpid`</strong> → 对内核 → 等这次 stop 事件落地 → 结果：拿到一个确定的「已暂停」时刻，此后所有 PEEK/POKE 才是安全的。</li><li><strong>tracer 读现场</strong> → 对 tracee 的寄存器组 → 在 arm64 上用 <code>PTRACE_GETREGSET</code> + <code>NT_PRSTATUS</code> 取 <code>user_pt_regs</code> → 结果：PC、SP、X0~X30 被完整备份（x86 上常见的 <code>PTRACE_GETREGS</code> 在 arm64 并不存在）。</li><li><strong>tracer 找函数地址</strong> → 对 <code>/proc/&lt;pid&gt;/maps</code> → 读出 <code>libc.so</code> 基址，加上 <code>dlopen</code> 的符号偏移 → 结果：得到一个能在目标进程里直接调用的真实地址。</li><li><strong>tracer 写内存与参数</strong> → 对 tracee 的栈或空闲页 → <code>PTRACE_POKEDATA</code> 逐字写入 so 路径与一小段 shellcode → 结果：目标进程的内存里出现了原本不属于它的字节。</li><li><strong>tracer 拨 PC 并放行</strong> → 对寄存器组 → <code>PTRACE_SETREGSET</code> 把 PC 指向 shellcode，再 <code>PTRACE_CONT</code> → 结果：tracee 在恢复执行的瞬间，跑的是别人的代码，替你调用了 <code>dlopen</code>。</li><li><strong>恢复现场</strong> → 对寄存器与断点 → 还原备份值、<code>PTRACE_DETACH</code> → 结果：<code>TracerPid</code> 归零，目标继续原逻辑，但 so 已经留在它自己的地址空间里了。</li></ol>
-<h2>动手：自己跟自己验一遍</h2>
+<h2 id="sec-13">动手：自己跟自己验一遍</h2>
 <div class="code">
 <div class="code-title">一个不需要 root 的最小 attach 实验（self_ptrace.c）</div>
 <pre><code>#define _GNU_SOURCE

@@ -102,7 +102,7 @@
 <div class="stats">
   <div class="stat"><b>65</b><span>讲正文</span></div>
   <div class="stat"><b>8</b><span>个部分</span></div>
-  <div class="stat"><b>60</b><span>幅原理图</span></div>
+  <div class="stat"><b>52</b><span>幅原理图</span></div>
   <div class="stat"><b>16</b><span>组动图演示</span></div>
   <div class="stat"><b>3</b><span>条主线</span></div>
 </div>
@@ -114,7 +114,7 @@ SELinux 判定、Binder、DEX 回填、VMP 解释循环……网页版可以播�
 <p>这不是一本“技巧合集”，而是一本<b>按能力阶梯组织</b>的工程手册。全书围绕三条主线展开：
 <b>可信链</b>（怎么验证）、<b>运行链</b>（怎么执行）、<b>检测链</b>（怎么发现）。
 所有技术，都是在这三条线上的某个点做文章。</p>
-<div class="cards"><a class="card" href="part/01-foundation.html"><span class="k" style="background:#2563eb">炼气境</span><h3>第一部 · 系统与检测基础</h3><p>从 boot.img 一路到 dex：把“系统怎么跑起来”讲透，后面所有内容都挂在这条链上。</p></a><a class="card" href="part/02-kernel.html"><span class="k" style="background:#2563eb">筑基境</span><h3>第二部 · 内核基础</h3><p>进程、内存、异常、VFS、追踪、BTF、KASLR——做 KPM 之前必须补的七块地基。</p></a><a class="card" href="part/03-frida.html"><span class="k" style="background:#2563eb">化神境</span><h3>第三部 · Frida 详解：源码与兼容工程</h3><p>不解剖 API，只解剖机制：从启动到注入、从 IPC 到 linker、从 Stalker 到线程结构体。</p></a><a class="card" href="part/04-kpm.html"><span class="k" style="background:#2563eb">化神境</span><h3>第四部 · 内核模块详解：KPM 内核工程</h3><p>进入 EL1：模块生命周期、只读观测面、Text Shadow、单步与硬件断点、SELinux。</p></a><a class="card" href="part/05-lsposed.html"><span class="k" style="background:#2563eb">化神境</span><h3>第五部 · LSPosed 详解：运行时工程</h3><p>LSPlant、回调链、DEX 生命周期、账本收口、版本适配、侧信道与验证矩阵。</p></a><a class="card" href="part/06-shell.html"><span class="k" style="background:#2563eb">实战</span><h3>企业壳实战 · 持续更新</h3><p>DexProtect 的检测流水线与加固结构拆解；Promon 与更多顶级检测壳持续更新。</p></a><a class="card" href="part/07-plan.html"><span class="k" style="background:#2563eb">进阶</span><h3>二期规划 · 混淆与 VMP</h3><p>编译原理（词法、CFG、IR 优化）→ VMP 分析（转 IR）。工具会过期，抽象能力不会。</p></a><a class="card" href="part/08-training.html"><span class="k" style="background:#2563eb">动手</span><h3>实战训练营</h3><p>三组带交付物的训练任务：造一道检测再绕过它 / 挖一个算法 / 做一次隐藏与检测的完整循环。</p></a></div>
+<div class="cards"><a class="card" href="part/01-foundation.html"><span class="k" style="background:#2563eb">炼气境</span><h3>第一部 · 系统与检测基础</h3><p>从 boot.img 一路到 dex：把“系统怎么跑起来”讲透，后面所有内容都挂在这条链上。</p></a><a class="card" href="part/02-kernel.html"><span class="k" style="background:#2563eb">筑基境</span><h3>第二部 · 内核基础</h3><p>进程、内存、异常、VFS、追踪、BTF、KASLR、SELinux——做 KPM 之前必须补的八块地基。</p></a><a class="card" href="part/03-frida.html"><span class="k" style="background:#2563eb">化神境</span><h3>第三部 · Frida 详解：源码与兼容工程</h3><p>不解剖 API，只解剖机制：从启动到注入、从 IPC 到 linker、从 Stalker 到线程结构体。</p></a><a class="card" href="part/04-kpm.html"><span class="k" style="background:#2563eb">化神境</span><h3>第四部 · 内核模块详解：KPM 内核工程</h3><p>进入 EL1：模块生命周期、只读观测面、Text Shadow、单步与硬件断点、SELinux。</p></a><a class="card" href="part/05-lsposed.html"><span class="k" style="background:#2563eb">化神境</span><h3>第五部 · LSPosed 详解：运行时工程</h3><p>LSPlant、回调链、DEX 生命周期、账本收口、版本适配、侧信道与验证矩阵。</p></a><a class="card" href="part/06-shell.html"><span class="k" style="background:#2563eb">实战</span><h3>企业壳实战 · 持续更新</h3><p>DexProtect 的检测流水线与加固结构拆解；Promon 与更多顶级检测壳持续更新。</p></a><a class="card" href="part/07-plan.html"><span class="k" style="background:#2563eb">进阶</span><h3>二期规划 · 混淆与 VMP</h3><p>编译原理（词法、CFG、IR 优化）→ VMP 分析（转 IR）。工具会过期，抽象能力不会。</p></a><a class="card" href="part/08-training.html"><span class="k" style="background:#2563eb">动手</span><h3>实战训练营</h3><p>三组带交付物的训练任务：造一道检测再绕过它 / 挖一个算法 / 做一次隐藏与检测的完整循环。</p></a></div>
 <h2>怎么读</h2>
 <ol>
   <li><b>先建模型，再记细节</b>。模型对了，细节可以查；模型错了，细节全是散的。</li>

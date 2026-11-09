@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">15</span><h1>Android 自动化</h1><p class="ch-en">u2、scrcpy 与事件驱动核心</p></div>
 <p class="lead">稳定的自动化，靠的不是点得准，而是等得对。</p>
-<h2>15.1 两条并列的通道，不是一条链</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>自动化脚本最容易失败的地方，不是点不准，而是<strong>等不对</strong>。</p><p>新手写脚本喜欢写“点一下，睡两秒，再点下一个”。问题是两秒对慢机器不够、对快机器浪费，而且界面一旦卡一下，后面全错位。正确做法是把它改成三段：先等“某个元素出现了”这个确定事件，再动作，最后断言“确实到了下一页”。</p><p>这一章还澄清一个常见误解：截图（scrcpy）和控件树（uiautomator2）是两条独立的通道，不是一条链——一条挂了另一条照样能用。把它们画成串联，是这类脚本最常见的架构错误。</p></div></aside>
+<h2 id="sec-1">15.1 并列的两条主通道，外加一条兜底</h2>
 <p>这里要先纠正一个常见的画法：<strong>uiautomator2 与 scrcpy 不是“串联”关系，而是两条各自独立的通道</strong>。u2 走的是 <code>UiAutomation</code> / Accessibility，读的是“窗口树”；scrcpy 走的是 <code>MediaCodec</code> 编码 + <code>adb</code> 传输，拿到的是“像素”。它们互不依赖，可以只用其中一个，也可以同时用。</p>
 <div class="tbl"><table>
 <thead><tr><th>通道</th><th>底层机制</th><th>你拿到什么</th><th>适合做什么</th></tr></thead><tbody>
@@ -108,7 +109,7 @@
 </tbody></table></div>
 <p>所以真实的自动化架构是“<strong>脚本层 + 两条可选通道</strong>”，而不是“脚本 → u2 → scrcpy → App”这样一条链。把这两条通道混成一条链，会导致一个典型设计错误：以为“u2 拿不到控件信息时，scrcpy 也一起挂”——实际上画面通道照样能用。</p>
 <p>反过来，两条通道也各有盲区：u2 读不到自绘视图（Canvas / OpenGL 画出来的东西没有控件节点），scrcpy 不知道“这个按钮叫什么”。<strong>这正是它们要并列使用的原因</strong>。</p>
-<h2>15.2 三段式：等待 → 动作 → 断言</h2>
+<h2 id="sec-2">15.2 三段式：等待 → 动作 → 断言</h2>
 <ol><li><strong>等待条件</strong>：不要 <code>sleep(2)</code>。要 <code>wait(until=元素出现)</code>，超时才算异常。</li><li><strong>动作</strong>：click / set_text / 手势。优先用 resourceId，避免坐标。</li><li><strong>断言</strong>：页面签名（关键元素集合）变化才算成功，否则回退重试。</li></ol>
 <div class="code">
 <div class="code-title">不会“随机失败”的流程骨架</div>
@@ -121,12 +122,13 @@
     assert_page(step.expect)   # 用元素集合判断，而不是截图比对</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>15.3 三个实战技巧</h2>
+<h2 id="sec-3">15.3 三个实战技巧</h2>
 <ul><li><strong>页面签名</strong>：用“本页必然存在的 3~5 个元素”组成一个集合，全部命中才算到页。比截图比对稳定得多。</li><li><strong>幂等重试</strong>：每个动作都要能在“已经完成”的状态下安全重跑，否则重试会放大错误。</li><li><strong>状态机而非线性脚本</strong>：把流程写成状态迁移，异常时能回到上一个稳定态，而不是从头再来。</li></ul>
 <aside class="note"><span class="note-tag">要点</span><div>避坑：不要用“固定等待 + 坐标点击”的组合。这类脚本在开发者手里能跑，换台设备就全废。自动化真正的门槛不是写脚本，而是设计“可恢复”的流程。</div></aside>
-<h2>15.4 本章自测</h2>
+<h2 id="sec-4">15.4 本章自测</h2>
 <ul><li>四层链路各自的优缺点是什么？</li><li>为什么 sleep 是不可接受的？替代方案是什么？</li><li>什么是页面签名？怎么设计？</li><li>如果某一步骤在 30% 的设备上失败，你会怎么定位？</li></ul>
-<h2>15.5 深入：uiautomator2 的两次 dump 有差异怎么办</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个界面连着取两次结构，结果不完全一样，是常态：动画在动、时间在走、列表在刷新。如果你按「两次必须一致」写逻辑，脚本会莫名其妙失败。</p><p>这一节讲差异从哪来、哪些可以忽略、哪些是真正的信号。读完你的脚本会从「偶尔抽风」变成「知道为什么抽风」。</p></div></aside>
+<h2 id="sec-5">15.5 深入：uiautomator2 的两次 dump 有差异怎么办</h2>
 <p>UI 在动的时候，两次 dump 的结果天然不同。直接比对会得到大量假差异。解决办法是“稳定化”：先等页面静止（连续两次 dump 一致），再做比对。</p>
 <div class="code">
 <div class="code-title">稳定化等待</div>
@@ -140,7 +142,7 @@
     return prev      # 兜底：返回最后一次</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>15.6 四种定位方式的可靠性排序</h2>
+<h2 id="sec-6">15.6 四种定位方式的可靠性排序</h2>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>可靠性</th><th>适用</th></tr></thead><tbody>
 <tr><td>resourceId</td><td>最高</td><td>绝大多数控件</td></tr>
@@ -149,9 +151,10 @@
 <tr><td>xpath / 层级路径</td><td>中低</td><td>结构稳定的页面</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>经验：一个页面里 80% 的控件能用 resourceId 定位，剩下的用 text 兜底。只有真正没有语义信息的控件（如自绘视图）才用坐标，并且必须配合“截图校验”。</div></aside>
-<h2>15.7 失败重试的正确姿势</h2>
+<h2 id="sec-7">15.7 失败重试的正确姿势</h2>
 <ol><li><strong>区分失败类型</strong>：找不到元素（环境问题）vs 点了没反应（业务问题）。</li><li><strong>限制重试次数</strong>：3 次足够，多了只是在浪费时间和放大副作用。</li><li><strong>每次重试前回到已知状态</strong>：按返回键、重新拉起页面，而不是在原地瞎点。</li><li><strong>记录现场</strong>：截图 + 层级 dump + 当前 Activity 名，比任何日志都有用。</li></ol>
-<h2>15.8 原理推演：为什么“等”比“点”难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>点一下是确定的动作，等一个条件是猜时间。界面什么时候加载完、动画什么时候停、数据什么时候回来，都没有标准答案，只有「大概」。猜早了点到空处，猜晚了点到下一步。</p><p>这节讲的是怎么把「猜」变成「看」：不等时间，等一个能观测到的信号。读完你写的脚本会从「大部分时候能跑」变成「跑不动的时候知道为什么」。</p></div></aside>
+<h2 id="sec-8">15.8 原理推演：为什么“等”比“点”难</h2>
 <p>点击是“瞬时动作”，等待是“状态判断”。前者只需要坐标或控件，后者需要“定义什么叫准备好了”。而“准备好了”这件事，在异步 UI 里没有标准答案。</p>
 <div class="tbl"><table>
 <thead><tr><th>判断方式</th><th>可靠性</th><th>实现成本</th></tr></thead><tbody>
@@ -162,7 +165,8 @@
 <tr><td>业务状态断言</td><td>最高</td><td>高</td></tr>
 </tbody></table></div>
 <p>工程上建议“多层组合”：先用“元素存在”快速过，再用“页面签名”确认，最后用“业务状态”兜底。只靠一层，必然在某个场景下失效。</p>
-<h2>15.9 数据细节：一次 dump 的成本</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>取一次界面结构不是免费的：要跨进程问一遍、把树序列化、再传回来。界面越复杂越慢。这张表给的是大致的量级。</p><p>知道成本，你才会在设计脚本时想「这个循环里要不要每次都取」。很多「脚本跑得慢」的问题，根源就是在这个地方反复取。</p></div></aside>
+<h2 id="sec-9">15.9 数据细节：一次 dump 的成本</h2>
 <div class="tbl"><table>
 <thead><tr><th>操作</th><th>耗时</th><th>说明</th></tr></thead><tbody>
 <tr><td>dump_hierarchy</td><td>100~500ms</td><td>与控件数量强相关</td></tr>
@@ -171,12 +175,12 @@
 <tr><td>启动 App</td><td>1~3s</td><td>冷启动</td></tr>
 </tbody></table></div>
 <p>这组数字的意义：如果你的轮询间隔小于 dump 的耗时，就会“越等越慢”。正确做法是“指数退避”：先 100ms，再 200ms、400ms，上限 2s。</p>
-<h2>一条会自己找路的流水线</h2>
+<h2 id="sec-10">一条会自己找路的流水线</h2>
 <p>深夜两点，脚本在第一百台设备上跑挂了：前九十九台都点到了那个按钮，这一台卡在「元素没出现」然后一路重试到超时。把日志翻出来，页面其实早就到了，只是那台机器动画慢了 300 毫秒。<strong>稳定的自动化，靠的从来不是点得准，而是等得对</strong>——要修的不是坐标，是那句写死的 <code>sleep(2)</code>。把一次点击拆成「等待 → 动作 → 断言」三拍，这条流水线就能自己找路。</p>
 <p>还有一件事得先摆正：uiautomator2 读的是窗口树，scrcpy 拿的是像素，<strong>这是两条各自独立的通道，不是一条链</strong>。u2 挂了，画面通道照样能录屏、能截图、能靠 <code>adb input</code> 兜底；反过来，自绘界面里 scrcpy 看得见按钮，却不知道它叫什么。把它们画成串联，是这类脚本最常见的架构错误。</p>
-<h2>一次点击，三拍各做了什么</h2>
+<h2 id="sec-11">一次点击：三拍主干，外加两步兜底</h2>
 <ol><li><strong>等待</strong> → 对 <code>UiAutomation</code> 的窗口树 → 轮询 <code>resourceId</code> 或 text 直到命中，或超时 → 结果：拿到的不是「两秒后的屏幕」，而是「元素确实出现了」这个确定事件。</li><li><strong>动作</strong> → 对命中的控件节点 → <code>click()</code> / <code>setText()</code>，必要时退回 <code>adb input tap</code> → 结果：动作作用在语义对象上，换分辨率也不偏。</li><li><strong>断言</strong> → 对下一页的「页面签名」（3~5 个必然存在的元素集合）→ 全部命中才算迁移成功 → 结果：能区分「点了」和「点对了」，失败时知道该回退到哪个稳定态。</li><li><strong>异常恢复</strong> → 对状态机 → 超时就按返回键 / 重新拉起页面，回到上一个已知状态再重跑 → 结果：重试是幂等的，不会把已经填过的表单再填一遍。</li><li><strong>留现场</strong> → 对失败点 → 截图 + <code>dump_hierarchy()</code> + 当前 Activity 名一起落盘 → 结果：第一百台设备那 300 毫秒，下次一眼就能看出来。</li></ol>
-<h2>动手：把 sleep 换成会等的版本</h2>
+<h2 id="sec-12">动手：把 sleep 换成会等的版本</h2>
 <div class="code">
 <div class="code-title">一个不会随机失败的流程骨架（uiautomator2）</div>
 <pre><code>import uiautomator2 as u2, time

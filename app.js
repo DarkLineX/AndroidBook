@@ -29,6 +29,75 @@ document.querySelectorAll('.code').forEach(box=>{
   });
 });
 
+// ── 本页目录：扫描正文 h2/h3 生成锚点与右侧悬浮导航 ──
+(function(){
+  const art = document.querySelector('.content article.chapter');
+  if(!art) return;
+  const heads = [...art.querySelectorAll('h2, h3')];
+  if(heads.length < 2) return;                  // 只有一两个小节没必要挂导航
+  const box = document.createElement('div');
+  box.className = 'page-toc on';
+  box.innerHTML = '<button class="page-toc-btn" type="button" aria-label="本页目录" title="本页目录">' +
+                  '<span class="ic">☰</span><span class="lb">本页</span>' +
+                  '<span class="n">' + heads.length + '</span></button>' +
+                  '<div class="page-toc-panel"><div class="hd">本页目录 · ' + heads.length + ' 节</div></div>';
+  const panel = box.querySelector('.page-toc-panel');
+  const links = [];
+  heads.forEach((h, i) => {
+    if(!h.id) h.id = 'sec-' + (i + 1);
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent.trim();
+    if(h.tagName === 'H3') a.className = 'sub';
+    a.addEventListener('click', () => {
+      // 交给浏览器原生的锚点跳转（配合 CSS scroll-behavior:smooth 与 scroll-margin-top），
+      // 比手写 scrollTo 更稳，键盘/中键/复制链接都照常工作
+      box.classList.remove('open');
+      links.forEach(x => x.classList.remove('on'));
+      a.classList.add('on');
+    });
+    panel.appendChild(a);
+    links.push(a);
+  });
+  document.body.appendChild(box);
+
+  const btn = box.querySelector('.page-toc-btn');
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const willOpen = !box.classList.contains('open');
+    box.classList.toggle('open');
+    if(willOpen){
+      // 展开时把当前所在小节滚进面板可视区
+      const cur = panel.querySelector('a.on');
+      if(cur) panel.scrollTop = Math.max(0, cur.offsetTop - panel.clientHeight / 3);
+    }
+  });
+  document.addEventListener('click', e => {
+    if(!box.contains(e.target)) box.classList.remove('open');
+  });
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape') box.classList.remove('open');
+  });
+
+  // 滚动时高亮当前小节
+  let cur = -1;
+  function sync(){
+    const top = window.scrollY + 96;
+    let idx = 0;
+    heads.forEach((h, i) => { if(h.getBoundingClientRect().top + window.scrollY <= top) idx = i; });
+    if(idx === cur) return;
+    cur = idx;
+    links.forEach((a, i) => a.classList.toggle('on', i === idx));
+  }
+  let tick = false;
+  window.addEventListener('scroll', () => {
+    if(tick) return;
+    tick = true;
+    requestAnimationFrame(() => { sync(); tick = false; });
+  }, {passive:true});
+  sync();
+})();
+
 // ── 动图演示器：播放 / 暂停 / 逐帧 / 点选步骤 ──
 document.querySelectorAll('figure.anim').forEach(fig=>{
   const img = fig.querySelector('.anim-frame');

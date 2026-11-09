@@ -98,15 +98,17 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F07</span><h1>Frida Stalker 原理与修复</h1><p class="ch-en">follow/infect、ExecCtx、basic block 翻译、slab、event sink、arm64 near allocation</p></div>
 <p class="lead">把一段代码“搬进沙箱”再执行，就得到了指令级可观测性。</p>
-<h2>7.1 五步流程</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Stalker 是 frida 里最强也最重的一个功能：它能把一段代码“搬进沙箱”再执行，于是每一条指令的执行你都能看见。</p><p>它是怎么做到的？把目标代码一条一条翻译成自己的版本，翻译的时候顺手插上记录代码，然后把执行流引到翻译后的版本上。翻译过的基本块会被缓存起来，下次直接复用。</p><p>代价是什么？一是慢（可能几十倍），二是要分配大量内存放翻译结果，三是这些内存块在检测方眼里非常扎眼。这一章讲五个环节、为什么必须“近地址分配”、以及检测方怎么看它。</p></div></aside>
+<h2 id="sec-1">7.1 五步流程</h2>
 <figure>
 <img src="../assets/f_f07.png" alt="图 F7-1" width="1080">
 <figcaption><b>图 F7-1</b><span>Stalker 的五个环节</span></figcaption>
 </figure>
 <ol><li><code>follow</code> / <code>infect</code>：选定要跟踪的线程或函数。</li><li><code>ExecCtx</code>：为线程建立执行上下文，保存现场。</li><li><strong>basic block 翻译</strong>：把 ARM64 指令复制成带回调的副本。</li><li><strong>slab 分配</strong>：从近地址池分配可执行内存放副本。</li><li><strong>event sink</strong>：把 call / ret / block 事件送到 JS。</li></ol>
-<h2>7.2 为什么必须“近地址分配”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>机器指令能跳的范围是有限的：跳太远，一条指令装不下，就得多绕几步，而那些绕路的地方又得找地方放。</p><p>所以「把新代码放在目标附近」不是优化，是前提。这一节讲这条距离限制，读完你遇到「分配成功但跳不过去」时，会先想到是距离问题，而不是权限问题。</p></div></aside>
+<h2 id="sec-2">7.2 为什么必须“近地址分配”</h2>
 <p>ARM64 的 <code>B</code> 指令只有 ±128MB 的跳转范围。翻译后的代码如果离原代码太远，就得用更贵的长跳转（<code>LDR + BR</code>），性能与实现复杂度都会上升。所以 Stalker 会尽量在目标附近分配内存。</p>
-<h2>7.3 检测方怎么看 Stalker</h2>
+<h2 id="sec-3">7.3 检测方怎么看 Stalker</h2>
 <div class="tbl"><table>
 <thead><tr><th>痕迹</th><th>说明</th></tr></thead><tbody>
 <tr><td>大量匿名可执行页</td><td>翻译副本的存放区</td></tr>
@@ -115,9 +117,10 @@
 <tr><td>特定线程被暂停</td><td>infect 时会挂起目标</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>实用建议：Stalker 只用于“短时间、定点”的观测。长期开启会让目标行为变形，甚至触发基于时序的反调试。</div></aside>
-<h2>7.4 本章自测</h2>
+<h2 id="sec-4">7.4 本章自测</h2>
 <ul><li>basic block 翻译具体做了什么？</li><li>为什么需要 near allocation？</li><li>Stalker 会留下哪些痕迹？</li><li>什么场景下值得用 Stalker，什么场景不值得？</li></ul>
-<h2>7.5 深入：翻译后的代码长什么样</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>被追踪的代码不是原样执行，而是先被改写成另一种形式：每条原指令对应一小段，中间还插着记状态的代码。</p><p>所以你在追踪时看到的地址、读到的指令，可能都不是「原来那份」。这一节讲这份改写长什么样，读完你不会再把「读到奇怪指令」当成中毒。</p></div></aside>
+<h2 id="sec-5">7.5 深入：翻译后的代码长什么样</h2>
 <p>原本的一条 <code>MOV X0, #1</code> 会被复制过去，但每个基本块的首尾会插入“回调 + 条件跳转”。所以翻译后的代码体积通常是原来的数倍，且充满了 <code>B</code> 与 <code>BL</code>。</p>
 <div class="code">
 <div class="code-title">概念上的翻译结果</div>
@@ -128,7 +131,7 @@
     B   block_1         // 跳到下一个基本块</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.6 实战：什么时候该用 Stalker</h2>
+<h2 id="sec-6">7.6 实战：什么时候该用 Stalker</h2>
 <div class="tbl"><table>
 <thead><tr><th>场景</th><th>适合</th><th>原因</th></tr></thead><tbody>
 <tr><td>找算法入口</td><td>是</td><td>能看到完整执行路径</td></tr>
@@ -136,7 +139,8 @@
 <tr><td>抓解密循环</td><td>是</td><td>指令级可见</td></tr>
 <tr><td>性能敏感路径</td><td>否</td><td>会改变时序</td></tr>
 </tbody></table></div>
-<h2>7.7 原理推演：为什么“翻译”比“模拟”快</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>模拟是一条条解释着跑：读一条、想一下它什么意思、再做。翻译是先把一整段变成「这台机器本来就认识的形式」，之后直接跑，不再想。</p><p>差别不在聪明程度，而在「同一件事要不要重复想」。这一节讲翻译为什么快、以及它快在哪一步被白白浪费掉（翻译本身也要花时间）。读完你能判断一段追踪该开多久，才不会把时间全花在翻译上。</p></div></aside>
+<h2 id="sec-7">7.7 原理推演：为什么“翻译”比“模拟”快</h2>
 <p>翻译是把原指令复制成一份“带回调的副本”，然后直接执行副本——CPU 跑的还是原生指令。模拟是“逐条解释执行”，每条都要走一次解释器。前者快一到两个数量级。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>执行速度</th><th>实现复杂度</th></tr></thead><tbody>
@@ -145,14 +149,16 @@
 <tr><td>硬件 trace</td><td>原生</td><td>最低（但功能受限）</td></tr>
 </tbody></table></div>
 <p>这也解释了 Stalker 的定位：它适合“短时间、需要明细”的场景，不适合长期开着。</p>
-<h2>7.8 数据细节：翻译后的代码膨胀比例</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>原本一条指令，被改写成一小段之后，体量会涨好几倍。这个比例决定了追踪能开多久、内存够不够。</p><p>这张表给的是大致倍数。它的用处是估算：跑之前先算一下「这段代码大概会变成多大」，就不会跑到一半被内存掐死。</p></div></aside>
+<h2 id="sec-8">7.8 数据细节：翻译后的代码膨胀比例</h2>
 <div class="tbl"><table>
 <thead><tr><th>代码类型</th><th>膨胀比例</th><th>说明</th></tr></thead><tbody>
 <tr><td>简单算术</td><td>3~5 倍</td><td>每条后加回调</td></tr>
 <tr><td>调用密集</td><td>5~10 倍</td><td>call/ret 都要拦</td></tr>
 <tr><td>循环密集</td><td>2~4 倍</td><td>基本块复用</td></tr>
 </tbody></table></div>
-<h2>7.9 深入：ExecCtx 里存了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每执行一段被翻译过的代码，都得有一份「当前状态」放在手边：这次从哪开始、上次停在哪、寄存器存在哪、出错往哪跳。这份东西就是执行上下文。</p><p>它是翻译器和被翻译代码之间的唯一接口，缺一项就跑不下去。这一节讲它装了哪些内容，读完你能看懂追踪过程中那些「状态异常」的报错到底在说什么。</p></div></aside>
+<h2 id="sec-9">7.9 深入：ExecCtx 里存了什么</h2>
 <p><code>ExecCtx</code> 是“这个线程正在被跟踪”的上下文：它保存了当前的基本块、返回地址栈、以及一些寄存器快照。每次进入/离开被跟踪的代码，都要更新它。</p>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>作用</th><th>不维护的后果</th></tr></thead><tbody>
@@ -161,7 +167,8 @@
 <tr><td>寄存器快照</td><td>支持读写</td><td>读到脏值</td></tr>
 </tbody></table></div>
 <p>所以 Stalker 的“正确性”高度依赖对 ABI 的精确理解。写错一个寄存器保存，表现就是“偶尔崩”。</p>
-<h2>7.10 深入：为什么“infect”要挂起线程</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>要给某个线程装追踪，就得改它正在跑的那段代码。可它正跑着，你一改，它可能正在执行你改到一半的那条指令。</p><p>所以先让它停下。这一节讲这套停-改-放的配合，读完你遇到「装完就崩」时，会先怀疑是不是停的时机不对。</p></div></aside>
+<h2 id="sec-10">7.10 深入：为什么“infect”要挂起线程</h2>
 <p>因为要在“线程不执行”的时候，把它的执行流重定向到翻译后的代码。如果线程正在跑，改它的入口就是竞态。</p>
 <div class="code">
 <div class="code-title">概念流程</div>
@@ -171,7 +178,7 @@
 4. resume(thread)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>7.11 实战：用 Stalker 抓一次解密循环</h2>
+<h2 id="sec-11">7.11 实战：用 Stalker 抓一次解密循环</h2>
 <div class="code">
 <div class="code-title">只跟一段</div>
 <pre><code>Stalker.follow(Process.getCurrentThreadId(), {
@@ -183,7 +190,7 @@
 // 记得在目标代码跑完后 Stalker.unfollow()</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>现场：从看见调用到看见每一条指令</h2>
+<h2 id="sec-12">现场：从看见调用到看见每一条指令</h2>
 <p>你在 <code>open</code> 上挂了 Interceptor，日志漂亮地显示它被调了 200 次，可你还是不知道这 200 次分别是从哪几条分支走进来的、谁在循环里反复开同一个文件。于是你打开 <code>Stalker.follow()</code>，目标瞬间慢了半拍，<code>/proc/&lt;pid&gt;/maps</code> 里冒出十几段没有文件名的可执行页，logcat 开始刷 event。你想要的可观测性到手了，代价也一并到手了。</p>
 <p>Stalker 的做法不是“打更多断点”，而是把执行流整体搬进一个沙箱：原代码一个字节不改，逐块复制成带回调的副本，CPU 跑的仍是原生指令。理解这一点，才能明白为什么比对代码段哈希抓不到它，也才能明白为什么“多出来的页”和“变慢的时序”才是它真正的破绽。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_stalker">
@@ -214,9 +221,10 @@
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_stalker.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["目标从原始基本块 BB0 开始执行", "BB0 被翻译进 slab，PC 跳到副本", "分支被改写，执行流在翻译块之间跳转", "每块执行都向 event sink 投递事件", "near allocation 解决 arm64 跳转距离问题"]</script>
-<h2>把一次 follow 拆成八拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Stalker 干的事可以一句话概括：<strong>把目标函数里的每条指令抄一遍，抄的同时在每条后面塞一段记录</strong>。这样目标照常跑，你却拿到了完整的执行轨迹。</p><p>代价是“抄”这个动作本身很重：要申请新内存、要改跳转、要让正在跑这段代码的线程先停一下。这八拍就是把“抄一段、接上去、让线程继续”这个过程拆开，看每一步分别可能出什么问题。</p></div></aside>
+<h2 id="sec-13">把一次 follow 拆成八拍</h2>
 <ol><li><strong>JS 的 Stalker.follow(tid, opts) → 对该线程的 ExecCtx → 建/取执行上下文、保存寄存器现场</strong> → 结果：这条线程有了专属的翻译状态与 slab 池，别的线程不受影响。</li><li><strong>Stalker → 对目标线程 → 短暂 suspend（infect 模式下连其它线程一起挂起）</strong> → 结果：改 PC、改分支目标时不会有线程正跑在半途，避免踩到执行到一半的指令。</li><li><strong>Stalker → 对当前 PC 指向的基本块 → 逐条解码，识别分支 / 调用 / 返回作为边界</strong> → 结果：切出一个 basic block，得到这张“待翻译清单”。</li><li><strong>Stalker → 对 slab 分配器 → 在靠近原代码的地址池里申请可执行页（arm64 near allocation）</strong> → 结果：<code>B</code> / <code>BL</code> 的 ±128MB 跳转范围够用，不必退化成 <code>LDR + BR</code> 这种更贵的长跳转序列。</li><li><strong>Stalker → 对复制出的指令 → 在块头块尾插事件发射与现场保存，把分支目标改写成翻译块地址</strong> → 结果：原代码一个字节没动，执行流被整体搬进副本，副本之间首尾相接。</li><li><strong>CPU → 对翻译块 → 原生执行（不是逐条解释）</strong> → 结果：性能接近原生，只在插桩点付额外开销；这是它比模拟器快一到两个数量级的原因。</li><li><strong>翻译块 → 对 event sink → 按 call / ret / exec / block 类型投递事件并由 Gum 聚合</strong> → 结果：JS 侧 onReceive 一次拿到一批带地址的事件数组，而不是每个事件回一次 JS。</li><li><strong>遇到尚未翻译的新块 → 回到第三拍重新解码</strong> → 结果：边跑边翻译，热路径逐渐被 slab 缓存住，冷路径每次都要多付一次翻译成本。</li></ol>
-<h2>复现：只跟一个函数，别整进程跟着</h2>
+<h2 id="sec-14">复现：只跟一个函数，别整进程跟着</h2>
 <p>Stalker 的正确用法是<strong>定点、短时、必 unfollow</strong>。下面这段脚本在 <code>open</code> 的 onEnter 里 follow、onLeave 里 unfollow，只留 call 事件，并把 libc 自身的范围用 <code>Stalker.exclude</code> 排除掉——否则跟踪里会全是 ART 与 libc 的噪声，还把 UI 拖死。</p>
 <div class="code">
 <div class="code-title">stalk.js：定点 follow 与 unfollow</div>

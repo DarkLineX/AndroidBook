@@ -102,7 +102,8 @@
 <img src="../assets/k03_exception.png" alt="图 K3-1" width="1080">
 <figcaption><b>图 K3-1</b><span>控制流被打断的五种方式</span></figcaption>
 </figure>
-<h2>3.1 五种打断方式</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>CPU 正一条一条执行指令，突然被打断了——可能是程序自己请求系统帮忙（系统调用）、可能是内存访问出错、可能是定时器响了、可能是另一颗核发来一个信号。</p><p>不管哪种，CPU 的处理方式都一样：<strong>跳到一张固定的表里，按“哪类原因 + 从哪来”选一个入口</strong>。这张表叫异常向量表。所有 hook 和 trace 的本质，都是在这张表指向的入口上插一脚。</p><p>这一章讲清五件事：有哪五种打断方式、被打断时现场存在哪几个寄存器里、单步是怎么实现的、系统调用走的哪条路、以及为什么向量表的偏移量特别容易记错（本书专门纠过一个常见错法）。</p></div></aside>
+<h2 id="sec-1">3.1 五种打断方式</h2>
 <div class="tbl"><table>
 <thead><tr><th>类型</th><th>同步/异步</th><th>典型来源</th></tr></thead><tbody>
 <tr><td>异常</td><td>同步</td><td>page fault、未定义指令、断点</td></tr>
@@ -111,7 +112,11 @@
 <tr><td>信号</td><td>异步投递</td><td>内核替用户态“排队”一个处理函数</td></tr>
 <tr><td>调试异常</td><td>同步</td><td>断点、单步、watchpoint</td></tr>
 </tbody></table></div>
-<h2>3.2 四个必须记住的寄存器</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>被打断的那一刻，CPU 要把现场保存下来，否则处理完就回不去了。现场存在四个地方：</p><p><strong>VBAR_EL1</strong>：向量表基地址。表在哪，全看这个寄存器。
+<strong>ESR_EL1</strong>：出错原因。里面写着“这次是哪种异常”，高几位是类别码（EC）。
+<strong>FAR_EL1</strong>：出错的地址。访问哪块内存炸的，它记着。
+<strong>ELR_EL1</strong>：回来的地址。处理完了从哪继续跑。</p><p>记法：<strong>表、因、址、回</strong>。四个里最常被读的是 ESR，因为“为什么炸”通常比“炸在哪”更关键。</p></div></aside>
+<h2 id="sec-2">3.2 四个必须记住的寄存器</h2>
 <div class="code">
 <div class="code-title">ARM64 异常现场的关键寄存器</div>
 <pre><code>ELR_EL1   // 异常返回地址（也是 hook 改返回去向的地方）
@@ -121,12 +126,13 @@ ESR_EL1   // 异常原因（EC 字段说明是哪类异常）</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p><code>pt_regs</code> 是异常发生时压到内核栈上的一份完整现场（x0–x30、sp、pc、pstate）。<strong>hook 想改寄存器，改的就是这个结构</strong>；想改返回地址，改 <code>pt_regs-&gt;pc</code>。</p>
-<h2>3.3 单步是怎么实现的</h2>
+<h2 id="sec-3">3.3 单步是怎么实现的</h2>
 <p>把 <code>MDSCR_EL1.SS</code> 置 1，并把 <code>SPSR_EL1.SS</code> 置 1，异常返回后 CPU 每执行完一条指令就再陷入一次调试异常。这就是 M04 单步 trace 的硬件基础——不需要改任何代码，靠 CPU 自己停下来。</p>
 <aside class="note"><span class="note-tag">要点</span><div>代价：单步会让执行慢几十倍，对时序敏感的代码（加密、握手、超时判断）可能因此走不同分支。所以单步只适合“短时间、定点”的观测，不适合长期驻留。</div></aside>
-<h2>3.4 本章自测</h2>
+<h2 id="sec-4">3.4 本章自测</h2>
 <ul><li>同步异常与异步中断的区别是什么？</li><li>改 hook 的返回地址，改哪个寄存器或结构？</li><li>单步的开关涉及哪两个寄存器位？</li><li>为什么单步可能改变程序行为？</li></ul>
-<h2>3.5 深入：一次系统调用的完整旅程</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>App 想让系统办事，不能说一句就完了：要把请求编号和参数摆到约定位置、触发一次切换、由内核按编号找到对应实现、办完再切回来。</p><p>这条路上每一步都能被观察、被拦截。这一节把它走一遍，读完你就明白为什么「hook 系统调用」既有那么多做法、又有那么多坑。</p></div></aside>
+<h2 id="sec-5">3.5 深入：一次系统调用的完整旅程</h2>
 <p>用户态执行 <code>svc #0</code>，CPU 从 EL0 陷入 EL1，走 <code>vectors</code> 里对应的入口，保存 <code>pt_regs</code>，然后根据 <code>x8</code> 里的系统调用号查表，跳到具体实现。返回时恢复现场，<code>eret</code> 回到 EL0。</p>
 <div class="tbl"><table>
 <thead><tr><th>步骤</th><th>发生什么</th><th>可 hook 的点</th></tr></thead><tbody>
@@ -136,7 +142,7 @@ ESR_EL1   // 异常原因（EC 字段说明是哪类异常）</code></pre>
 <tr><td>执行</td><td>真正干活</td><td>函数入口 kprobe</td></tr>
 <tr><td>返回</td><td>eret 回 EL0</td><td>改返回值</td></tr>
 </tbody></table></div>
-<h2>3.6 实战：用 kprobe 抓一次 openat</h2>
+<h2 id="sec-6">3.6 实战：用 kprobe 抓一次 openat</h2>
 <div class="code">
 <div class="code-title">抓参数</div>
 <pre><code>echo &#x27;p:myopen do_sys_open dfd=%x0 filename=+0(%x1):string flags=%x2&#x27; \
@@ -146,7 +152,8 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这里的 <code>+0(%x1):string</code> 是 kprobe 的语法：从 x1 指向的地址读字符串。不写偏移会读到指针本身，看到一堆乱码——这是新手最常犯的错。</div></aside>
-<h2>3.7 原理推演：为什么“异常”是 hook 的天然入口</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>程序正常跑的时候，CPU 一条接一条往下执行，你插不进去。但只要出「异常」——断点、缺页、非法指令——控制权就自动交给内核，由内核决定接下来去哪。</p><p>这个「自动交出去」的时刻，就是天然的插队点：你不用改程序的逻辑，只要让它在那条路上多走一步。这一节讲的是这条路为什么稳、又为什么一定会留下能被数出来的痕迹。</p></div></aside>
+<h2 id="sec-7">3.7 原理推演：为什么“异常”是 hook 的天然入口</h2>
 <p>因为异常是“CPU 主动交给内核控制权”的时刻。此时内核必然在做“保存现场 → 处理 → 恢复”这三件事，你只要在这条路径上插一脚，就能拿到完整的寄存器与内存访问权。</p>
 <div class="tbl"><table>
 <thead><tr><th>异常类型</th><th>能否 hook</th><th>代价</th></tr></thead><tbody>
@@ -156,7 +163,8 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 <tr><td>单步</td><td>能</td><td>高（每条指令都陷入）</td></tr>
 </tbody></table></div>
 <p>这就是为什么“硬件断点”比“改代码”更优雅：它利用的是 CPU 自带的异常机制，不需要改任何字节。</p>
-<h2>3.8 数据细节：ESR_EL1 的 EC 字段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>出了异常之后，系统要知道「是哪一类异常」，靠的是状态寄存器里的一段编号。这段编号就是 EC。</p><p>这张表是编号到含义的对照。它的用处很直接：拿到一个异常，先读这个字段，就知道该往哪一类原因上找，不用把整条路径都猜一遍。</p></div></aside>
+<h2 id="sec-8">3.8 数据细节：ESR_EL1 的 EC 字段</h2>
 <div class="code">
 <div class="code-title">常见 EC 值（ESR_EL1[31:26]）</div>
 <pre><code>0x00  未知原因
@@ -181,17 +189,32 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 </div>
 <p>处理异常时，先看 EC 就知道“这是什么类型的异常”，再决定走哪条处理路径。写 hook 时也一样：先判断 EC，再决定要不要介入。</p>
 <aside class="note"><span class="note-tag">要点</span><div>三个最容易记错的地方：① <strong>软件单步是 0x32/0x33</strong>，不是 0x38；② <strong>0x38 是 AArch32 的 BKPT</strong>，AArch64 的断点指令 BRK 是 <strong>0x3C</strong>；③ <strong>数据 abort 同一 EL 是 0x25</strong>，0x21 是指令 abort 同一 EL。另外 EC 只说明“异常类别”，同一 EL 还是低 EL 要结合 SPSR 判断，所以表里同一个原因常有两个值。</div></aside>
-<h2>3.9 深入：异常向量表的结构</h2>
-<p>ARM64 有 16 个异常入口，按“来源 EL × 类型”排布：当前 EL 用 SP0、当前 EL 用 SPx、低 EL 用 AArch64、低 EL 用 AArch32，每种再分同步/IRQ/FIQ/SError。这就是 <code>vectors</code> 表。</p>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>处理器出异常时，不是随便找个地方跳，而是跳到一张固定的表里对应的格子上。这张表按「从哪来」「什么类型」排成一个方阵，每一格都固定。</p><p>所以「算错格子」是这类代码最常见的错：看起来都差不多，跳错一格就跑到别的场景去了。这一节把这张表的排法讲透，读完你能自己推出任意一种异常该落在哪个偏移上。</p></div></aside>
+<h2 id="sec-9">3.9 深入：异常向量表的结构</h2>
+<p>ARM64 的 <code>VBAR_EL1</code> 指向一张 16 项的表，每项 0x80 字节。排法是“<strong>先按来源分四组，每组里再按同步/IRQ/FIQ/SError 排</strong>”：第 1 组来自当前 EL 且用 SP0、第 2 组来自当前 EL 且用 SP_ELx、第 3 组来自低 EL 的 AArch64、第 4 组来自低 EL 的 AArch32。所以偏移不是“按类型递增”，而是 <code>组号 × 0x200 + 类型号 × 0x80</code>。</p>
 <div class="tbl"><table>
 <thead><tr><th>偏移</th><th>来源</th><th>类型</th></tr></thead><tbody>
 <tr><td>0x000</td><td>当前 EL, SP0</td><td>同步</td></tr>
 <tr><td>0x080</td><td>当前 EL, SP0</td><td>IRQ</td></tr>
-<tr><td>0x200</td><td>低 EL, AArch64</td><td>同步</td></tr>
-<tr><td>0x280</td><td>低 EL, AArch64</td><td>IRQ</td></tr>
+<tr><td>0x100</td><td>当前 EL, SP0</td><td>FIQ</td></tr>
+<tr><td>0x180</td><td>当前 EL, SP0</td><td>SError</td></tr>
+<tr><td>0x200</td><td>当前 EL, SP_ELx</td><td>同步</td></tr>
+<tr><td>0x280</td><td>当前 EL, SP_ELx</td><td>IRQ</td></tr>
+<tr><td>0x300</td><td>当前 EL, SP_ELx</td><td>FIQ</td></tr>
+<tr><td>0x380</td><td>当前 EL, SP_ELx</td><td>SError</td></tr>
+<tr><td>0x400</td><td>低 EL, AArch64</td><td>同步</td></tr>
+<tr><td>0x480</td><td>低 EL, AArch64</td><td>IRQ</td></tr>
+<tr><td>0x500</td><td>低 EL, AArch64</td><td>FIQ</td></tr>
+<tr><td>0x580</td><td>低 EL, AArch64</td><td>SError</td></tr>
+<tr><td>0x600</td><td>低 EL, AArch32</td><td>同步</td></tr>
+<tr><td>0x680</td><td>低 EL, AArch32</td><td>IRQ</td></tr>
+<tr><td>0x700</td><td>低 EL, AArch32</td><td>FIQ</td></tr>
+<tr><td>0x780</td><td>低 EL, AArch32</td><td>SError</td></tr>
 </tbody></table></div>
+<aside class="note"><span class="note-tag">要点</span><div>把这三行的关系记牢就不容易错：<strong>用户态发起 `svc` 走的是 0x400</strong>（低 EL、AArch64、同步）；<strong>内核自己出同步异常走的是 0x200</strong>；<strong>当前 EL 且当时用 SP0 的走 0x000</strong>（绝大多数内核线程是这种情况）。很多资料把 0x200 说成“低 EL 同步”，那是把第 2 组和第 3 组混了。</div></aside>
 <p>hook 异常处理时，改的就是这张表里的某一项。但注意：表在只读段里，且被 KASLR 影响——要先找到它的运行地址。</p>
-<h2>3.10 深入：为什么“信号”是异步的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>信号是「别人随时可能拍你一下」：你正在算东西，它来了，你手上的一切被打断，跑去处理，处理完再回来接着算。什么时候来、来几次、按什么顺序，都不由你定。</p><p>所以信号处理里几乎什么都不能安心做。这一节讲这条限制从哪来，读完你不会再把复杂逻辑塞进信号处理函数里——那是崩溃的常见来源。</p></div></aside>
+<h2 id="sec-10">3.10 深入：为什么“信号”是异步的</h2>
 <p>因为信号的投递时机不确定：内核可能在任意“返回用户态”的时刻检查挂起的信号。所以信号处理函数可能在任意两条指令之间被调用——这也是为什么信号处理函数里只能调用“异步信号安全”的函数。</p>
 <div class="code">
 <div class="code-title">典型的坑</div>
@@ -201,7 +224,7 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 }</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.11 实战：用信号做“反调试”</h2>
+<h2 id="sec-11">3.11 实战：用信号做“反调试”</h2>
 <ol><li>注册一个 SIGTRAP 处理函数。</li><li>如果调试器在单步，SIGTRAP 会被调试器先收到，你的处理函数不会被调用。</li><li>于是“处理函数没被调用”就成了“正在被调试”的证据。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这是非常经典的反调试手法，也很容易被反向利用：hook 掉信号注册，让处理函数“总是被调用”。</div></aside>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_syscall">
@@ -232,13 +255,13 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_syscall.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["用户态执行 svc #0，x8 里放调用号", "CPU 切到 EL1，跳向量表低 EL 同步入口", "内核把寄存器保存成 pt_regs", "按 x8 索引 sys_call_table 并调用", "eret 恢复现场，回到用户态继续执行"]</script>
-<h2>把一根手指按在 svc 指令上</h2>
+<h2 id="sec-12">把一根手指按在 svc 指令上</h2>
 <p>这一条指令之前，代码在 EL0，用的是 <code>SP_EL0</code>；这一条指令之后，同一个进程已经站在 EL1，用 <code>SP_EL1</code>，寄存器现场被整整齐齐压进内核栈。中间没有跳转、没有函数调用，只有 CPU 自己把异常级别抬了一格。你写的所有 hook，都是在找机会往这一格台阶上塞一只脚。</p>
 <p>现场感来自一个事实：<code>svc #0</code> 指令里<strong>没有系统调用号</strong>。号在 <code>x8</code>，参数在 <code>x0</code> 到 <code>x5</code>，返回值会写回 <code>x0</code>。也就是说，一条看起来什么都没说的指令，靠约定把整个用户态的请求搬进了内核。</p>
-<h2>一条系统调用穿越内核的五拍</h2>
+<h2 id="sec-13">一条系统调用穿越内核的五拍</h2>
 <ol><li><strong>用户态</strong> 对 <strong>x8</strong> 放号：libc 把调用号写进 x8，参数依次放进 x0 到 x5，然后执行 <code>svc #0</code> → 结果：CPU 把返回地址存进 <code>ELR_EL1</code>、把 PSTATE 存进 <code>SPSR_EL1</code>，切到 <code>SP_EL1</code>。</li><li><strong>CPU</strong> 对 <strong>`VBAR_EL1`</strong> 取向量：按来自低 EL、AArch64、同步定位到偏移 <code>0x400</code> 那一项，跳进 <code>el0t_64_sync</code> → 结果：进入内核异常入口，还没碰任何 C 代码。</li><li><strong>`kernel_entry 0`</strong> 对 <strong>内核栈</strong> 铺现场：把 x0 到 x30、sp、pc、pstate 压成一个 <code>pt_regs</code> → 结果：内核从此有一份可随意读写的用户现场；hook 改参数就是改这块内存。</li><li><strong>`el0_svc` 到 `do_el0_svc`</strong> 对 <strong>`sys_call_table`</strong> 查表：拿 <code>pt_regs-&gt;regs[8]</code> 当索引调用对应实现 → 结果：目标系统调用真正跑起来，返回值写回 <code>pt_regs-&gt;regs[0]</code>。</li><li><strong>`ret_to_user`</strong> 对 <strong>挂起信号</strong> 顺便查一次账：先看 <code>TIF_SIGPENDING</code>，有信号就先搭好用户栈帧跳去 handler，否则直接 <code>eret</code> → 结果：ELR 与 SPSR 复原，进程回到 EL0，像什么都没发生过。</li></ol>
 <p>第 5 拍是很多人栽跟头的地方：信号<strong>不是</strong>在产生的那一刻被处理的，而是在每次准备返回用户态的路上被顺手检查。所以一个信号可能卡在任意两条指令之间才落地；也所以信号处理函数里只能调用异步信号安全的函数——它脚下踩的是被打断的栈，不是干净的调用栈。</p>
-<h2>同步、异步、调试：三条入口分清楚</h2>
+<h2 id="sec-14">同步、异步、调试：三条入口分清楚</h2>
 <ol><li><strong>外设</strong> 对 <strong>GIC</strong> 拉高一根 IRQ 线：中断是异步的，与当前正在执行的指令无关 → 结果：CPU 在指令边界接受，走 <code>VBAR_EL1</code> 偏移 <code>0x480</code> 那一项。</li><li><strong>`el0_irq`</strong> 对 <strong>`pt_regs`</strong> 同样铺一份现场，但紧接着调 <code>irq_handler</code> → 结果：中断处理跑在中断上下文里，<strong>不能睡眠、不能拿可能睡眠的锁</strong>。</li><li><strong>`MDSCR_EL1.SS` 加 `SPSR_EL1.SS`</strong> 对 <strong>每条指令</strong> 加一拍：<code>eret</code> 之后 CPU 执行完一条就再报一次调试异常 → 结果：单步不靠改代码，靠 CPU 自己停；<code>ESR_EL1.EC</code> 会显示对应的调试异常原因。</li><li><strong>断点指令 `brk`</strong> 对 <strong>当前 pc</strong> 制造同步异常：走 <code>el0t_64_sync</code> 的 debug 分支 → 结果：调试器拿到 SIGTRAP，并把 <code>pt_regs-&gt;pc</code> 回退或前移来对齐。</li><li><strong>hook 代码</strong> 对 <strong>`pt_regs` 与 `ELR_EL1`</strong> 动手：改 <code>regs[0]</code> 换参数，改 <code>pc</code> 换返回去向 → 结果：用户态看到的世界被改了，而它自己毫不知情。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>向量表偏移</th><th>触发条件</th><th>入口做了什么</th><th>能不能睡眠</th></tr></thead><tbody>
@@ -248,7 +271,7 @@ cat /sys/kernel/tracing/trace_pipe</code></pre>
 <tr><td>0x200</td><td>当前 EL、SP_EL1、同步</td><td>el1h_64_sync，内核态自己出错或 brk</td><td>视具体路径而定</td></tr>
 <tr><td>0x280</td><td>当前 EL、SP_EL1、IRQ</td><td>el1h_64_irq，内核态嵌套中断</td><td>不能</td></tr>
 </tbody></table></div>
-<h2>把一次 svc 的账本翻出来</h2>
+<h2 id="sec-15">把一次 svc 的账本翻出来</h2>
 <div class="code">
 <div class="code-title">动手：从调用号读到信号屏蔽字</div>
 <pre><code># 1. 让进程停在一个系统调用上，然后读它自己的现场

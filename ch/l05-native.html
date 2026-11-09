@@ -102,7 +102,8 @@
 <img src="../assets/l_l05.png" alt="图 L5-1" width="1080">
 <figcaption><b>图 L5-1</b><span>五种载体的暴露形式与治理方式</span></figcaption>
 </figure>
-<h2>5.1 五种载体</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>检测方最常用的手段是“扫字符串”：在内存里找 LSPosed、找模块包名、找特征类名。对付它的思路很直白：<strong>让这些名字不再特殊</strong>。</p><p>但“改名字”只是最浅的一层。真正要治理的是“源头”：这些字符串可能来自编译期常量、可能来自 dex 里的字符串池、可能来自 JNI 的方法映射表、也可能来自模块的入口元数据。在生成阶段就把它们泛化掉，比在运行时挨个抹要可靠得多。</p><p>这一章讲五种载体分别长在哪、为什么要在“生成阶段”治理、以及一个具体的改造例子。</p></div></aside>
+<h2 id="sec-1">5.1 五种载体</h2>
 <div class="tbl"><table>
 <thead><tr><th>载体</th><th>暴露形式</th><th>治理方式</th></tr></thead><tbody>
 <tr><td>native 常量</td><td>so 的字符串常量池</td><td>编译期改写</td></tr>
@@ -111,9 +112,10 @@
 <tr><td>入口元数据</td><td>xposed_init 等描述文件</td><td>合并进合法清单</td></tr>
 <tr><td>JNI 映射</td><td>RegisterNatives 的名字表</td><td>名字与逻辑解耦</td></tr>
 </tbody></table></div>
-<h2>5.2 为什么要在“生成阶段”治理</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个标识会在很多地方冒出来：日志、异常、序列化、跨进程传参。等它冒出来再去堵，堵不完。</p><p>所以在它被生成的那一刻就改掉，后面所有出口自然都干净。这一节讲这个「往前挪」的思路，读完你会先问「这东西是谁造出来的」，而不是「它现在在哪儿」。</p></div></aside>
+<h2 id="sec-2">5.2 为什么要在“生成阶段”治理</h2>
 <p>运行时再抹字符串，等于承认它曾经存在过——内存扫描、堆转储、甚至崩溃日志都可能留下痕迹。正确的做法是在编译 / 打包阶段就不产生这些特征。</p>
-<h2>5.3 一个具体的例子</h2>
+<h2 id="sec-3">5.3 一个具体的例子</h2>
 <div class="code">
 <div class="code-title">从“改字符串”到“改结构”</div>
 <pre><code># 弱：运行时把 &quot;lsposed&quot; 替换成 &quot;system&quot;
@@ -124,9 +126,10 @@ static const char* table[] = { ... }; // 名字延迟绑定</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这一章和“混淆”是同一件事的两面：混淆让逆向变难，标识泛化让检测变难。二期的“编译原理 → VMP”主线，正是为了补上这一层。</div></aside>
-<h2>5.4 本章自测</h2>
+<h2 id="sec-4">5.4 本章自测</h2>
 <ul><li>五种载体里，哪一种最难治理？</li><li>为什么运行时抹字符串是下策？</li><li>枚举值 + 间接表怎么替代字符串常量？</li><li>标识泛化与混淆的关系是什么？</li></ul>
-<h2>5.5 深入：为什么“改 IR”比“改字符串”彻底</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>字符串是结果，中间表示是「生成结果的那段逻辑」。改结果只能改这一处，换个地方重新生成又出来了；改逻辑则是从源头上不再生成。</p><p>所以两者的差别不是「彻底程度」，而是「改一次还是改很多次」。这一节讲这个视角，读完你会先问「这东西是谁生成的」，而不是先问「它在哪」。</p></div></aside>
+<h2 id="sec-5">5.5 深入：为什么“改 IR”比“改字符串”彻底</h2>
 <p>字符串常量在 dex 里是集中存放的，改它只是“换了个字”，结构还在；而改 IR（把 <code>const-string</code> 换成计算出来的值）会让“这里原本有个字符串”这个事实消失。</p>
 <div class="tbl"><table>
 <thead><tr><th>做法</th><th>产物里是否留下字符串</th><th>被扫描到的可能</th></tr></thead><tbody>
@@ -134,7 +137,7 @@ static const char* table[] = { ... }; // 名字延迟绑定</code></pre>
 <tr><td>改 IR 为计算</td><td>不留</td><td>低</td></tr>
 <tr><td>改为从资源读取</td><td>留 key</td><td>中</td></tr>
 </tbody></table></div>
-<h2>5.6 实战：用 smali 层面做最小改动</h2>
+<h2 id="sec-6">5.6 实战：用 smali 层面做最小改动</h2>
 <div class="code">
 <div class="code-title">原代码</div>
 <pre><code>const-string v0, &quot;lsposed&quot;
@@ -151,7 +154,8 @@ invoke-static {v0}, Lx/Y;-&gt;log(Ljava/lang/String;)V</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这仍然不彻底（运行时内存里会出现完整字符串）。真正彻底的做法是“不产生这个字符串”，比如用资源 ID、枚举值、或加密后延迟解密。</div></aside>
-<h2>5.7 原理推演：为什么“字符串”是最难治理的载体</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>字符串到处都是：常量池里、资源里、日志里、拼出来的临时变量里、跨进程传的参数里。它可以被复制、被截断、被重新拼装，源头根本追不到一个地方。</p><p>所以「把字符串全删了」永远做不干净。这一节讲为什么会这样，读完你会把注意力往前挪：与其删结果，不如让生成它的那段逻辑不再生成——那条路才收得住。</p></div></aside>
+<h2 id="sec-7">5.7 原理推演：为什么“字符串”是最难治理的载体</h2>
 <p>因为字符串会出现在太多地方：dex 常量池、so 的 .rodata、资源文件、日志、甚至崩溃栈里。只要它在任何一个地方以明文出现，就可能被抓到。</p>
 <div class="tbl"><table>
 <thead><tr><th>载体</th><th>明文可能性</th><th>治理难度</th></tr></thead><tbody>
@@ -161,14 +165,16 @@ invoke-static {v0}, Lx/Y;-&gt;log(Ljava/lang/String;)V</code></pre>
 <tr><td>运行时内存</td><td>必然</td><td>高（无法彻底消除）</td></tr>
 </tbody></table></div>
 <p>所以“治理”的目标不是“完全没有”，而是“没有稳定的、可被规则匹配的形态”。</p>
-<h2>5.8 数据细节：三种字符串隐藏方式的对比</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>藏一个字符串有三种常见做法：改内容、改存放位置、改成运行时才算出来。三种的强度和代价都不一样。</p><p>这张表把它们摆在一起比。它的用处是选：改内容最省事但最容易被还原，运行时生成最彻底但也最容易引出别的问题。</p></div></aside>
+<h2 id="sec-8">5.8 数据细节：三种字符串隐藏方式的对比</h2>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>静态可见</th><th>运行时可见</th><th>成本</th></tr></thead><tbody>
 <tr><td>明文</td><td>是</td><td>是</td><td>0</td></tr>
 <tr><td>拆分拼接</td><td>部分</td><td>是</td><td>低</td></tr>
 <tr><td>加密后解密</td><td>否</td><td>是（解密后）</td><td>中</td></tr>
 </tbody></table></div>
-<h2>5.9 深入：类前缀为什么也算“标识”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>给类加个前缀，看起来只是改个名字。可这个名字会出现在调用栈里、出现在异常信息里、出现在序列化的结果里——它自己会到处跑。</p><p>所以「改个前缀」不是改一处，而是改一处、漏十处。这一节讲这些会跑出去的地方，读完你会先把「它会出现在哪儿」列全，再动手。</p></div></aside>
+<h2 id="sec-9">5.9 深入：类前缀为什么也算“标识”</h2>
 <p>因为 dex 里的类名会以字符串形式存在。<code>Lcom/lsposed/api/XposedBridge;</code> 这样的类名，本身就是一条“明文特征”——即使用户看不到，扫描器能看到。</p>
 <div class="tbl"><table>
 <thead><tr><th>层面</th><th>暴露形式</th><th>处理</th></tr></thead><tbody>
@@ -177,7 +183,8 @@ invoke-static {v0}, Lx/Y;-&gt;log(Ljava/lang/String;)V</code></pre>
 <tr><td>字段名</td><td>dex 字符串常量</td><td>同上</td></tr>
 </tbody></table></div>
 <p>所以“标识泛化”不只是“改模块名”，而是“让所有出现在 dex 里的名字都不带特征”。</p>
-<h2>5.10 深入：JNI 映射的名字表</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Java 和 native 之间的对应关系，是靠一张名字表连起来的。改了一边的名字，另一边的表就对不上了——表现是「方法找不到」。</p><p>这一节讲这张表在哪、怎么对。读完你改名之后会顺手检查这张表，而不是等运行时崩了才发现。</p></div></aside>
+<h2 id="sec-10">5.10 深入：JNI 映射的名字表</h2>
 <p>用 <code>RegisterNatives</code> 注册时，名字是“运行时字符串”。它不一定出现在 dex 里，但会出现在 so 的常量池里。所以“改了 dex 没改 so”仍然会露。</p>
 <div class="code">
 <div class="code-title">两种注册方式</div>
@@ -188,7 +195,7 @@ Java_com_x_Y_nativeMethod
 //    名字在结构体里，仍在 so 的常量池</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.11 实战：一次静态扫描的自查</h2>
+<h2 id="sec-11">5.11 实战：一次静态扫描的自查</h2>
 <div class="code">
 <div class="code-title">扫描自己的产物</div>
 <pre><code>strings libyour.so | grep -i -E &#x27;lsposed|xposed|frida|gum&#x27;
@@ -196,16 +203,17 @@ grep -r &#x27;lsposed&#x27; smali/ | head
 # 有输出 = 还有明文特征</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>检测库在 .rodata 里翻到了一个名字</h2>
+<h2 id="sec-12">检测库在 .rodata 里翻到了一个名字</h2>
 <p><code>libshield.so</code> 被加载后做的第一件事不是查内存，而是拿一张关键词表在自己的只读数据段和 <code>/proc/self/maps</code> 上扫一遍：<code>lsposed</code>、<code>xposed</code>、<code>de.robv</code>、<code>lspd.dex</code>、<code>xposed_init</code>。它甚至不需要知道框架有没有运行——只要这个字符串曾经被编译进产物，或者 <code>AndroidManifest.xml</code> 里还留着 <code>xposedmodule</code> 这个 meta-data，就足够给出一个布尔值。名字是最便宜的特征，所以也是最先被用滥的特征。</p>
 <p>很多人的第一反应是&#x27;运行时把字符串抹掉&#x27;。但那等于承认它曾经存在：DEX 的 <code>string_ids</code> 已经排好序、CRC 已经算过，<code>maps</code> 里的文件页可以被 <code>mincore</code>/堆转储抓住，崩溃日志里的常量池还留着一份。<strong>治名字要治在它出生之前</strong>——在编译、打包、生成 smali 这些阶段，就让那个字面量压根不出现。</p>
-<h2>五处会留下名字的地方</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改名字是最常见的隐藏手段，但它经常无效——因为一个字符串在产物里不止出现一次。你改了 so 里的符号表，DEX 里可能还留着；你改了 DEX，某个常量池里可能还留着。</p><p>这一节的用处很直接：它给了一张“名字可能藏在哪五处”的地图。按这张地图一处一处查，比盲搜快得多；反过来，做隐藏的人也得把这五处全洗一遍才算完——漏一处就等于没洗。</p></div></aside>
+<h2 id="sec-13">五处会留下名字的地方</h2>
 <ol><li><strong>native 编译器 → .rodata</strong>：C/C++ 里的字面量进只读数据段，<code>strings lib.so</code> 一秒看光；结果是哪怕代码路径永远不执行，名字也躺在文件里。</li><li><strong>DEX 编译器 → string_ids</strong>：smali 的 <code>const-string</code> 把字面量登记进全局字符串表；结果是改一处引用要连带改索引、排序与校验和，硬改字符串反而制造新差分。</li><li><strong>类名 → 包前缀</strong>：<code>org.lsposed.*</code>、<code>de.robv.android.xposed.*</code> 这类前缀在反射枚举、栈回溯、类加载日志里反复出现；结果是类名本身就是签名。</li><li><strong>打包器 → 入口元数据</strong>：<code>assets/xposed_init</code> 与清单里的 <code>xposedmodule</code> / <code>xposedminversion</code> meta-data；结果是 <code>aapt dump xmltree</code> 不用解包 dex 就能认出来。</li><li><strong>JNI → RegisterNatives 名字表</strong>：<code>JNINativeMethod</code> 里的 <code>name</code> / <code>signature</code> 是编译期常量；结果是 <code>dlsym</code> 与动态注册表都能查到对应关系。</li></ol>
 <p>五处的共同点是<strong>都发生在运行之前</strong>。所以治理手段不该是&#x27;擦除&#x27;，而是&#x27;替换承载方式&#x27;：语义用枚举或哈希承载，名字在需要时才由间接表拼出来，入口描述合并进合法清单项，JNI 名字与逻辑彻底解耦。改的是结构，不是字面。</p>
-<h2>把治理提前到生成阶段</h2>
-<ul><li>native 侧把 <code>static const char* TAG = &#x27;lsposed&#x27;</code> 换成 <code>enum { K_BRIDGE = 0x5a3c }</code>，需要字符串时经 <code>constexpr</code> 异或表在编译期还原——产物里不出现原字面量。</li><li>DEX 侧在 IR 重写阶段把 <code>const-string</code> 改成&#x27;字符数组 + <code>new String</code>&#x27;，或直接删掉该常量并改用方法索引分派；注意同步重算 <code>string_ids</code> 排序与 DEX 校验和。</li><li>类前缀用 R8/ProGuard 的 <code>-adaptclassstrings</code> 与重命名规则一并改掉，别只改类名忘了改 <code>Class.forName</code> 里的字面量。</li><li>入口元数据并进合法的 <code>assets</code> 配置项，去掉专用文件名；清单里专用 meta-data 改为通用键值。</li><li><code>RegisterNatives</code> 的 <code>name</code> 用运行时拼接生成，让名字表与逻辑函数之间不存在静态对应。</li><li>最后跑一次全量扫描：so、dex、smali、manifest、resources 五处一起搜，任何一处命中都算回归失败。</li></ul>
+<h2 id="sec-14">把治理提前到生成阶段</h2>
+<ul><li>native 侧把 <code>static const char* TAG = &quot;lsposed&quot;</code> 换成 <code>enum { K_BRIDGE = 0x5a3c }</code>，需要字符串时经 <code>constexpr</code> 异或表在编译期还原——产物里不出现原字面量。</li><li>DEX 侧在 IR 重写阶段把 <code>const-string</code> 改成&#x27;字符数组 + <code>new String</code>&#x27;，或直接删掉该常量并改用方法索引分派；注意同步重算 <code>string_ids</code> 排序与 DEX 校验和。</li><li>类前缀用 R8/ProGuard 的 <code>-adaptclassstrings</code> 与重命名规则一并改掉，别只改类名忘了改 <code>Class.forName</code> 里的字面量。</li><li>入口元数据并进合法的 <code>assets</code> 配置项，去掉专用文件名；清单里专用 meta-data 改为通用键值。</li><li><code>RegisterNatives</code> 的 <code>name</code> 用运行时拼接生成，让名字表与逻辑函数之间不存在静态对应。</li><li>最后跑一次全量扫描：so、dex、smali、manifest、resources 五处一起搜，任何一处命中都算回归失败。</li></ul>
 <p>第 2 步最容易被做错。有人只把 <code>const-string</code> 的内容换掉，却忘了 DEX 的 <code>string_ids</code> 必须按 UTF-16 码点排序、且 <code>map_off</code> 与 Adler32 校验和随之变化。结果名字是没了，但字符串表的顺序和 CRC 变成了一个更稳定的新指纹。改 IR 要连着改元数据，这是&#x27;源头治理&#x27;与&#x27;运行时打补丁&#x27;的分水岭。</p>
-<h2>可复现：把 APK 与 so 拆开搜一遍</h2>
+<h2 id="sec-15">可复现：把 APK 与 so 拆开搜一遍</h2>
 <div class="code">
 <div class="code-title">发布前的五处扫描脚本</div>
 <pre><code># 1. native 常量：应无输出；有一行就算治理失败

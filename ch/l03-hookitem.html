@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L03</span><h1>多模块回调与去优化</h1><p class="ch-en">HookItem、modern/legacy callback、priority、并发发布、JIT inline、deopt</p></div>
 <p class="lead">多个模块 hook 同一个方法时，谁先谁后、怎么撤销，全是设计问题。</p>
-<h2>3.1 回调链的组织</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>当一个方法被多个模块同时 hook 时，问题就来了：谁先执行？后执行的能不能改前面的结果？某个模块卸载了怎么把它摘掉？</p><p>这就是“回调链”要解决的事。它本质上是一个“责任链”：请求进来，按优先级过一遍所有回调，每个回调可以选择“我处理了，到此为止”或者“我改一点，往下传”。</p><p>还有一个绕不开的话题：<strong>去优化</strong>。如果方法已经被即时编译成机器码，你换档案袋里的地址根本不会生效——因为调用已经绕过档案袋了。这时候必须让运行时“忘掉”编译结果，退回解释执行。</p></div></aside>
+<h2 id="sec-1">3.1 回调链的组织</h2>
 <figure>
 <img src="../assets/l_l03.png" alt="图 L3-1" width="1080">
 <figcaption><b>图 L3-1</b><span>回调链的组织方式与 deopt 的原因</span></figcaption>
@@ -110,7 +111,8 @@
 <tr><td>modern / legacy</td><td>两套回调签名</td><td>兼容不同年代模块</td></tr>
 <tr><td>并发发布</td><td>列表变更时要安全</td><td>读者可能在遍历中</td></tr>
 </tbody></table></div>
-<h2>3.2 为什么需要 deopt</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>代码一旦被优化过，就不再是「一行对一行」的样子了：变量可能只在寄存器里、循环可能被拆开、有些中间状态干脆没了。想在它身上精确停住，就得先让它退回未优化的形态。</p><p>这一节讲这个「先退回去」的必要性。读完你遇到「断点打不上、变量读不到」时，会先想到是优化在挡路，而不是工具坏了。</p></div></aside>
+<h2 id="sec-2">3.2 为什么需要 deopt</h2>
 <p>ART 的 JIT 会把热点方法内联进调用者。这时候你改 ArtMethod 的 entrypoint，但调用者里已经是一份内联后的代码，根本不会去看 entrypoint——hook 就“失效”了。</p>
 <p>解决办法是 deopt：让 ART 把已编译的方法退回解释执行，或者重新编译。代价是性能骤降，而且会改变时序。</p>
 <div class="code">
@@ -121,23 +123,25 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>有意思的是：<strong>deopt 造成的“突然变慢”本身就是检测信号</strong>。某些反调试正是靠“这个函数突然慢了 10 倍”来判断自己被 hook 了。</div></aside>
-<h2>3.3 本章自测</h2>
+<h2 id="sec-3">3.3 本章自测</h2>
 <ul><li>多个模块 hook 同一方法，顺序怎么定？</li><li>JIT 内联为什么会让 hook 失效？</li><li>deopt 的代价是什么？</li><li>为什么“变慢”能被用作检测信号？</li></ul>
-<h2>3.4 深入：回调顺序错了会怎样</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个方法被几个模块都改了，谁先谁后不是随便定的：后改的包住先改的，调用链就变成一层套一层。顺序一变，看到的参数、返回的结果都可能不一样。</p><p>这一节讲顺序的影响。读完你排查「单独用没问题、一起用就出错」时，第一件事就是去确认注册顺序。</p></div></aside>
+<h2 id="sec-4">3.4 深入：回调顺序错了会怎样</h2>
 <p>假设模块 A 负责解密、模块 B 负责校验。如果 B 先执行，它看到的是密文，校验必然失败。这就是“优先级”存在的意义——它不是可选项，而是正确性的一部分。</p>
 <div class="tbl"><table>
 <thead><tr><th>顺序</th><th>结果</th></tr></thead><tbody>
 <tr><td>A → B</td><td>正确</td></tr>
 <tr><td>B → A</td><td>校验失败</td></tr>
 </tbody></table></div>
-<h2>3.5 实战：怎么调试回调顺序</h2>
+<h2 id="sec-5">3.5 实战：怎么调试回调顺序</h2>
 <div class="code">
 <div class="code-title">在回调里打点</div>
 <pre><code>hook.setPriority(100);   // 数字越小越先
 // 每个回调第一句打印自己的名字与序号</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.6 原理推演：为什么“去优化”是必需的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>代码被反复调用之后，系统会把它「合并」进调用它的地方，直接连着跑——这时候「调用」这个动作已经不存在了，你去改「跳到哪」，根本没有那个位置可改。</p><p>所以得先让它退回没合并的状态，改完再让它重新优化。这一节讲这条因果：不是去优化有用，而是不去优化就改不动。读完你能解释「hook 上了但没生效」这个最常见现象。</p></div></aside>
+<h2 id="sec-6">3.6 原理推演：为什么“去优化”是必需的</h2>
 <p>因为 JIT 会把热点方法“内联”到调用者里。内联之后，调用者里已经没有“调用”这个动作了——它直接执行被内联方法的指令。这时候改 entrypoint 完全无效。</p>
 <div class="tbl"><table>
 <thead><tr><th>状态</th><th>调用方式</th><th>改 entrypoint 是否有效</th></tr></thead><tbody>
@@ -146,14 +150,16 @@
 <tr><td>JIT 编译（已内联）</td><td>指令已展开</td><td>无效</td></tr>
 </tbody></table></div>
 <p>所以“deopt”不是优化，而是“让 hook 生效的必要步骤”。</p>
-<h2>3.7 数据细节：deopt 的代价</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>让代码退回未优化的状态，换来的是「能改」，付出的是「变慢」和「内存涨」。这张表给的是大致倍数。</p><p>知道代价，你才会在「要不要对一个大热点方法做这个操作」上做取舍，而不是改完发现整个 App 卡成幻灯片。</p></div></aside>
+<h2 id="sec-7">3.7 数据细节：deopt 的代价</h2>
 <div class="tbl"><table>
 <thead><tr><th>指标</th><th>deopt 前</th><th>deopt 后</th></tr></thead><tbody>
 <tr><td>执行速度</td><td>1x</td><td>0.1~0.3x</td></tr>
 <tr><td>内存占用</td><td>低</td><td>升高（解释器状态）</td></tr>
 <tr><td>恢复方式</td><td>—</td><td>重新 JIT</td></tr>
 </tbody></table></div>
-<h2>3.8 深入：HookItem 的生命周期</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一次 hook 不是「设好就完事」：它会被注册、会生效、可能被别的模块追加处理、最后还要能干净地撤销。每一步出问题，表现都不一样。</p><p>这一节按时间顺序把这几步摆开。读完你遇到「同一个方法被两个模块改了」这种纠缠时，知道该从哪一步开始查。</p></div></aside>
+<h2 id="sec-8">3.8 深入：HookItem 的生命周期</h2>
 <p>一个 HookItem 从“创建”到“销毁”要经过：注册 → 生效 → 可能被其他模块追加回调 → 撤销。每一步都要考虑“此时是否有调用正在执行”。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>风险</th><th>处理</th></tr></thead><tbody>
@@ -162,7 +168,8 @@
 <tr><td>撤销</td><td>调用方还持有旧引用</td><td>延迟释放</td></tr>
 </tbody></table></div>
 <p>“延迟释放”是这里的关键技巧：撤销时先把条目从“活跃列表”摘掉，等一个宽限期（比如一次 GC 或一个时间窗口）之后再真正释放。这样正在执行的调用不会踩空。</p>
-<h2>3.11 深入：modern 与 legacy 回调的差异</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个功能有两套接口：新的那套参数更全、更规范；老的那套简单但信息少。两套并存是为了兼容，可它们的语义并不完全一样。</p><p>这一节讲这两套的差别。读完你移植代码时，不会以为「换个名字就行」。</p></div></aside>
+<h2 id="sec-9">3.9 深入：modern 与 legacy 回调的差异</h2>
 <div class="tbl"><table>
 <thead><tr><th>维度</th><th>legacy</th><th>modern</th></tr></thead><tbody>
 <tr><td>参数</td><td>打包成数组</td><td>按签名展开</td></tr>
@@ -171,7 +178,7 @@
 <tr><td>兼容</td><td>老模块</td><td>新模块</td></tr>
 </tbody></table></div>
 <p>同时支持两套的代价是“每个 hook 点都要维护两条路径”。所以成熟框架通常会在“加载模块时”就把 legacy 适配成 modern，运行时只走一套。</p>
-<h2>3.10 实战：怎么确认“hook 真的生效了”</h2>
+<h2 id="sec-10">3.10 实战：怎么确认“hook 真的生效了”</h2>
 <div class="code">
 <div class="code-title">三个层次的验证</div>
 <pre><code>1. 注册成功：HookItem 出现在活跃列表里
@@ -180,16 +187,17 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>很多人只验证第 1 层就以为成功了。实际上“注册成功但没被调用”是最常见的情况——多半是“调用的不是同一个方法”或“被内联了”。</div></aside>
-<h2>两个模块盯上了同一个方法</h2>
+<h2 id="sec-11">两个模块盯上了同一个方法</h2>
 <p><code>TelephonyManager.getDeviceId</code> 上挂了两个模块：一个改返回值，一个只打日志。现在问题来了——打日志的那个该先跑还是后跑？如果改值的模块先跑，日志记下的就是假值；如果日志先跑，改值模块 <code>setResult</code> 之后它还有没有机会收尾？再叠一层：其中一个模块被用户在管理器里临时禁用，而此刻恰好有一条调用正在链上走到一半。这些都不是边角情况，而是 <code>HookItem</code> 每天要处理的日常。</p>
 <p>更麻烦的是 ART 自己。热点方法会被 JIT 内联进调用者，调用者里已经是一份展开后的机器码，压根不会再去查 <code>ArtMethod</code> 的入口指针。你在 L02 里辛辛苦苦换掉的 <code>entry_point_from_jni_</code>，对这段内联代码完全不可见。<strong>所以挂回调和去优化必须是一次原子动作</strong>，中间不能留出让 JIT 继续用旧代码的窗口。</p>
-<h2>回调链是怎么串起来的</h2>
+<h2 id="sec-12">回调链是怎么串起来的</h2>
 <ol><li><strong>模块 → LSPosedBridge</strong>：每个模块调用 <code>XposedBridge.hookMethod</code> 并传入 <code>XC_MethodHook</code> 与 priority；结果是框架按&#x27;方法&#x27;建一个 <code>HookItem</code>，把它登记进全局表。</li><li><strong>框架 → HookItem</strong>：同一个方法被多个模块 hook 时，框架不重复改 ArtMethod，只把新回调插入该 <code>HookItem</code> 的有序集合；结果是入口只被替换一次，回调却可以无限叠加。</li><li><strong>框架 → 排序器</strong>：<code>XCallback</code> 的 priority（默认 50，最高 10000）决定 before 正序、after 逆序；结果是&#x27;外层&#x27;模块能包住&#x27;内层&#x27;模块，形成洋葱式的调用结构。</li><li><strong>分发器 → 各回调</strong>：依次调用 <code>beforeHookedMethod(param)</code>；任一回调 <code>setResult</code> 或 <code>setThrowable</code> 就是 <code>returnEarly</code>，跳过剩余 before 与整个原方法；结果是短路语义可以预测。</li><li><strong>分发器 → backup → after</strong>：原方法（或短路结果）写回 <code>param.result</code>，after 按逆序执行，仍可改写结果；结果是最后一个说话的往往是最先注册的模块。</li><li><strong>管理器 → 集合（并发）</strong>：卸载模块时改的是 Copy-On-Write 集合，遍历中的调用持有旧快照；结果是当前这一轮调用会走完旧链，下一轮才看不到被摘掉的回调。</li></ol>
 <p>第 6 拍是很多&#x27;明明禁用了却还生效一次&#x27;的根源。COW 集合换来的是遍历时不会抛 <code>ConcurrentModificationException</code>，代价是<strong>撤销不即时</strong>。做回归用例时，卸载后至少要再跑一轮空调用再断言，否则会得到假失败。</p>
-<h2>为什么必须让 JIT 忘掉它</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>JIT（即时编译）会把经常跑的方法编译成机器码，让它们跑得更快。这对性能是好事，对 hook 是灾难：你以为改的是“方法入口”，可实际执行的根本不经过那个入口——它早把方法体抄进另一块代码里了。</p><p>于是必须做“去优化”（deopt）：告诉运行时“这个方法的编译结果作废，退回逐条解释执行”。这一节讲的就是什么时候必须去优化、怎么确认它真的生效了、以及它会带来多少额外开销。</p></div></aside>
+<h2 id="sec-13">为什么必须让 JIT 忘掉它</h2>
 <ul><li>JIT 编译调用者 <code>caller()</code> 时，把被调方法 <code>callee()</code> 的字节码内联进 <code>caller</code> 的机器码。</li><li>此后 <code>caller</code> 调用 <code>callee</code> 不再查 ArtMethod，直接执行展开后的指令——hook 对新入口完全失明。</li><li>框架在发布回调时调用 <code>Instrumentation</code> / JIT code cache 的去优化接口，把相关编译码标记为失效。</li><li>ART 让这些栈帧退回解释执行或重新编译；新的解释路径每次都查 <code>ArtMethod</code>，于是走到蹦床。</li><li>代价：去优化后的一小段时间内该路径明显变慢，且时序改变，可能把偶发竞态暴露出来。</li></ul>
 <p>注意第 3 步的时机：去优化必须发生在<strong>改入口之前或与之成对</strong>，不能等回调都注册完了才想起来。否则中间那几毫秒里，另一个线程上的 <code>caller</code> 依旧跑着内联的旧代码，测出来的&#x27;偶发不生效&#x27;会让排查方向整个跑偏。</p>
-<h2>可复现：把去优化前后的耗时打出来</h2>
+<h2 id="sec-14">可复现：把去优化前后的耗时打出来</h2>
 <div class="code">
 <div class="code-title">模块内的计时探针</div>
 <pre><code>// 在 handleLoadPackage 里对目标方法连续压测，记录 p50 / p95

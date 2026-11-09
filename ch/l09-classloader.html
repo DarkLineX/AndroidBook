@@ -102,7 +102,8 @@
 <img src="../assets/l_l09.png" alt="图 L9-1" width="1080">
 <figcaption><b>图 L9-1</b><span>五类侧信道信号与测量方法</span></figcaption>
 </figure>
-<h2>9.1 五类信号</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>前面讲的检测都是“找特征”：有没有某个文件、某个名字、某个标志位。这一章讲一类更狠的思路：<strong>不看有没有特征，看结构合不合理</strong>。</p><p>比如：一个正常 App 的类加载器数量大概是个位数，你突然多了两个，就“不合理”；一个正常 App 的 p95 调用耗时大概在某个区间，你的曲线整体右移了，就“不合理”；一个正常 App 的可执行内存段都有对应的磁盘文件，你有一段没有，就“不合理”。</p><p>这些指标单个看都有解释空间，但<strong>五个一起看</strong>就很难自圆其说。这一章讲这五类信号怎么量、为什么它难对付、以及一个能直接跑的差分脚本。</p></div></aside>
+<h2 id="sec-1">9.1 五类信号</h2>
 <div class="tbl"><table>
 <thead><tr><th>信号</th><th>异常表现</th><th>测量方法</th></tr></thead><tbody>
 <tr><td>时延分布</td><td>某些路径变慢</td><td>统计 p50 / p95 与基线比</td></tr>
@@ -111,9 +112,10 @@
 <tr><td>FD 高水位</td><td>注入后 fd 数抬升</td><td>记录峰值与时序</td></tr>
 <tr><td>检测器自污染</td><td>自己也在增加计数</td><td>先跑空检测拿基线</td></tr>
 </tbody></table></div>
-<h2>9.2 为什么它难对付</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>它不看你说什么，只看你「长什么样」：数量、比例、分布。这些东西没法靠改名、加密、删字符串去掉——除非你真的把结构改回正常。</p><p>而改结构等于砍功能。这一节讲这个两难，读完你面对这类检测时，会先算「我愿意付多少功能代价」，而不是找有没有一招绕过的办法。</p></div></aside>
+<h2 id="sec-2">9.2 为什么它难对付</h2>
 <p>因为它不依赖任何已知特征。换工具、改名字、抹字符串，全都无效。唯一的对策是<strong>让结构真的变合理</strong>——这就是 F11 与本章的共同结论。</p>
-<h2>9.3 一个可以落地的差分脚本</h2>
+<h2 id="sec-3">9.3 一个可以落地的差分脚本</h2>
 <div class="code">
 <div class="code-title">采集基线并比较</div>
 <pre><code>def sample():
@@ -129,9 +131,10 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意：基线必须“同机型、同系统版本、同 App 版本”才有意义。跨版本比较会得到一堆噪声，最后得出错误结论。</div></aside>
-<h2>9.10 本章自测</h2>
+<h2 id="sec-4">9.4 本章自测</h2>
 <ul><li>五类信号里，哪一个最难伪造？</li><li>为什么侧信道检测不依赖特征？</li><li>基线为什么必须同版本？</li><li>如果检测方用了差分，你会怎么应对？</li></ul>
-<h2>9.5 深入：时延分布怎么采才可靠</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>测一次耗时，得到的数字里混着一堆噪声：调度、频率、缓存、别人在抢 CPU。单看一个数字毫无意义，得看很多次排出来的形状。</p><p>这一节讲怎么采、采多少、怎么比。读完你不会再拿「我这测出来是 3 毫秒」当结论，而会说「在这个机型上，它的分布和正常情况差在哪」。</p></div></aside>
+<h2 id="sec-5">9.5 深入：时延分布怎么采才可靠</h2>
 <p>单次测量噪声太大。可靠的做法是采多次、取分位数、并且在同一设备同一版本上采基线。跨设备比较是没有意义的——不同 SoC 的性能差异远大于 hook 带来的开销。</p>
 <div class="code">
 <div class="code-title">采集与判断</div>
@@ -143,10 +146,11 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
     return ts[n//2], ts[int(n*0.95)]</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>9.6 实战：检测器自污染的三个来源</h2>
+<h2 id="sec-6">9.6 实战：检测器自污染的三个来源</h2>
 <ul><li><strong>SDK 自己建的线程</strong>：初始化时就多出几个线程。</li><li><strong>SDK 自己打开的 fd</strong>：日志文件、socket、配置文件。</li><li><strong>SDK 自己的内存映射</strong>：加载 so、dex、资源。</li></ul>
 <aside class="note"><span class="note-tag">要点</span><div>解决办法只有一个：<strong>先让 SDK 完全初始化，再采基线</strong>。所有“第一次测量”的数据都不可信。</div></aside>
-<h2>9.7 原理推演：为什么“侧信道”无法被特征匹配打败</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>特征匹配找的是「有没有某个东西」：名字、字符串、某段字节。这些东西能被改掉、被加密、被换掉。侧信道看的是「整体形状对不对」：数量、比例、耗时分布。</p><p>形状改不掉，除非你真的把结构改回正常——而那等于放弃功能。这一节讲这条差别的边界，读完你会明白为什么最后的战场在「结构是否合理」，而不是「有没有留下名字」。</p></div></aside>
+<h2 id="sec-7">9.7 原理推演：为什么“侧信道”无法被特征匹配打败</h2>
 <p>因为侧信道测的是“统计性质”，不是“具体特征”。你改了名字、删了字符串、换了实现，但“线程多了 7 个”这件事仍然存在。要消除它，只能真的把线程数降下来。</p>
 <div class="tbl"><table>
 <thead><tr><th>检测类型</th><th>对抗方式</th><th>能否靠改名绕过</th></tr></thead><tbody>
@@ -154,7 +158,8 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <tr><td>侧信道</td><td>改变结构</td><td>不能</td></tr>
 </tbody></table></div>
 <p>这就是为什么“结构合理性”是最终的战场。</p>
-<h2>9.8 数据细节：三类统计量的稳定性</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>侧信道靠的是「比数量、比分布」，可这些数字本身稳不稳？跨机型、跨版本还成不成立？这张表逐项给了稳定性评级。</p><p>它的用处是选指标：稳定性差的只能同机型比，稳定性好的才能做跨设备判断。不先看这一列，结论很容易是「在我的机器上成立」。</p></div></aside>
+<h2 id="sec-8">9.8 数据细节：几个统计量的稳定性</h2>
 <div class="tbl"><table>
 <thead><tr><th>统计量</th><th>跨设备稳定性</th><th>跨版本稳定性</th></tr></thead><tbody>
 <tr><td>线程数</td><td>中</td><td>中</td></tr>
@@ -163,7 +168,8 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <tr><td>耗时分布</td><td>低（需同机型）</td><td>中</td></tr>
 </tbody></table></div>
 <p>结论：跨设备比较几乎没有意义。所有统计量都必须“同机型 + 同版本”才有可比性。</p>
-<h2>9.9 深入：ClassLoader 数量为什么是强信号</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>正常 App 的加载器数量是可预期的：一个主要的，加上插件或热修复带来的几个。突然多出一个来路不明的，就很显眼。</p><p>而且这个东西不好藏：它必须真实存在才能工作。这一节讲为什么它比名字可靠，读完你会把它当成一条硬判据，而不是可有可无的参考。</p></div></aside>
+<h2 id="sec-9">9.9 深入：ClassLoader 数量为什么是强信号</h2>
 <p>因为正常 App 的加载器数量是“可预期的”：一个 App 加载器，加上若干插件/热修复的加载器。突然多出一个“来源不明”的加载器，且它的 dexPath 指向私有目录，就非常可疑。</p>
 <div class="tbl"><table>
 <thead><tr><th>App 类型</th><th>正常加载器数</th><th>注入后</th></tr></thead><tbody>
@@ -172,7 +178,8 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <tr><td>加固 App</td><td>5+</td><td>+1（更难分辨）</td></tr>
 </tbody></table></div>
 <p>所以在“插件化/加固”的 App 上，这条信号的区分度会下降——必须结合“来源路径”一起看。</p>
-<h2>9.12 深入：DEX 映射的 back-file 检查</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一段代码在内存里，通常背后有个文件。查「背后那个文件是什么」，就能知道它是从哪儿来的：装在系统里的、装在应用目录里的、还是压根没有文件。</p><p>这一节讲这条检查怎么做。读完你能一眼分出「正常加载」和「凭空出现」。</p></div></aside>
+<h2 id="sec-10">9.10 深入：DEX 映射的 back-file 检查</h2>
 <div class="code">
 <div class="code-title">检查每个 dex 的来源</div>
 <pre><code>// 遍历 maps 里所有可执行/可读的匿名段
@@ -180,7 +187,7 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 // 找不到 back-file 且大小接近 dex 的，可疑</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>9.11 实战：把五项信号做成一张评分表</h2>
+<h2 id="sec-11">9.11 实战：把五项信号做成一张评分表</h2>
 <div class="tbl"><table>
 <thead><tr><th>信号</th><th>权重</th><th>阈值</th></tr></thead><tbody>
 <tr><td>时延偏离</td><td>20</td><td>p95 &gt; 基线 1.5x</td></tr>
@@ -189,16 +196,17 @@ delta = {k: now[k] - base[k] for k in base}</code></pre>
 <tr><td>FD 高水位</td><td>10</td><td>&gt; 基线 20%</td></tr>
 <tr><td>线程数</td><td>20</td><td>&gt; 基线 p99</td></tr>
 </tbody></table></div>
-<h2>名字全抹干净了，还是被报了阳性</h2>
+<h2 id="sec-12">名字全抹干净了，还是被报了阳性</h2>
 <p>L05 的五处扫描全部输出 <code>clean</code>，L06 的四本账三向核对相等，字符串、加载器、fd、solist 都收拾妥当。检测库依旧稳定报阳性。它没在找任何特征，只在做一件事：<strong>把当前进程的结构和同机型同版本的干净基线比一遍</strong>。<code>ClassLoader</code> 多了一个、匿名可执行段多了一条、某条热路径的 p95 比基线高出一截、fd 峰值在启动后第 200 毫秒抬了一次又落回去——单项都在噪声范围内，四项叠起来就不是噪声了。</p>
 <p>这就是侧信道与结构差分的难缠之处：改工具、换名字、抹字符串，全都无效，因为它压根不认识这些名字。唯一的出路是<strong>让结构真的变合理</strong>——不是让计数看起来正常，而是让那些多出来的加载器、映射和时延，本来就属于一个正常 App 会有的分布。</p>
-<h2>五项信号，各自怎么被量出来</h2>
+<h2 id="sec-13">五项信号各自怎么量，量完往哪儿治</h2>
 <ol><li><strong>检测库 → 热路径</strong>：同一方法循环调用数千次采 p50 / p95；结果是 hook 的蹦床与参数封送在尾巴上拖出一段可被统计的偏移。</li><li><strong>检测库 → ClassLoader 图</strong>：枚举所有加载器并记录 parent 链与 dexPath；结果是模块加载器即便中性命名，也会在拓扑上多出一个节点。</li><li><strong>检测库 → /proc/self/maps</strong>：逐条核对可执行段的 back-file；结果是无 back-file、大小又接近 dex 的匿名段很难解释成系统行为。</li><li><strong>检测库 → fd 高水位</strong>：在启动窗口内高频采样 fd 数；结果是注入瞬间 open / mmap 留下的峰值会形成一个短暂尖刺，事后数 fd 是看不到的。</li><li><strong>检测库 → 自己</strong>：枚举、采样、读 <code>/proc</code> 这些动作本身会增加线程、fd 与耗时；结果是若不先跑空检测拿基线，测出来的&#x27;异常&#x27;有一半是检测器自己造的。</li><li><strong>框架 → 结构治理</strong>：把多出来的加载器并入合法插件链、让映射有可解释来源、把初始化开销摊到启动阶段；结果是差分表上的每一项都落回基线分布。</li></ol>
 <p>第 5 拍叫&#x27;检测器自污染&#x27;，是最容易把人绕进去的一项。同一个采样脚本，在干净环境和注入环境里跑，本身引入的 fd 与线程数并不相同——因为注入环境的调度时序变了。所以基线必须是&#x27;跑同一份检测代码&#x27;得到的，而不能是&#x27;不跑检测&#x27;得到的。</p>
-<h2>差分不是比大小，是比分布</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>看到“映射多了 12 段”就报警，这种判断在真机上根本不能用——同一台手机连开两次，数字本身就会上下浮动。所以关键不是“现在是多少”，而是“这么多数正常吗”。</p><p>“比分布”就是这个意思：先采很多次，看这个数字平时落在什么范围，再看注入之后是不是跑出了这个范围。这一节讲怎么采、采几次、以及为什么“五轮里每次都稳定偏移”和“五轮里忽高忽低”是完全不同的两件事。</p></div></aside>
+<h2 id="sec-14">差分不是比大小，是比分布</h2>
 <ul><li>先固定三件事：同机型、同系统版本、同 App 版本。跨版本比较得到的全是噪声。</li><li>在干净环境跑一遍完整检测流程，把五项信号的分布（不止均值，含 p95 与峰值时序）存成基线。</li><li>注入环境跑同一份流程，逐项算 delta；单项超阈值先记为候选，不直接下结论。</li><li>把候选组合起来看：时延 + 加载器 + 匿名映射同时偏离，才进入判定；单看一项误报率极高。</li><li>重复五轮以上，看偏离是否稳定复现；偶发尖刺多半是调度，稳定偏移才是结构差异。</li><li>改进后再跑一轮，目标是让五项都回到基线区间内，而不是让某一项&#x27;看起来小一点&#x27;。</li></ul>
 <p>第 4 步的&#x27;组合判定&#x27;是核心。单看 p95，JIT 预热、后台 GC 都能解释；但若同时多出一个来源不明的加载器和一条匿名 dex 映射，可解释空间就塌了。</p>
-<h2>可复现：五轮采样的差分脚本</h2>
+<h2 id="sec-15">可复现：五轮采样的差分脚本</h2>
 <div class="code">
 <div class="code-title">采集并比较（在目标进程内，Python/Frida 侧亦可照搬）</div>
 <pre><code>import os, statistics

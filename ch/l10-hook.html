@@ -102,7 +102,8 @@
 <img src="../assets/l_l10.png" alt="图 L10-1" width="1080">
 <figcaption><b>图 L10-1</b><span>八项验证用例与判定标准</span></figcaption>
 </figure>
-<h2>10.1 八项用例</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一章回答一个问题：怎么才算“做完了”。</p><p>答案是：<strong>能被重复验证的，才叫做完了</strong>。功能跑通一次不算，因为你不知道那次成功是“真的没问题”还是“运气好”。要证明它稳，得准备八项用例：基本 hook、原方法调用、连续调用、冷启动、full GC 之后、晚附加、崩溃现场、产物哈希。</p><p>这一章给这八项的具体做法、交付物清单、以及全书的收束——为什么“验证矩阵”比“功能实现”更重要。</p></div></aside>
+<h2 id="sec-1">10.1 八项用例</h2>
 <div class="tbl"><table>
 <thead><tr><th>用例</th><th>判定标准</th><th>手段</th></tr></thead><tbody>
 <tr><td>基本 Hook</td><td>目标方法被替换</td><td>日志 + 返回值</td></tr>
@@ -114,16 +115,17 @@
 <tr><td>tombstone</td><td>崩溃有符号化栈</td><td>解析 tombstone</td></tr>
 <tr><td>产物哈希</td><td>构建可复现</td><td>记录并比对 sha256</td></tr>
 </tbody></table></div>
-<h2>10.2 交付物清单</h2>
+<h2 id="sec-2">10.2 交付物清单</h2>
 <ol><li><strong>源码</strong>：可编译，依赖明确。</li><li><strong>构建脚本</strong>：一条命令出产物。</li><li><strong>验证脚本</strong>：能自动跑完上面八项。</li><li><strong>基线数据</strong>：干净环境采的对照数据。</li><li><strong>已知限制清单</strong>：哪些版本不支持、哪些场景会失效。</li></ol>
 <p>少一样，下一个人就要重走一遍你走过的所有坑。这不只是“文档要求”，而是工程效率问题。</p>
-<h2>10.3 全书收束</h2>
-<p>五部 51 讲，从 boot.img 一路走到 KPM 与 LSPosed。回头看，主线只有三条：<strong>可信链</strong>（怎么验证）、<strong>运行链</strong>（怎么执行）、<strong>检测链</strong>（怎么发现）。所有技术都是在这三条线上的某个点做文章。</p>
+<h2 id="sec-3">10.3 全书收束</h2>
+<p>八部 65 讲，从 boot.img 一路走到 KPM 与 LSPosed。回头看，主线只有三条：<strong>可信链</strong>（怎么验证）、<strong>运行链</strong>（怎么执行）、<strong>检测链</strong>（怎么发现）。所有技术都是在这三条线上的某个点做文章。</p>
 <blockquote>把地图画对，把实验做扎实，剩下的只是时间问题。</blockquote>
 <aside class="note"><span class="note-tag">要点</span><div>下一步：企业壳实战（DexProtect / Promon）与二期（编译原理 → VMP）。前者是“真实对手”，后者是“更深的抽象层”。两件事都会反复用到本书的全部内容。</div></aside>
-<h2>10.11 本章自测</h2>
+<h2 id="sec-4">10.4 本章自测</h2>
 <ul><li>八项用例里，哪三项最容易被忽略？</li><li>交付物清单为什么必须有“已知限制”？</li><li>三条主线分别是什么？</li><li>如果让你给自己出一道综合题，你会选哪一个场景？</li></ul>
-<h2>10.4 深入：tombstone 怎么读</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>崩溃时系统会留一份现场记录：崩在哪个地址、当时寄存器是什么、调用栈长什么样。它不好读，因为全是地址和编号。</p><p>可它是唯一能告诉你「到底哪一步走错」的东西。这一节教你怎么从这份记录里读出人话，读完你面对一个随机崩溃时，不会只剩下「重启试试」这一招。</p></div></aside>
+<h2 id="sec-5">10.5 深入：tombstone 怎么读</h2>
 <p>tombstone 是 Native 崩溃时系统生成的现场快照，里面有寄存器、调用栈、以及 maps。如果崩溃发生在 hook 之后，栈里往往能看到你的 agent 或蹦床的地址。</p>
 <div class="code">
 <div class="code-title">关键字段</div>
@@ -139,7 +141,8 @@ memory near ...           # 相关内存</code></pre>
 <tr><td>SIGILL</td><td>非法指令</td><td>跳到了数据、BTI 失败</td></tr>
 <tr><td>SIGABRT</td><td>主动 abort</td><td>断言失败、检测到异常</td></tr>
 </tbody></table></div>
-<h2>10.5 原理推演：为什么“验证矩阵”比“功能实现”更重要</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>功能写完，只能证明「在你这台机器上、这一次、碰巧能跑」。换个机型、换个系统版本、换成冷启动，结论可能完全相反。</p><p>矩阵的作用是把「碰巧」变成「每次都对」：同样的用例、同样的产物、同样的判定标准，跑出来的结论才可信。这一节讲这份矩阵怎么搭，读完你的交付物会从「我觉得行」变成一张别人能复核的表。</p></div></aside>
+<h2 id="sec-6">10.6 原理推演：为什么“验证矩阵”比“功能实现”更重要</h2>
 <p>因为功能实现是“一次性的”，验证矩阵是“可持续的”。没有矩阵，你无法判断“这次改动有没有破坏之前的能力”；有了矩阵，每次改动都能在几分钟内得到答案。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>有无矩阵</th><th>结果</th></tr></thead><tbody>
@@ -149,7 +152,8 @@ memory near ...           # 相关内存</code></pre>
 <tr><td>维护期</td><td>有</td><td>可持续迭代</td></tr>
 </tbody></table></div>
 <p>所以“矩阵”不是质量保证的附属品，而是工程可持续性的核心资产。</p>
-<h2>10.6 数据细节：一次完整回归的耗时</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>跑一遍全套用例要多久，决定了你能多频繁地验证。这张表给的是大致时间。</p><p>它的用处是排节奏：如果全套要跑很久，就得把最关键的几条抽出来做「快速自检」，其余的放夜里跑。不规划，最后一定是「改完不敢验」。</p></div></aside>
+<h2 id="sec-7">10.7 数据细节：一次完整回归的耗时</h2>
 <div class="tbl"><table>
 <thead><tr><th>项</th><th>耗时</th><th>可自动化</th></tr></thead><tbody>
 <tr><td>基本 Hook</td><td>秒级</td><td>是</td></tr>
@@ -159,7 +163,8 @@ memory near ...           # 相关内存</code></pre>
 <tr><td>产物哈希</td><td>秒级</td><td>是</td></tr>
 </tbody></table></div>
 <p>整轮下来通常 1~2 分钟。这个成本完全可以放进 CI。</p>
-<h2>10.7 深入：为什么“冷启动”用例最容易被忽略</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>热启动时很多东西已经在内存里了，你的方案可能「碰巧能用」。冷启动从零开始，时序、时机、初始化顺序全都不一样。</p><p>所以只测热启动等于没测。这一节讲为什么这一条最容易被跳过，读完你的验收清单上会固定写上它。</p></div></aside>
+<h2 id="sec-8">10.8 深入：为什么“冷启动”用例最容易被忽略</h2>
 <p>因为开发时通常“热启动”调试：进程还在，hook 已经挂上。而用户拿到的是“冷启动”——所有初始化都要从零走一遍，很多“依赖前一次状态”的逻辑就会失效。</p>
 <div class="tbl"><table>
 <thead><tr><th>场景</th><th>开发时</th><th>用户实际</th></tr></thead><tbody>
@@ -168,7 +173,8 @@ memory near ...           # 相关内存</code></pre>
 <tr><td>初始化顺序</td><td>跳过</td><td>完整走一遍</td></tr>
 </tbody></table></div>
 <p>所以“冷启动”必须作为独立用例，而且要在“完全退出进程”之后测。</p>
-<h2>10.8 深入：产物哈希为什么重要</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「我这儿是好的」这句话，没有哈希就无法复核：别人不知道你测的到底是哪一份东西。有了哈希，两个人说的是不是同一份，一比对就知道。</p><p>这一节讲这份记录怎么留。读完你的结论会变成「可复核的结论」，而不是「我记得当时是好的」。</p></div></aside>
+<h2 id="sec-9">10.9 深入：产物哈希为什么重要</h2>
 <p>因为它能回答“这次构建和上次构建，除了我改的那一行，还有没有别的变化”。没有哈希，你永远不知道“行为变了”是因为你的改动，还是因为构建环境变了。</p>
 <div class="code">
 <div class="code-title">记录与比对</div>
@@ -176,7 +182,7 @@ memory near ...           # 相关内存</code></pre>
 # 下次构建后比对；不一致就先解释差异，再谈功能</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>10.9 实战：把八项用例写成脚本</h2>
+<h2 id="sec-10">10.10 实战：把八项用例写成脚本</h2>
 <div class="code">
 <div class="code-title">骨架</div>
 <pre><code>CASES = [case_basic, case_original, case_stress, case_cold,
@@ -185,16 +191,17 @@ for c in CASES:
     ok = c(); print(c.__name__, &#x27;PASS&#x27; if ok else &#x27;FAIL&#x27;)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>交付前的最后一个晚上</h2>
+<h2 id="sec-11">交付前的最后一个晚上</h2>
 <p>功能全跑通了：hook 生效、原方法能调、多模块顺序正确、Android 14 与 16 都绿。你正准备把 zip 发给同事，他问了三个问题：<code>System.gc()</code> 连跑十轮之后还稳吗？进程已经跑了半小时再附加模块呢？崩溃了有没有能符号化的 tombstone？——三个都答不上来。第二天他重编一份产物，哈希和你给的对不上，于是整套实验又得从头来一遍。<strong>能被重复验证的，才叫做完了。</strong></p>
 <p>验证矩阵的意义不是&#x27;再测一遍&#x27;，而是把&#x27;我觉得没问题&#x27;换成一张任何人都能跑、跑完能自动判绿红的表格。它同时是交付合同：源码、构建脚本、验证脚本、基线数据、已知限制清单，五样齐了，下一个人不必重走你踩过的每一个坑。</p>
-<h2>八格矩阵，逐格说清怎么判</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>功能跑通了不等于能交付。真正要回答的是八个很土的问题：跑久了会不会崩、多个模块一起装会不会打架、进程活很久之后再挂还灵不灵、崩了能不能查……</p><p>为什么用矩阵而不是清单？因为这些问题会互相组合：“跑久了”和“多模块”叠在一起出的问题，单独测哪一项都测不出来。八格就是这个组合的最小覆盖。这一节逐格说明每一格怎么判、判不过说明什么。</p></div></aside>
+<h2 id="sec-12">八格矩阵，逐格说清怎么判</h2>
 <ol><li><strong>基本 Hook</strong>：模块挂上目标方法并记一次调用；成功 = 回调条数等于调用次数且返回值为预期改写值。</li><li><strong>原方法调用</strong>：不 <code>returnEarly</code>，走 backup；成功 = 输出与未 hook 时逐字节一致，连异常类型与消息都相同。</li><li><strong>连续调用</strong>：10k 次压测；成功 = 无 native crash、无 <code>ClassCastException</code>、p95 不持续增长（持续增长说明有泄漏）。</li><li><strong>冷启动</strong>：<code>am force-stop</code> 后重启；成功 = specialize 窗口内 hook 重新挂上，首屏之前回调就已生效，而不是等用户点进页面才有。</li><li><strong>full GC</strong>：多轮 <code>System.gc()</code> 并触发一次 <code>Runtime.getRuntime().gc()</code>；成功 = backup 与 declaring-class 引用仍有效，重入不崩（对应 L08）。</li><li><strong>晚附加</strong>：进程运行中才启用模块；成功 = 附加后下一轮调用即生效，且 deopt 已完成（对应 L03）。</li><li><strong>tombstone</strong>：故意造一次崩溃；成功 = <code>/data/tombstones/</code> 有文件且能用带符号的 so 解析出栈，而不是一串 <code>??</code>。</li><li><strong>产物哈希</strong>：同一 commit 两次构建；成功 = <code>sha256sum</code> 完全一致，否则说明构建里混进了时间戳或绝对路径。</li></ol>
 <p>八格里最容易漏的是第 5、6、8 格。第 5 格在 Android 14 上常绿、16 上才炸（L08 的 moving GC）；第 6 格暴露 COW 集合与去优化时机（L03）；第 8 格看似与运行时无关，却是&#x27;别人能不能复现你的结论&#x27;的前提。把这三格加进 CI，比再加十台机型更值。</p>
-<h2>把矩阵变成一条命令</h2>
+<h2 id="sec-13">把矩阵变成一条命令</h2>
 <ul><li><strong>源码</strong>：可编译、依赖版本写死、不含本机绝对路径；一条 <code>./gradlew assemble</code> 出产物。</li><li><strong>构建脚本</strong>：输出 apk / zip 时同时打印 <code>sha256sum</code>，写进 <code>BUILDINFO</code>。</li><li><strong>验证脚本</strong>：<code>run_matrix.sh</code> 顺序跑完八格，每格输出 <code>PASS/FAIL</code> 与一行证据（日志片段或数字）。</li><li><strong>基线数据</strong>：干净环境采集的 L09 五项分布，随交付物一起打包，标注机型 / 系统 / App 版本。</li><li><strong>已知限制清单</strong>：明确写&#x27;哪些版本不支持、哪些场景会失效、哪些检测项未覆盖&#x27;——这是最常被省掉、也最常被下一任骂的一份。</li><li><strong>收尾</strong>：脚本最后汇总成一页报告，任一 FAIL 则整体退出码非零；CI 直接吃这个退出码。</li></ul>
 <p>第 3 条里&#x27;每格一行证据&#x27;很关键。只打印 PASS 的报告没法排障：等三个月后某个用例红了，你需要知道当时是&#x27;回调 10000/10000&#x27;还是&#x27;回调 9998/10000&#x27;。把原始数字留下来，报告才有可追溯性。</p>
-<h2>可复现：一条命令跑完八格</h2>
+<h2 id="sec-14">可复现：一条命令跑完八格</h2>
 <div class="code">
 <div class="code-title">run_matrix.sh 的骨架（在 host 上执行）</div>
 <pre><code>set -e
@@ -225,7 +232,7 @@ adb pull /data/tombstones/ tombstones/ 2&gt;/dev/null || true
 <tr><td>产物哈希</td><td>两次 sha256 相同</td><td>构建脚本时间戳</td><td>签名盐导致差异被忽略</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>最反直觉的一点：<strong>&#x27;已知限制清单&#x27;不是免责声明，而是最有价值的一份交付物</strong>。写清&#x27;这套实现在 Android 16 的某个 OEM 上不走 JVMTI 路径&#x27;&#x27;晚附加对已内联的热方法需要多一轮&#x27;，下一个人就能直接跳过你花掉的那两天。只交一份全绿报告，等于把所有没测到的地方都留成陷阱——绿的是测过的格子，不是没写的那些。</div></aside>
-<p>把这张矩阵铺回全书：第三部 F11 用一张总表收束 Frida 侧的兼容项，第四部 M02 的只读统计给出了 L09 基线数据的采集姿势，本章则是把两部的方法合成了可执行的验收脚本。第二部 K05 讲 ftrace 过滤与可重复追踪时强调的&#x27;先拿数据分布再定阈值&#x27;，在这里变成了&#x27;每格留一行原始数字&#x27;。训练营 T01/T02/T03 三组任务各有交付物，判据与本章完全同构：能编译、能重跑、有基线、写清限制。五部走到这里，工具会换、版本会变，但这四件事一项都不会过期。</p>
+<p>把这张矩阵铺回全书：第三部 F11 用一张总表收束 Frida 侧的兼容项，第四部 M02 的只读统计给出了 L09 基线数据的采集姿势，本章则是把两部的方法合成了可执行的验收脚本。第二部 K05 讲 ftrace 过滤与可重复追踪时强调的&#x27;先拿数据分布再定阈值&#x27;，在这里变成了&#x27;每格留一行原始数字&#x27;。训练营 T01/T02/T03 三组任务各有交付物，判据与本章完全同构：能编译、能重跑、有基线、写清限制。八部走到这里，工具会换、版本会变，但这四件事一项都不会过期。</p>
 </article>
 <div class="pager"><a href="l09-classloader.html"><span class="dir">上一讲</span>L09 侧信道与结构差分检测</a><a href="d01.html" style="text-align:right"><span class="dir">下一讲</span>D01 DexProtect 的检测逻辑拆解</a></div>
 </main>

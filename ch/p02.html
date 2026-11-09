@@ -98,14 +98,15 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">P02</span><h1>混淆与反混淆的基本盘</h1><p class="ch-en">控制流平坦化、不透明谓词、指令替换</p></div>
 <p class="lead">混淆的目标是“让你多花时间”，不是“让你完全看不懂”。</p>
-<h2>2.1 三种常见手法</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把混淆当成「加密」是一种误会：它没打算让你永远打不开，它只是让你多花几个小时。所以对抗它的目标也不是「彻底还原」，而是「把时间压到能接受」。</p><p>手法就那么几类：把直白的流程绕弯（控制流平坦化）、塞进永远不成立的假条件（不透明谓词）、把一条指令拆成几条等价但难认的（指令替换）。</p><p>反混淆的顺序很重要：先化简（常量折叠、死代码消除），再重建控制流，最后才读逻辑。顺序反了，你会在一堆垃圾指令里迷路。这一章讲这三种手法、正确的处理顺序、以及它们各自的破解点。</p></div></aside>
+<h2 id="sec-1">2.1 三种常见手法</h2>
 <div class="tbl"><table>
 <thead><tr><th>手法</th><th>做法</th><th>识别特征</th><th>对策</th></tr></thead><tbody>
 <tr><td>控制流平坦化</td><td>把代码打散进一个大 switch</td><td>巨型 dispatcher</td><td>重建支配关系</td></tr>
 <tr><td>不透明谓词</td><td>插入恒真/恒假条件</td><td>条件与上下文无关</td><td>符号执行求值</td></tr>
 <tr><td>指令替换</td><td>把简单运算换成等价复杂形式</td><td>冗余运算、恒等变形</td><td>代数化简</td></tr>
 </tbody></table></div>
-<h2>2.2 反混淆的顺序</h2>
+<h2 id="sec-2">2.2 反混淆的顺序</h2>
 <ol><li>先化简（常量折叠、死代码消除），把噪声减掉。</li><li>再重建控制流，把平坦化还原成正常分支。</li><li>最后才做语义理解——不要在噪声里硬读。</li></ol>
 <div class="code">
 <div class="code-title">一个不透明谓词的例子</div>
@@ -117,9 +118,10 @@ if ((x * x - x) % 2 == 0) { real_code(); }
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>工具建议：先用现成的（jadx + 脚本、Ghidra 插件）跑一遍，把能自动化的都自动化，剩下的才手工。手工反混淆的效率取决于“你化简得够不够狠”。</div></aside>
-<h2>2.3 本章自测</h2>
+<h2 id="sec-3">2.3 本章自测</h2>
 <ul><li>控制流平坦化的识别特征是什么？</li><li>不透明谓词为什么能被符号执行解掉？</li><li>反混淆为什么必须“先化简再理解”？</li><li>举一个你自己构造的不透明谓词。</li></ul>
-<h2>2.4 深入：控制流平坦化的还原思路</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>平坦化把「一段段按顺序执行的代码」打散成一个分发器加一堆碎片：每次由分发器决定下一块去哪。人眼看到的就是一个大循环加一堆 switch。</p><p>还原的思路是反着来：把「谁跳到谁」重新连起来，恢复成原来的顺序。这一节讲这条思路怎么落地，读完你面对一坨平坦化代码时，知道第一步该建什么表。</p></div></aside>
+<h2 id="sec-4">2.4 深入：控制流平坦化的还原思路</h2>
 <p>平坦化的本质是“把顺序执行变成状态机”。还原的关键是找出“状态变量的取值 → 下一个基本块”的映射，然后按状态值重排基本块。</p>
 <div class="code">
 <div class="code-title">还原的四个步骤</div>
@@ -129,7 +131,8 @@ if ((x * x - x) % 2 == 0) { real_code(); }
 4. 按执行顺序重排，删掉 dispatcher</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>2.5 原理推演：为什么“不透明谓词”能被算掉</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>不透明谓词长得像判断，其实答案固定：不管输入是什么，它永远走同一边。既然答案固定，就可以把它当成一道算式直接算出来，算完把整个判断删掉。</p><p>能算掉的前提是「它真的与输入无关」。所以好的混淆会让它依赖运行时的东西——这样静态算不出来。这一节讲这条攻防的分界，读完你能判断一段混淆是「真藏了东西」还是「只是不好看」。</p></div></aside>
+<h2 id="sec-5">2.5 原理推演：为什么“不透明谓词”能被算掉</h2>
 <p>因为它的取值“与上下文无关”——无论输入是什么，结果恒定。符号执行正是利用这一点：把条件表达式丢给求解器，如果求出“恒真/恒假”，就可以直接化简。</p>
 <div class="tbl"><table>
 <thead><tr><th>谓词类型</th><th>可否求解</th><th>说明</th></tr></thead><tbody>
@@ -138,7 +141,8 @@ if ((x * x - x) % 2 == 0) { real_code(); }
 <tr><td>依赖运行时环境</td><td>难</td><td>需实际执行</td></tr>
 </tbody></table></div>
 <p>所以“好的混淆”会把谓词做成“依赖运行时环境”的——这样静态求解就失效了。</p>
-<h2>2.6 数据细节：三种常见的不透明谓词</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>不透明谓词就是「看起来在判断、其实答案固定」的表达式。常见的有三种写法，这张表各给了一个例子。</p><p>它的用处是练眼力：见过这三种，你在真实样本里再遇到变体，也能顺着「它是不是恒真/恒假」这条线去验，而不是被形式唬住。</p></div></aside>
+<h2 id="sec-6">2.6 数据细节：三种常见的不透明谓词</h2>
 <div class="code">
 <div class="code-title">例子</div>
 <pre><code>// 1. 恒真：x*x - x 永远偶数
@@ -151,7 +155,8 @@ if (x &gt; x + 1) { ... }
 if (is_prime(7)) { ... }</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>2.7 深入：指令替换为什么“看起来很难”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>它把一条简单指令换成一段等价但啰嗦的运算。人眼一看就懵，可对工具来说只是「换个写法」，一化简就回来了。</p><p>所以它防的是人，不是机器。这一节讲它到底拦住了谁，读完你不会再被一屏复杂运算吓住，而会先想「这段能不能算掉」。</p></div></aside>
+<h2 id="sec-7">2.7 深入：指令替换为什么“看起来很难”</h2>
 <p>因为它把“一条简单指令”换成“一串等价指令”。人眼看到一串复杂运算就懵了，但对编译器来说，这只是一次“代数变形”——它可以被反向化简。</p>
 <div class="tbl"><table>
 <thead><tr><th>原指令</th><th>替换后</th><th>化简方式</th></tr></thead><tbody>
@@ -160,7 +165,8 @@ if (is_prime(7)) { ... }</code></pre>
 <tr><td>a == 0</td><td>(a | -a) &gt;&gt; 31 ^ 1</td><td>位运算恒等</td></tr>
 </tbody></table></div>
 <p>所以“反混淆工具”的核心能力之一就是“代数化简”——它需要一套规则库，把常见变形反向应用。</p>
-<h2>2.8 深入：三种手法的组合效应</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>平坦化打散结构、不透明谓词塞假分支、指令替换把简单变复杂。单独用各有各的破法，叠在一起就互相掩护：你想还原结构，得先算掉谓词；想算谓词，得先看懂替换。</p><p>这一节讲这种叠加。读完你会按「先解哪一层」排序，而不是同时下手。</p></div></aside>
+<h2 id="sec-8">2.8 深入：三种手法的组合效应</h2>
 <p>单独看每种手法都不难破，但组合起来就麻烦了：平坦化让控制流消失，不透明谓词让分支不可信，指令替换让语义模糊。三者叠加，人工分析的效率会下降一个数量级。</p>
 <div class="tbl"><table>
 <thead><tr><th>组合</th><th>分析难度</th><th>突破口</th></tr></thead><tbody>
@@ -169,7 +175,7 @@ if (is_prime(7)) { ... }</code></pre>
 <tr><td>+ 指令替换</td><td>很高</td><td>先代数化简</td></tr>
 </tbody></table></div>
 <p>顺序很重要：<strong>先化简指令，再化简谓词，最后重建控制流</strong>。顺序反了会在噪声里打转。</p>
-<h2>2.9 实战：一个最小反混淆脚本的骨架</h2>
+<h2 id="sec-9">2.9 实战：一个最小反混淆脚本的骨架</h2>
 <div class="code">
 <div class="code-title">思路</div>
 <pre><code>for block in cfg.blocks:
@@ -181,7 +187,8 @@ if (is_prime(7)) { ... }</code></pre>
 cfg.rebuild_dominators()</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>2.10 深入：为什么“死代码”是混淆的好朋友</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>永远不会被执行到的代码，不占运行时间，却占你的注意力：它长得跟真代码一样，还会引用别的函数，让你以为找到了一条路。</p><p>这一节讲怎么把它认出来。读完你会先用「能不能到」筛一遍，再决定读哪一段，省下大量时间。</p></div></aside>
+<h2 id="sec-10">2.10 深入：为什么“死代码”是混淆的好朋友</h2>
 <p>因为死代码不改变语义，但会增加阅读负担。它让“看起来像主逻辑”的分支变多，从而拖慢分析速度。</p>
 <div class="tbl"><table>
 <thead><tr><th>手法</th><th>效果</th><th>对策</th></tr></thead><tbody>
@@ -190,7 +197,8 @@ cfg.rebuild_dominators()</code></pre>
 <tr><td>虚假调用</td><td>干扰调用图</td><td>类型推断</td></tr>
 </tbody></table></div>
 <p>所以“反混淆”的第一步永远是“删掉不必要的东西”。化简做得越狠，后面越轻松。</p>
-<h2>2.11 深入：一个判断“是否被平坦化”的快速方法</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>平坦化的特征很明显：一个大循环，里面一堆分支，每个分支干一点小事就回去再问一次。看一眼形状就能大致判断。</p><p>这一节给一个快速的看法。读完你拿到一段陌生代码，几分钟内就能判断「要不要按平坦化来处理」，不用先读通。</p></div></aside>
+<h2 id="sec-11">2.11 深入：一个判断“是否被平坦化”的快速方法</h2>
 <div class="code">
 <div class="code-title">三个特征</div>
 <pre><code>1. 有一个巨大的 switch / if-else 链
@@ -199,7 +207,7 @@ cfg.rebuild_dominators()</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>三条全中，基本可以确定是平坦化。接下来就是“找状态变量的取值 → 基本块”的映射。</p>
-<h2>2.12 实战：手工还原一小段</h2>
+<h2 id="sec-12">2.12 实战：手工还原一小段</h2>
 <div class="code">
 <div class="code-title">还原前</div>
 <pre><code>state = 0;
@@ -219,14 +227,14 @@ b = a + 1;
 return b;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>Ghidra 转了四十秒，吐出八百行</h2>
+<h2 id="sec-13">Ghidra 转了四十秒，吐出八百行</h2>
 <p>函数只有一个参数，逻辑据说只是「算个校验位」，可反编译窗口里八百行，一半是 <code>state = 7</code>、<code>state = 13</code> 这样的赋值，另一半是长得一模一样的 <code>if ((x * x - x) % 2 == 0)</code>。你顺着读三行就丢了上下文，回头重来，又丢一次。这时候别硬读——先问一个更值钱的问题：这八百行里，有多少是真正改变结果的，有多少只是为了让工具慢下来？混淆从来不指望骗过人，它指望的是让自动化失效、让你的时间被耗光。</p>
 <p>把窗口缩到一边，另一边开个文本编辑器准备写化简脚本。已有的三手法表和「先化简再理解」的顺序给了你地图，这里要练的是手上那把刀：怎么把恒真条件、恒等变形、死分支一批一批削掉，让八百行自己塌回十几行。</p>
-<h2>平坦化是怎么把一句话搅成八百行的</h2>
+<h2 id="sec-14">平坦化是怎么把一句话搅成八百行的</h2>
 <ol><li><strong>混淆器</strong> → 对 <strong>原本三个顺序执行的基本块</strong> → 各切一刀，塞进一个 <code>while(1) + switch(state)</code> 的骨架 → 结果是原来的前后顺序被拆散，块之间的边变成状态变量的取值。</li><li><strong>混淆器</strong> → 对 <strong>每个基本块尾部</strong> → 追加一句 <code>state = 下一个编号</code> → 结果是控制流不再由跳转指令表达，反编译器画不出有意义的 CFG，只能画出一个大环。</li><li><strong>混淆器</strong> → 对 <strong>分支条件</strong> → 换成恒真或恒假的不透明谓词 → 结果是每个 <code>if</code> 看起来都像有两条路，实际上永远只走一条，工具却会为死分支照样生成代码。</li><li><strong>混淆器</strong> → 对 <strong>一条简单运算</strong> → 用代数恒等式展开成七八条等价指令 → 结果是数据流被拉长，常量传播跑不动，手工读的人也得在纸上验一遍才敢下结论。</li><li><strong>你</strong> → 对 <strong>状态变量</strong> → 收集所有 <code>state = N</code> 与 <code>case N:</code> 的配对，还原出真实的块顺序 → 结果是那个大环被拉直，CFG 重新长成三块顺序加一个分支。</li><li><strong>你</strong> → 对 <strong>化简后的 IR</strong> → 再跑一遍死代码消除 → 结果是不透明谓词的另一半、冗余的临时变量一起消失，八百行塌回十几行，语义一眼可见。</li></ol>
-<h2>三类噪声，各自动哪一刀</h2>
+<h2 id="sec-15">三类噪声，各自动哪一刀</h2>
 <ul><li><strong>常量折叠</strong> → 对 <strong>编译期可求值的表达式</strong> → 直接把 <code>2 + 3</code> 换成 <code>5</code>、把 <code>(x*x-x)%2==0</code> 换成 <code>true</code> → 结果是不透明谓词连着它护着的死分支一起被删。</li><li><strong>代数化简</strong> → 对 <strong>恒等变形</strong> → 把 <code>x ^ 0</code> 还原成 <code>x</code>、<code>x * 1</code> 还原成 <code>x</code>、<code>(x &lt;&lt; 2) &gt;&gt; 2</code> 标成需谨慎（有符号/溢出）→ 结果是指令替换拉出来的长度被压回去。</li><li><strong>可达性分析</strong> → 对 <strong>控制流图</strong> → 从入口做一次遍历，凡是不可达的块全部摘掉 → 结果是插进来的死代码不再占你的注意力。</li><li><strong>支配关系重建</strong> → 对 <strong>平坦化后的 switch</strong> → 用「谁唯一支配谁」把状态编号重排成基本块顺序 → 结果是被打散的逻辑恢复前后关系。</li><li><strong>人</strong> → 对 <strong>剩下的十几行</strong> → 这时候才开始读语义 → 结果是理解成本从「一小时」降到「两分钟」，而且结论可复核。</li></ul>
-<h2>可复现实验：写个批量化简器跑一遍</h2>
+<h2 id="sec-16">可复现实验：写个批量化简器跑一遍</h2>
 <div class="code">
 <div class="code-title">真的能跑的 python（把三类噪声一起削掉）</div>
 <pre><code>import re

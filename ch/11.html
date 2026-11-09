@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">11</span><h1>Android 注入检测</h1><p class="ch-en">如何检测注入痕迹</p></div>
 <p class="lead">注入必然改变进程状态；检测的本质是“知道正常长什么样”。</p>
-<h2>11.1 六个观测面</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>注入这件事，无论手法多干净，都会改变进程的状态。检测的本质不是“找坏人”，而是“知道正常长什么样”——然后找出对不上的地方。</p><p>这一章列了六个可以观测的面：内存映射、线程、文件描述符、加载器列表、系统调用、耗时分布。每个面都是一本账，注入一定会在某本账上多记一笔或少记一笔。</p><p>后面还讲了一种更难对付的思路：不看“有没有多出来的东西”，而看“结构的比例合不合理”。前者可以靠改名躲，后者躲不掉——因为要让比例合理，你得让整个进程真的变成一个正常 App 该有的样子。</p></div></aside>
+<h2 id="sec-1">11.1 六个观测面</h2>
 <figure>
 <img src="../assets/f11_inject_detect.png" alt="图 11-1" width="1080">
 <figcaption><b>图 11-1</b><span>六个观测面与对应的检测手段</span></figcaption>
@@ -112,13 +113,14 @@
 <tr><td>符号字符串</td><td>段内出现 frida/gum</td><td>扫描可读段</td></tr>
 <tr><td>行为时序</td><td>FD 突增、mprotect 频繁</td><td>统计与基线差分</td></tr>
 </tbody></table></div>
-<h2>11.2 为什么“扫描字符串”不可靠</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>扫字符串是最容易想到的检测办法：找几个标志性的词。可字符串能被加密、能被拆开拼、能被运行时才算出来——躲过去的成本很低。</p><p>所以它只能当辅助。这一节讲它为什么不可靠，读完你不会把「扫了一遍没发现」当成「没有」，而会接着问「还有哪些方式是扫不到的」。</p></div></aside>
+<h2 id="sec-2">11.2 为什么“扫描字符串”不可靠</h2>
 <p>字符串扫描是最容易实现、也最容易被绕过的检测。改个名字、把字符串加密、或者干脆不用明文常量，都能让扫描失效。所以它只能作为辅助信号：<strong>命中可以作为证据，未命中不能作为“清白”的证明</strong>。</p>
-<h2>11.3 结构差分：更难对付的一类</h2>
+<h2 id="sec-3">11.3 结构差分：更难对付的一类</h2>
 <p>不看“有没有 frida”，而看“这个进程的结构是否合理”。举例：</p>
 <ol><li>一个从没调用过网络的工具类 App，进程里却有 8 个线程——不合理。</li><li>maps 里有 12 段匿名可执行映射，而正常只有 3 段——不合理。</li><li>ClassLoader 有 5 个，其中 2 个的 dexPath 指向私有目录——不合理。</li><li>某方法第一次调用耗时 0.2ms，第二次 12ms——JIT/去优化痕迹，不合理。</li></ol>
 <p>这类检测的可怕之处在于：它不依赖任何已知特征，改名换工具都无效。唯一的对策是<strong>让结构真的变合理</strong>——这就是 F11 与 L09 要解决的问题。</p>
-<h2>11.4 检测器的自污染</h2>
+<h2 id="sec-4">11.4 检测器的自污染</h2>
 <div class="code">
 <div class="code-title">一个典型的自污染陷阱</div>
 <pre><code># 错误做法：一启动就统计线程数
@@ -131,9 +133,10 @@ base = count_threads()   # 在 SDK 初始化完成后采
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>误报的代价远高于漏报：漏报只是没发现，误报会让真实用户无法使用。任何规则上线前，必须在足够多的干净设备上验证。</div></aside>
-<h2>11.5 本章自测</h2>
+<h2 id="sec-5">11.5 本章自测</h2>
 <ul><li>六个观测面里，哪一个最难被伪造？为什么？</li><li>为什么“字符串扫描”只能作为辅助信号？</li><li>举三个“结构不合理”的例子，并说明怎么测量。</li><li>什么是自污染？怎么避免？</li></ul>
-<h2>11.6 深入：FD 是最容易被忽略的观测面</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>进程开了哪些文件、连了哪些端口、挂了哪些设备，全都记在一张表里。这张表是系统维护的，工具改不了，只能想办法绕。</p><p>大多数隐藏工作只顾着改内存和名字，忘了这张表还开着口子。这一节教你怎么读它，读完你排查「明明都藏了怎么还被发现」时，会先去看这张表。</p></div></aside>
+<h2 id="sec-6">11.6 深入：FD 是最容易被忽略的观测面</h2>
 <p>一个进程打开了哪些 fd，能透露出大量信息：连了哪些 socket、映射了哪些文件、有没有额外的 pipe。注入 agent 往往会新增 socket、pipe、以及若干 <code>/proc</code> 的读取句柄。</p>
 <div class="code">
 <div class="code-title">把 fd 面打出来</div>
@@ -151,7 +154,7 @@ ls /proc/self/fd | wc -l</code></pre>
 <tr><td>anon_inode</td><td>epoll/eventfd</td><td>数量上升</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>FD 检测的优点：不需要任何特殊权限，<code>/proc/self/fd</code> 自己就能读。缺点是噪声大——不同 App 的正常 fd 数量差异很大，必须做基线差分。</div></aside>
-<h2>11.7 时序侧信道：一个被低估的方向</h2>
+<h2 id="sec-7">11.7 时序侧信道：一个被低估的方向</h2>
 <p>hook 一定会带来额外开销。这个开销在“单次调用”上可能只有几微秒，但在一万次调用上就是几十毫秒。检测方只要统计高频路径的耗时分布，就能发现异常。</p>
 <div class="code">
 <div class="code-title">测一次可疑路径</div>
@@ -162,7 +165,8 @@ dt = now_ns() - t0
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>对抗思路：减少 hook 数量、把逻辑移到“调用频率低”的位置、或者让开销分布更接近正常抖动。但根本上，只要 hook 存在，开销就存在——这是结构性的。</div></aside>
-<h2>11.8 原理推演：为什么“注入必然留痕”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>往别人的进程里塞东西，不可能不留痕迹：内存里多了一段、线程多了一个、文件描述符多了几个、代码页的权限被改过。做的动作越多，能对上的账就越多。</p><p>这一节把「为什么抹不干净」讲成一句可操作的话：你每抹掉一处，都是在和另一处的账对齐。读完你能反过来用：从痕迹倒推对方做了什么，而不是只看他藏没藏好。</p></div></aside>
+<h2 id="sec-8">11.8 原理推演：为什么“注入必然留痕”</h2>
 <p>因为注入是一个“从外部改变进程状态”的操作，而进程状态是可观测的。你可以让每一处痕迹都“看起来正常”，但不可能让“状态完全没变”——因为注入的目的就是改变状态。</p>
 <div class="tbl"><table>
 <thead><tr><th>改动</th><th>必然产生的可观测差异</th></tr></thead><tbody>
@@ -172,7 +176,8 @@ dt = now_ns() - t0
 <tr><td>改函数入口</td><td>字节或页权限变化</td></tr>
 </tbody></table></div>
 <p>所以对抗的目标不是“消除痕迹”，而是“让痕迹落在正常范围之内”。这就是为什么“基线”如此重要——没有基线，你连“什么是正常”都不知道。</p>
-<h2>11.9 数据细节：一个 App 的正常 fd 画像</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个正常运行的 App，会打开一批文件描述符：库、字体、配置、日志、socket。数量大致在某个范围，种类也有规律。这张表描述的就是这个「正常画像」。</p><p>有了画像，判断才有依据：数量明显偏多、或者出现了正常不该有的类型，才是信号。单看一个数字没有意义。</p></div></aside>
+<h2 id="sec-9">11.9 数据细节：一个 App 的正常 fd 画像</h2>
 <div class="tbl"><table>
 <thead><tr><th>fd 类型</th><th>数量级</th><th>说明</th></tr></thead><tbody>
 <tr><td>socket</td><td>3~10</td><td>Binder、网络、日志</td></tr>
@@ -181,12 +186,13 @@ dt = now_ns() - t0
 <tr><td>普通文件</td><td>5~30</td><td>资源、配置、dex</td></tr>
 </tbody></table></div>
 <p>注入 agent 后，典型变化是 socket +1~2、pipe +1~2、anon_inode 增加若干。单看绝对值不可靠，看“增量”才可靠。</p>
-<h2>注入完成后的第一张快照</h2>
+<h2 id="sec-10">注入完成后的第一张快照</h2>
 <p>假设 agent 已经落地、detach 也做完了，<code>TracerPid</code> 干干净净地回到 0。现在把这台进程像做 CT 一样扫一遍：maps 里多了几段、task 里多了几个名字奇怪的线程、fd 里多出一对 pipe 和一个 socket、smaps 里悄悄多了一页私有脏内存。<strong>没有任何一处写着「frida」四个字母，但每一处都在说「这里多了个东西」</strong>。注入检测真正练的，就是认出这种「多出来」的形状。</p>
 <p>新手爱写字符串扫描，因为它最容易出结果；老手更信结构，因为名字能改、字节能加密，「一个 JS 引擎必须有一块堆、必须有线程、必须能收发消息」这件事改不掉。下面把一次注入前后的差异按观测面拆开，每一拍都给出能自己跑出来的量。</p>
-<h2>逐个观测面数「多出来的东西」</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>“多出来的东西”听着抽象，其实很具体：一台机器干净的时候，某个进程有多少条内存映射、开了几个文件、有几个线程、加载了几个类加载器，这些都是有数的。注入一次之后再数一遍，多出来的那部分就是痕迹。</p><p>这一节教的就是怎么数，以及为什么必须<strong>先拍一张干净的照片</strong>——没有对照，你看到的任何数字都不能说明问题。</p></div></aside>
+<h2 id="sec-11">逐个观测面数「多出来的东西」</h2>
 <ol><li><strong>maps</strong> → 对进程的所有映射 → 注入前记下段数与每段权限；注入后多出 agent so 的 r-x 段、以及 JS 堆所在的匿名 rw- 段 → 结果：段数、匿名可执行段数量同时偏离基线。</li><li><strong>task</strong> → 对 <code>/proc/self/task</code> → 多出 <code>gum-js-loop</code>、<code>frida-*</code> 一类的线程名，以及一个常驻的控制线程 → 结果：线程数 +3~5，且新线程的栈落在刚多出来的匿名段里。</li><li><strong>fd</strong> → 对 <code>/proc/self/fd</code> → 多出与 server 通信的 socket、JS 线程用的 pipe、以及若干 <code>/proc</code> 读取句柄 → 结果：fd 总数上升，类型分布里 anon_inode 变多。</li><li><strong>solist / link_map</strong> → 对已加载模块链表 → 多出 <code>frida-agent.so</code> 或无名项 → 结果：模块账本与 maps 里的段可以逐条对上（对不上更可疑）。</li><li><strong>smaps</strong> → 对每个映射的 <code>Private_Dirty</code> → 被 hook 过的文件页因 COW 变成私有脏页 → 结果：权限看着正常，脏页计数却涨了。</li><li><strong>时序</strong> → 对高频路径 → hook 的蹦床让单次调用多出几微秒 → 结果：一万次调用的 p95 明显右移，这是最不容易藏的一项。</li></ol>
-<h2>动手：自己拍一组前后对照</h2>
+<h2 id="sec-12">动手：自己拍一组前后对照</h2>
 <div class="code">
 <div class="code-title">注入前后各采一次，用 diff 说话</div>
 <pre><code>PID=$(adb shell pidof com.target.app | tr -d &#x27;\r&#x27;)

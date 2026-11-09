@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">16</span><h1>基础 hook 脚本、检测与算法分析</h1><p class="ch-en">把工具用成方法论</p></div>
 <p class="lead">先定位“算出来的地方”，再决定“改输入还是改输出”。</p>
-<h2>16.1 两个最小可用脚本</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一章是第一部所有工具的综合练习：给你一个陌生 App，把它的算法挖出来。</p><p>核心方法论只有一句：<strong>先找到“结果是被算出来的那一点”，再决定是改输入还是改输出</strong>。很多人一上来就反编译读代码，读到几千行就放弃了；实际上更快的路子是用 hook 在对的地方打几个点，看输入输出长什么样，先把“它在算什么”猜出来，再去代码里验证。</p><p>这一章给两个最小可用脚本、一套标准流程、以及反调试最常见的几个布点位置。</p></div></aside>
+<h2 id="sec-1">16.1 两个最小可用脚本</h2>
 <figure>
 <img src="../assets/f16_script.png" alt="图 16-1" width="1080">
 <figcaption><b>图 16-1</b><span>Java 层抓输入输出 + Native 层抓比较点</span></figcaption>
@@ -127,7 +128,7 @@
 });</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>16.2 算法分析的标准化流程</h2>
+<h2 id="sec-2">16.2 算法分析的标准化流程</h2>
 <ol><li><strong>定边界</strong>：输入是什么、输出是什么。从 UI 反推调用链。</li><li><strong>找汇聚点</strong>：所有校验最终都要比较，盯 <code>strcmp</code> / <code>memcmp</code> / <code>equals</code>。</li><li><strong>判类型</strong>：对称加密？哈希？白盒？看常量与循环结构。</li><li><strong>复现</strong>：用同语言重写，跑通样本，再用新输入验证。</li><li><strong>落脚本</strong>：把结论固化成 hook，可回归、可批量。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>线索</th><th>可能的算法</th><th>验证方法</th></tr></thead><tbody>
@@ -136,16 +137,17 @@
 <tr><td>S 盒数组（256 项）</td><td>AES / SM4</td><td>找轮密钥生成</td></tr>
 <tr><td>64 位乘加链</td><td>哈希或签名</td><td>对比标准实现的输出</td></tr>
 </tbody></table></div>
-<h2>16.3 反调试的常见位置</h2>
+<h2 id="sec-3">16.3 反调试的常见位置</h2>
 <p>反调试几乎总是出现在算法入口附近，因为那是最值得保护的地方。常见手法：检测 TracerPid、检测代码段 CRC、检测关键函数是否被改、检测执行耗时是否异常。</p>
 <p>应对顺序：<strong>先确认脚本真的挂上了</strong>（打印栈、计数、与基线对比），再谈分析。很多“算法分析失败”，其实是 hook 根本没生效，分析的是未被修改的原逻辑。</p>
 <aside class="note"><span class="note-tag">要点</span><div>工程习惯：每个结论都配一个“可证伪实验”。比如“这个函数是 MD5”——那就构造一个已知输入的输出对比；对不上，说明结论错了。这样能避免把巧合当规律。</div></aside>
-<h2>16.4 第一部的收束</h2>
+<h2 id="sec-4">16.4 第一部的收束</h2>
 <p>到这里，第一部的 16 章走完了一条完整的链路：从 boot.img 到内核启动，从 zygote 到 App 进程，从 linker 到 dex，从 hook 到检测。接下来的第二部会往下挖到内核，第三部会解剖 Frida，第四部会进入 KPM，第五部会拆 LSPosed。</p>
 <blockquote>先把地图画对，再谈走多快。</blockquote>
-<h2>16.5 本章自测</h2>
+<h2 id="sec-5">16.5 本章自测</h2>
 <ul><li>写出一个“抓输入输出”的 Java hook 脚本。</li><li>算法分析的五个步骤是什么？</li><li>为什么“先确认 hook 挂上了”比“分析算法”更优先？</li><li>举一个“可证伪实验”的例子。</li></ul>
-<h2>16.6 深入：一个完整的算法分析实战记录</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>看一个陌生样本，最怕的是东一榔头西一棒子：抓个包、看一眼字符串、试几个 hook，然后卡住不知道下一步。</p><p>这一节是一份完整的记录：先问什么、再看什么、怎么把线索连成一条路。读完你手上会有一个可复用的顺序，而不是每次从零开始碰运气。</p></div></aside>
+<h2 id="sec-6">16.6 深入：一个完整的算法分析实战记录</h2>
 <p>目标：某 App 的请求签名。已知输入是“参数串 + 时间戳”，输出是一个 32 位十六进制串。</p>
 <ol><li><strong>定边界</strong>：hook OkHttp 的 <code>Request.Builder.build</code>，拿到最终 URL 与 header，确认签名放在哪个字段。</li><li><strong>找汇聚点</strong>：hook <code>MessageDigest.digest</code> 与 <code>String.equals</code>，发现签名比较走的是 <code>equals</code>。</li><li><strong>抓输入</strong>：在 <code>equals</code> 的两个参数上打点，拿到“本地算出的签名”和“服务端期望的签名”。</li><li><strong>定位算法</strong>：回溯调用栈，找到计算函数，发现是 <code>MD5(排序后的参数 + salt)</code>。</li><li><strong>验证</strong>：用 Python 复现，对 5 组样本全部匹配。</li><li><strong>落脚本</strong>：把复现逻辑写成独立工具，不再依赖 hook。</li></ol>
 <div class="code">
@@ -160,7 +162,7 @@ assert sign(case1, salt) == expected1</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>关键一步是“<strong>抓输入而不是猜算法</strong>”。很多人一上来就反编译找算法，结果在混淆代码里打转；而先 hook 拿到真实输入输出，往往十分钟就能确定算法类型。</div></aside>
-<h2>16.7 算法类型速判表</h2>
+<h2 id="sec-7">16.7 算法类型速判表</h2>
 <div class="tbl"><table>
 <thead><tr><th>特征</th><th>可能算法</th><th>确认方法</th></tr></thead><tbody>
 <tr><td>输出 32 位 hex</td><td>MD5</td><td>换输入看是否雪崩</td></tr>
@@ -170,10 +172,11 @@ assert sign(case1, salt) == expected1</code></pre>
 <tr><td>常量 0x9E3779B9</td><td>TEA 系</td><td>看轮数与移位</td></tr>
 <tr><td>256 字节表</td><td>AES / SM4</td><td>找轮密钥</td></tr>
 </tbody></table></div>
-<h2>16.8 从“能用”到“可靠”</h2>
+<h2 id="sec-8">16.8 从“能用”到“可靠”</h2>
 <p>把结论写成脚本只是开始。要让它可靠，还需要：处理异常输入、加超时与重试、在版本变化时能快速定位差异、以及有办法验证“结果仍然正确”。</p>
 <ul><li><strong>输入校验</strong>：空值、超长、特殊字符都要有明确行为。</li><li><strong>回归样本</strong>：至少保留 10 组“输入 → 期望输出”，每次改动都跑。</li><li><strong>版本探测</strong>：算法变了要能发现（比如输出长度变化、常量变化）。</li><li><strong>降级路径</strong>：算法搞不定时，能不能退回“hook 直接取结果”。</li></ul>
-<h2>16.9 原理推演：为什么“汇聚点”一定存在</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>算法无论怎么绕，最后都要落到一个地方去算出结果：要么进某个标准库函数，要么在某个时机把明文摆出来。绕得越多，路上留下的必经之处反而越多。</p><p>所以找算法的正确姿势不是跟着控制流跑，而是先问「它非得经过哪儿」。这一节讲怎么把这个问题问出来。读完你面对一个陌生样本时，第一步不再是乱翻，而是先列必经点。</p></div></aside>
+<h2 id="sec-9">16.9 原理推演：为什么“汇聚点”一定存在</h2>
 <p>因为校验必须“产生一个布尔结果”。无论中间做了多少变换、加了多少层，最终一定有一次“比较”或“分支”。这个比较点就是汇聚点。</p>
 <div class="tbl"><table>
 <thead><tr><th>校验形式</th><th>汇聚点</th><th>抓法</th></tr></thead><tbody>
@@ -183,7 +186,8 @@ assert sign(case1, salt) == expected1</code></pre>
 <tr><td>哈希校验</td><td>memcmp</td><td>抓两个参数</td></tr>
 </tbody></table></div>
 <p>所以“找汇聚点”是算法分析里性价比最高的一步：它把“理解全部逻辑”降级成“找到那一个比较”。</p>
-<h2>16.10 数据细节：常见签名的输出长度</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>不同的摘要算法算出来的长度不一样：有的 16 字节、有的 20、有的 32。这个长度本身就是一个线索——看到一串固定长度的十六进制，能大致猜出用的是什么算法。</p><p>这张表就是这份对照。它的用处是在没有文档的情况下反推：先看长度圈定范围，再用已知输入去验证。</p></div></aside>
+<h2 id="sec-10">16.10 数据细节：常见签名的输出长度</h2>
 <div class="tbl"><table>
 <thead><tr><th>算法</th><th>输出长度</th><th>特征</th></tr></thead><tbody>
 <tr><td>MD5</td><td>32 hex</td><td>最快，最常见</td></tr>
@@ -193,12 +197,12 @@ assert sign(case1, salt) == expected1</code></pre>
 <tr><td>CRC32</td><td>8 hex</td><td>校验用，非安全</td></tr>
 </tbody></table></div>
 <p>看到输出长度就能排除一大半可能性。再结合“是否有密钥参与”（改一个字符看输出是否全变），基本能锁定算法族。</p>
-<h2>把签名函数追到最后一次比较</h2>
+<h2 id="sec-11">把签名函数追到最后一次比较</h2>
 <p>抓包里躺着一条请求：<code>sign=8f14e45f...</code>，32 位十六进制，每次换参数就变。你翻了半小时反编译代码，满屏都是 <code>a</code>、<code>b</code>、<code>c</code> 和跳转表，看不出个所以然。换个方向：不问「它怎么算的」，先问「它拿什么跟什么比」。在 <code>equals</code> 上挂一钩子，两条字符串同时打出来——一条是本地刚算出来的，一条是期望值——<strong>汇聚点一找到，算法类型十分钟内就能定下来</strong>。</p>
 <p>这就是本部收束要留的方法论：先定边界（输入是什么、输出是什么），再找所有校验最终都要经过的那个比较点，最后才决定是改输入、改输出，还是干脆把整套算法复现出来。工具会换，顺序不会。</p>
-<h2>从一条请求到一份可复现结论</h2>
+<h2 id="sec-12">从一条请求到一份可复现结论</h2>
 <ol><li><strong>定边界</strong> → 对抓包里的请求 → hook <code>OkHttp</code> 的 <code>Request.Builder.build</code>，把最终 URL、header、body 全打出来 → 结果：确认 <code>sign</code> 放在哪个字段、输入串由哪几部分拼成。</li><li><strong>找汇聚点</strong> → 对 <code>String.equals</code> / <code>strcmp</code> / <code>MessageDigest.digest</code> → 同时挂上 → 结果：定位到「本地算出的值」与「期望值」相遇的那一拍。</li><li><strong>回栈</strong> → 对 <code>Java.use(...).implementation</code> 里打印的调用栈 → 沿栈帧往上找计算函数 → 结果：从混淆代码里捞出真正干活的那个方法。</li><li><strong>判类型</strong> → 对输出长度与常量 → 32 位 hex 想到 MD5、40 位想到 SHA1、<code>0x9E3779B9</code> 想到 TEA 系 → 结果：给出「可能是 XX」的假设，注意这只是假设。</li><li><strong>复现</strong> → 对同语言重写 → 用 5 组真实样本跑，逐组对输出 → 结果：假设被证实或被证伪，对不上就回去看拼接顺序与 salt，别硬凑。</li><li><strong>落脚本</strong> → 对结论 → 固化成独立工具 + 回归样本集 → 结果：不再依赖 hook，版本变了也能靠样本集立刻发现。</li></ol>
-<h2>动手：先抓输入，再复现</h2>
+<h2 id="sec-13">动手：先抓输入，再复现</h2>
 <div class="code">
 <div class="code-title">抓比较点 + Python 复现验证</div>
 <pre><code>// compare_probe.js（frida -U -f com.target.app -l compare_probe.js）

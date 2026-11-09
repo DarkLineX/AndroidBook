@@ -98,20 +98,21 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">14</span><h1>Android dex 详解</h1><p class="ch-en">dex 执行与脱壳核心</p></div>
 <p class="lead">脱壳不是“把文件拽出来”，而是“找到运行时真正执行的那份字节”。</p>
-<h2>14.1 结构：按 map_list 读就不会迷路</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>dex 就是 Android 的“可执行文件格式”，相当于 Windows 的 exe。所有 Java/Kotlin 代码编译完，都打包成 dex。</p><p>加固（壳）做的事，就是让这个文件“不完整”：把真正的代码抽走加密，运行时再解密、在内存里拼回一份能跑的。所以脱壳的目标从来不是“把磁盘上那个文件拽出来”——那份是残缺的——而是<strong>在运行时找到真正在跑的那份字节</strong>。</p><p>这一章讲三件事：dex 文件的结构（按 map_list 读就不会迷路）、三个层次的脱壳分别对应什么场景、以及为什么“什么时候 dump”比“用什么工具 dump”重要得多。</p></div></aside>
+<h2 id="sec-1">14.1 结构：按 map_list 读就不会迷路</h2>
 <figure>
 <img src="../assets/f14_dex.png" alt="图 14-1" width="1080">
 <figcaption><b>图 14-1</b><span>dex 的六段结构，以及脱壳的三个层次</span></figcaption>
 </figure>
 <ol><li><strong>header</strong>：magic、checksum、各段偏移与大小、<code>map_off</code>。</li><li><strong>string_ids / type_ids</strong>：字符串池与类型池，后面所有结构都用索引引用它们。</li><li><strong>proto_ids / field_ids</strong>：方法签名与字段符号。</li><li><strong>method_ids</strong>：方法符号，由 class_idx + proto_idx + name_idx 组成。</li><li><strong>class_defs</strong>：类定义，指向 <code>class_data_off</code>，那里才有方法与字段列表。</li><li><strong>data 区</strong>：<code>code_item</code>（真正的指令）与调试信息、注解等。</li></ol>
-<h2>14.2 三个层次的脱壳</h2>
+<h2 id="sec-2">14.2 三个层次的脱壳</h2>
 <div class="tbl"><table>
 <thead><tr><th>层次</th><th>做法</th><th>适用</th></tr></thead><tbody>
 <tr><td>dump 内存</td><td>扫 dex magic，按 file_size 整段抓</td><td>整体加固、dex 完整加载</td></tr>
 <tr><td>修复</td><td>拼多 dex、修 checksum、补 map 顺序</td><td>dump 出来的文件不能反编译时</td></tr>
 <tr><td>对抗抽取</td><td>在“回填之后、执行之前”抓</td><td>壳把 code_item 抽空、运行时回填</td></tr>
 </tbody></table></div>
-<h2>14.3 dump 的时机比工具重要</h2>
+<h2 id="sec-3">14.3 dump 的时机比工具重要</h2>
 <p>同一个 App，在不同时刻 dump，拿到的可能是完全不同的东西：启动时只有壳的桩代码，真正业务 dex 要等某个类被加载才解密。所以正确顺序是：<strong>先定位 ClassLoader 与 DexFile 对象，再在“目标类加载完成”这个事件上触发 dump</strong>。</p>
 <div class="code">
 <div class="code-title">定位 DexFile 的思路（Frida 侧）</div>
@@ -129,9 +130,10 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>常见误区：以为 dump 出来的文件一定能反编译。实际上壳会在 header、map、code_item 里做各种手脚，修复工作量往往比 dump 本身更大。</div></aside>
-<h2>14.4 本章自测</h2>
+<h2 id="sec-4">14.4 本章自测</h2>
 <ul><li>dex 的六段结构按顺序说出来。</li><li>为什么“dump 时机比工具重要”？</li><li>对抗抽取型壳，应该在哪一刻抓？</li><li>dump 出来的文件打不开，可能是哪几处被改了？</li></ul>
-<h2>14.5 深入：一个 code_item 长什么样</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>方法体在文件里不是一坨裸指令，外面还包着一层：有多少个寄存器、参数怎么排、异常表在哪、指令有多长。这些信息少了任何一样，这段代码就跑不起来。</p><p>这一节带你把这一层认全。读完你再看到一个方法体时，能分清哪部分是「说明」、哪部分是「真正的指令」——脱壳和改壳都绕不开这个区分。</p></div></aside>
+<h2 id="sec-5">14.5 深入：一个 code_item 长什么样</h2>
 <p><code>code_item</code> 是 dex 里真正存指令的地方。结构是：寄存器数、入参个数、出参个数、try/catch 表偏移、调试信息偏移、以及指令字节数组。抽取型壳的做法是把指令数组清零或加密，运行时再填回去。</p>
 <div class="code">
 <div class="code-title">code_item 的字段（示意）</div>
@@ -146,10 +148,10 @@
 };</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>14.6 修复 dump 出来的 dex 要做哪些事</h2>
+<h2 id="sec-6">14.6 修复 dump 出来的 dex 要做哪些事</h2>
 <ol><li><strong>补 header</strong>：<code>file_size</code>、<code>data_size</code>、<code>data_off</code> 常被改坏。</li><li><strong>修 checksum 与签名</strong>：<code>checksum</code> 是 adler32，<code>signature</code> 是 sha1，都要重算。</li><li><strong>整理 map_list</strong>：有些壳会把 map 打乱，导致反编译工具解析失败。</li><li><strong>合并多 dex</strong>：如果业务被拆到多个 dex，要分别 dump 再拼。</li><li><strong>验证</strong>：用 <code>dexdump -d</code> 看指令是否完整，用 jadx 看能否反编译。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>经验：<strong>先修 header，再看 map，最后才动指令</strong>。顺序错了会陷入“改一处崩一处”的循环。建议写一个小工具，每次 dump 后自动跑一遍修复与校验。</div></aside>
-<h2>14.7 快速判断“壳到第几代”</h2>
+<h2 id="sec-7">14.7 快速判断“壳到第几代”</h2>
 <div class="tbl"><table>
 <thead><tr><th>观察点</th><th>一代</th><th>二代</th><th>三代+</th></tr></thead><tbody>
 <tr><td>code_item 指令</td><td>完整</td><td>空/加密</td><td>空/加密</td></tr>
@@ -157,7 +159,8 @@
 <tr><td>dispatcher</td><td>无</td><td>少量</td><td>巨型 switch</td></tr>
 <tr><td>native 占比</td><td>低</td><td>中</td><td>高</td></tr>
 </tbody></table></div>
-<h2>14.8 原理推演：为什么“壳”必须让代码可执行</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>壳把真正的代码藏起来，但程序终究要跑。要跑就得有一刻是「明文躺在可执行内存里」的，或者至少有一个能算出来的入口。藏得再好，那一刻一定会来。</p><p>所以脱壳的思路不是「解密」，而是「等它自己解密」。这一节讲的是这个「必然的一刻」在哪些地方能被看见。读完你会把注意力从算法转到时机上——时机比算法好抓。</p></div></aside>
+<h2 id="sec-8">14.8 原理推演：为什么“壳”必须让代码可执行</h2>
 <p>无论怎么加密、怎么抽取，最终 CPU 必须执行到真实的指令。所以“真实指令一定会在某个时刻以明文形式存在于内存中”——这是所有脱壳方法的理论基础。</p>
 <div class="tbl"><table>
 <thead><tr><th>时刻</th><th>明文在哪</th><th>可抓性</th></tr></thead><tbody>
@@ -167,16 +170,18 @@
 <tr><td>执行后</td><td>可能被重新加密</td><td>低</td></tr>
 </tbody></table></div>
 <p>所以“最佳 dump 点”永远是“明文存在且尚未被清理”的那个窗口。找到这个窗口，比用什么工具重要得多。</p>
-<h2>14.9 数据细节：dex 的 checksum 怎么算</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>文件头里有两个校验字段：一个短的、一个长的。它们各自「从哪个位置开始算、算到哪儿、结果写回哪里」，三件事必须都记对，错一个就会报校验失败。</p><p>这张表把这三件事分开列。最容易混的就是「算的起点」和「存的地址」不是同一个位置，改文件的人十个里有八个在这上面栽过。</p></div></aside>
+<h2 id="sec-9">14.9 数据细节：dex 的 checksum 怎么算</h2>
 <div class="code">
 <div class="code-title">checksum 与 signature</div>
-<pre><code>// checksum: adler32，范围是 [12, file_size)
-// signature: sha1，范围是 [32, file_size)
-// 两者都在 header 里，修改任何内容后必须重算</code></pre>
+<pre><code>// header 里三个相邻字段：0x08 checksum(4B) / 0x0C signature(20B) / 0x20 file_size(4B)
+// checksum: adler32，对 [0x0C, file_size) 求值，结果写回 0x08
+// signature: sha1，对 [0x20, file_size) 求值，结果写回 0x0C
+// 修改任何内容后两个都要重算，且顺序必须是先 sha1 再 adler32（adler32 的区间把签名也包含在内）</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<p>修复时最容易忘的是“范围起点”：checksum 从偏移 12 开始（跳过 magic 与 checksum 自身），signature 从偏移 32 开始（跳过更多 header 字段）。起点错了，算出来的值永远对不上。</p>
-<h2>把 dex 当成一张可以按图索骥的地图</h2>
+<p>修复时最容易混的是“三个偏移各是什么”：<code>0x08</code> 放的是<strong>结果</strong>，<code>0x0C</code> 是<strong>开始算的位置</strong>，<code>0x20</code> 又是 sha1 开始算的位置。checksum 从 0x0C 起（跳过 magic 与 checksum 自己），signature 从 0x20 起（连 version、checksum、自己的 20 字节都跳过）。起点错了，算出来的值永远对不上。</p>
+<h2 id="sec-10">把 dex 当成一张可以按图索骥的地图</h2>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_dex">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -207,9 +212,9 @@
 <script type="application/json" class="anim-data">["加固阶段把 code_item 挖空，真指令加密存放", "App 启动，壳代码先执行并准备解密环境", "首次调用某方法时触发回填：解密并写回 dex 内存", "ART 此刻才看到完整指令，可解释或编译执行", "选择回填完成后的窗口 dump，才能拿到完整 dex"]</script>
 <p>把 <code>classes.dex</code> 拖进十六进制编辑器，开头八个字节是 <code>dex\n035\0</code>，再往后是 checksum、sha1 签名、<code>file_size</code>、一长串 <code>xxx_ids_size</code> 与 <code>xxx_off</code>。别被这一排数字吓住——<strong>它其实是一张目录</strong>：每个 <code>off</code> 告诉你去文件的哪个位置找那张表，每个 <code>size</code> 告诉你那张表有几行，而表里存的又全是「索引」，指向更早的字符串池和类型池。整个 dex 就是这么一张层层引用的大表，<code>map_off</code> 则是这张表的总目录。</p>
 <p>脱壳之所以不是「把文件拽出来」，正是因为这个结构：壳可以只把 <code>code_item</code> 里的指令数组抽空，header、map、方法表全都留着——文件看起来完全合法，反编译出来却是一堆空方法。你真正要找的，是<strong>运行时被回填之后、CPU 真正执行的那份字节</strong>。</p>
-<h2>跟着一次类加载，看指令从哪冒出来</h2>
+<h2 id="sec-11">跟着一次类加载，看指令从哪冒出来</h2>
 <ol><li><strong>读 header</strong> → 对文件偏移 0 → 取 magic 验版本、<code>file_size</code> 验长度、<code>map_off</code> 找总目录 → 结果：知道这个文件共有哪几段、各段在哪。</li><li><strong>查 `class_defs`</strong> → 对类定义表 → 按类名找到目标那一行，取出 <code>class_data_off</code> → 结果：定位到这个类的方法与字段列表。</li><li><strong>查 `method_ids` → `code_item`</strong> → 对方法索引 → 经 <code>proto_ids</code> 拿签名，经 <code>class_data</code> 拿 <code>code_off</code> → 结果：指向 data 区里真正的 <code>insns</code> 指令数组。</li><li><strong>ART 解析</strong> → 对 <code>DexFile</code> 对象 → 在 <code>DefineClass</code> 时把 <code>code_item</code> 读进内存、校验、准备编译或解释执行 → 结果：字节第一次变成可执行的方法体。</li><li><strong>抽取型壳回填</strong> → 对被抽空的 <code>insns</code> → 在类真正被加载的前一刻解密、写回原位置 → 结果：此刻内存里的 dex 才是完整的，磁盘上那份仍是空的。</li><li><strong>dump 方</strong> → 对这段内存 → 按 <code>file_size</code> 整段抓出、补 header、重算 checksum 与 sha1、整理 map → 结果：一份能反编译的 dex；抓早了只有桩，抓晚了又可能已被改回去。</li></ol>
-<h2>动手：从文件到内存各验一次</h2>
+<h2 id="sec-12">动手：从文件到内存各验一次</h2>
 <div class="code">
 <div class="code-title">离线验结构 + 运行时定位 DexFile</div>
 <pre><code># host：看 header 与各段偏移

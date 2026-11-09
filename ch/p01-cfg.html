@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">P01</span><h1>二期主线：从编译原理到 VMP</h1><p class="ch-en">词法分析、CFG、IR 优化 → VMP 分析（转 IR）</p></div>
 <p class="lead">想读懂 VMP，先得知道“正常编译器把代码变成了什么”。</p>
-<h2>1.1 四步路线</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>遇到一个 VMP 样本，打开一看全是认不出的指令——这不是加密，是有人自己造了一套指令集。想还原，就得当「读一门新语言」来做。</p><p>而「读一门新语言」这件事，编译器课上已经有一套现成的流程：先切词、再认结构、再转成中间表示、最后优化。VMP 的还原走的正是同一条路，只是方向相反。</p><p>这一章给一条四步路线：词法、控制流图、中间表示、优化。每一步都配一个能上手的小练习。</p></div></aside>
+<h2 id="sec-1">1.1 四步路线</h2>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>学什么</th><th>为什么</th></tr></thead><tbody>
 <tr><td>词法 / 语法</td><td>token、AST</td><td>看懂反编译输出的结构</td></tr>
@@ -106,14 +107,16 @@
 <tr><td>IR 与优化</td><td>SSA、常量折叠、内联</td><td>理解“代码为什么变成这样”</td></tr>
 <tr><td>VMP 分析</td><td>handler 表、语义重建</td><td>把自定义字节码翻回 IR</td></tr>
 </tbody></table></div>
-<h2>1.2 为什么先学编译原理</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把一段自定义指令翻译成机器能执行的东西，本质就是「写一个编译器」。这件事有一整套成熟的方法，学过的人几天能上手，没学过的要摸索几个月。</p><p>这一节讲这个先后顺序的道理。读完你不会再从「背指令表」开始，而会先建立「词法、语法、中间表示、生成」这套框架。</p></div></aside>
+<h2 id="sec-2">1.2 为什么先学编译原理</h2>
 <p>VMP 的本质是“自己实现一个虚拟机”。它的 handler 分派、栈机模型、寄存器分配，全都是编译器教科书的反面。你只有先知道“正常长什么样”，才能认出“哪里不正常”。</p>
-<h2>1.3 一条练习路线</h2>
+<h2 id="sec-3">1.3 一条练习路线</h2>
 <ol><li>用 Python 写一个玩具语言的 lexer + parser，输出 AST。</li><li>把 AST 转成三地址码（IR），画出 CFG。</li><li>实现两个优化：常量折叠、死代码消除。</li><li>读一个真实 VMP 样本的 dispatcher，试着还原 10 条指令的语义。</li><li>把还原结果写成 IR，再用自己的工具重新生成代码对比。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这条路线看起来“偏学术”，但它是唯一能让你在面对新 VMP 变种时“不慌”的路径。工具会过期，抽象能力不会。</div></aside>
-<h2>1.4 本章自测</h2>
+<h2 id="sec-4">1.4 本章自测</h2>
 <ul><li>CFG 与基本块的关系是什么？</li><li>SSA 形式解决了什么问题？</li><li>VMP 与普通编译器的关系是什么？</li><li>为什么说“抽象能力不会过期”？</li></ul>
-<h2>1.5 深入：为什么要从“玩具编译器”开始</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>VMP 那套东西看着吓人，拆开就是「一套自定义指令 + 一个解释它的循环」。这两样东西，写一个几十行的玩具编译器就能摸到手感。</p><p>这一节讲这个练手为什么值得。读完你不会一上来就啃真实样本，而是先有一个自己能改、能试、能弄坏的小东西——理解速度完全不一样。</p></div></aside>
+<h2 id="sec-5">1.5 深入：为什么要从“玩具编译器”开始</h2>
 <p>因为编译器是“把人类意图翻译成机器指令”的完整流程。你自己写一遍，就会对“指令为什么长这样”有肌肉记忆——这正是读 VMP 时最需要的东西。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>产出</th><th>对应能力</th></tr></thead><tbody>
@@ -122,7 +125,8 @@
 <tr><td>IR</td><td>三地址码</td><td>看懂数据流</td></tr>
 <tr><td>优化</td><td>更简的 IR</td><td>识破混淆</td></tr>
 </tbody></table></div>
-<h2>1.6 原理推演：为什么 VMP 的本质是“换了一套指令集”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>CPU 只认它自己那套指令。VMP 把这套指令整个换掉：程序里存的、跑的时候执行的，都是另一套只有它能解释的东西，真正的机器指令要等它现场翻译出来。</p><p>所以分析 VMP 不是「看代码」，而是「先学会它那套指令」——和写一个模拟器是同一件事。这一节讲这个视角的转换，读完你就明白为什么这条路要从编译原理起步，而不是从汇编技巧起步。</p></div></aside>
+<h2 id="sec-6">1.6 原理推演：为什么 VMP 的本质是“换了一套指令集”</h2>
 <p>因为 VMP 把原本的 ARM64 指令翻译成“自定义字节码”，再由一个解释器（dispatcher）执行。对分析者来说，这就相当于“遇到了一门没见过的手写汇编”——你必须先学会它的指令语义。</p>
 <div class="tbl"><table>
 <thead><tr><th>层次</th><th>正常</th><th>VMP</th></tr></thead><tbody>
@@ -131,7 +135,8 @@
 <tr><td>分析入口</td><td>反汇编即可</td><td>先逆 dispatcher</td></tr>
 </tbody></table></div>
 <p>所以“学编译原理”的价值就在这里：你已经知道“一个解释器大概长什么样”，于是能更快认出它的结构。</p>
-<h2>1.7 数据细节：一个 dispatcher 的典型结构</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>虚拟化代码的执行核心是一个分发器：取一条「自定义指令」、按编号找到处理逻辑、执行、回来取下一条。这张表把它的典型结构列出来。</p><p>它的用处是「认识形状」：见过这个结构，你在反汇编里就能一眼认出「这里是虚拟机的核心」，而不会把它当成普通的循环。</p></div></aside>
+<h2 id="sec-7">1.7 数据细节：一个 dispatcher 的典型结构</h2>
 <div class="code">
 <div class="code-title">概念结构</div>
 <pre><code>while (1) {
@@ -145,7 +150,8 @@
 <button class="copy" type="button">复制</button>
 </div>
 <p>优化的 VMP 不会用 switch，而是用“handler 表 + 间接跳转”，甚至每个 handler 都做了变形。但结构本质不变：取指 → 译码 → 执行。</p>
-<h2>1.8 深入：CFG 为什么是分析的起点</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一段代码能怎么走，本质上是一张图：哪些块连哪些块、从哪儿进、从哪儿出。几乎所有分析都建在这张图上：找环、找不可达、找必经点。</p><p>这一节讲这张图怎么建。读完你面对陌生代码时，第一个动作会是画图，而不是从头往下读。</p></div></aside>
+<h2 id="sec-8">1.8 深入：CFG 为什么是分析的起点</h2>
 <p>因为“控制流图”把“代码”变成了“图”：节点是基本块，边是跳转。有了图，才能谈“支配关系”“循环结构”“可达性”——这些是所有后续分析的基础。</p>
 <div class="tbl"><table>
 <thead><tr><th>概念</th><th>含义</th><th>用途</th></tr></thead><tbody>
@@ -154,7 +160,8 @@
 <tr><td>可达性</td><td>能不能走到</td><td>死代码消除</td></tr>
 </tbody></table></div>
 <p>混淆（尤其是平坦化）的本质就是“破坏 CFG 的可读性”。所以反混淆的第一步永远是“把 CFG 重建出来”。</p>
-<h2>1.9 深入：IR 的三种常见形态</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>中间表示是把代码「摊平」之后的样子：每条只干一件事、结果有名字、跳转显式写出来。常见的有三种风格，繁简不同。</p><p>这一节讲这三种。读完你能看懂别人的分析工具在操作什么，也能自己挑一种够用的，而不是一上来就上最复杂的那种。</p></div></aside>
+<h2 id="sec-9">1.9 深入：IR 的三种常见形态</h2>
 <div class="code">
 <div class="code-title">从高到低</div>
 <pre><code>// 1. 三地址码
@@ -168,9 +175,9 @@ load a; load b; add; load c; mul;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>VMP 的字节码通常是第三种（栈机）。所以“转 IR”往往意味着“栈机 → 三地址码”的翻译。</p>
-<h2>1.10 实战：一个最小的栈机解释器</h2>
+<h2 id="sec-10">1.10 实战：一个最小的栈机解释器</h2>
 <div class="code">
-<div class="code-title">三十行就能跑</div>
+<div class="code-title">骨架只有六行，补上取指循环就能跑</div>
 <pre><code>stack = []
 for op in code:
     if op == &#x27;push&#x27;: stack.append(next_arg())
@@ -180,7 +187,7 @@ for op in code:
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>写一遍这个，你对 VMP 的“恐惧感”会消失一大半——因为它真的就只是“取指、译码、执行”。</div></aside>
-<h2>反编译窗口吐出三千行 switch</h2>
+<h2 id="sec-11">反编译窗口吐出三千行 switch</h2>
 <p>你打开一个被 VMP 保护过的函数，反编译器转了四十秒，吐出来一个三千行的 <code>switch</code>，里面几百个 <code>case</code> 全在给同一个变量赋值，然后再跳回循环开头。没有 <code>add</code>，没有 <code>bl</code>，没有任何一句像业务代码的句子。第一反应是「这没法读」——但换个角度想：这三千行其实是一台很小的计算机，它正在一丝不苟地执行别人写好的程序。你缺的不是耐心，是一套能把「机器在干什么」翻译回「人写了什么」的语言。那套语言就是编译原理。</p>
 <p>把编辑器分成两半：左边放一句最普通不过的源码 <code>a = b + 1;</code>，右边放你从样本里抠出来的 dispatcher。二期这条主线要做的，就是让左边那句话一步一步变形，直到你能指着右边某个 <code>case</code> 说「这一支对应的是那个加号」。工具会过期，样本会换代，但这条变形链不会变。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_vmp">
@@ -211,11 +218,11 @@ for op in code:
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_vmp.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["pc 指向自定义字节码，取出当前 opcode", "用 opcode 索引 handler 表，拿到处理函数", "执行 handler，用虚拟寄存器模拟一条语义", "更新 pc 与虚拟上下文（栈、寄存器、标志）", "回到 dispatcher 继续循环，直到 EXIT"]</script>
-<h2>一句源码走完正向编译链</h2>
+<h2 id="sec-12">一句源码走完正向编译链</h2>
 <ol><li><strong>词法分析器</strong> → 对 <strong>字符流 `a = b + 1;`</strong> → 切成 token（<code>ID(a)</code> <code>ASSIGN</code> <code>ID(b)</code> <code>PLUS</code> <code>NUM(1)</code> <code>SEMI</code>）→ 结果是丢掉了空格和换行，只留下带类型的记号序列。</li><li><strong>语法分析器</strong> → 对 <strong>token 序列</strong> → 按优先级把 <code>b + 1</code> 先收成一个表达式节点，再挂到赋值节点下 → 结果是一棵 AST，树根是 <code>Assign</code>，左子是 <code>a</code>，右子是 <code>Add(b, 1)</code>。</li><li><strong>IR 生成</strong> → 对 <strong>AST</strong> → 后序遍历，给每个中间结果分配临时变量 → 结果是三地址码 <code>t0 = b + 1</code> 和 <code>a = t0</code>，控制流第一次变成线性的。</li><li><strong>SSA 改写</strong> → 对 <strong>三地址码</strong> → 给每次定义换一个新版本号（<code>b_1</code>、<code>t0_1</code>、<code>a_1</code>）→ 结果是每个名字只被赋一次值，常量传播和死代码消除可以直接跑。</li><li><strong>优化器</strong> → 对 <strong>SSA</strong> → 若 <code>b</code> 是编译期常量就折叠、若 <code>a</code> 之后没被用就整条删掉 → 结果是 IR 变短，但语义完全不变，这也解释了为什么反编译出来的代码常常「不像人写的」。</li><li><strong>后端</strong> → 对 <strong>IR</strong> → 做寄存器分配、选指令、排基本块 → 结果是几条 ARM64 指令，CFG 里的边变成 <code>b.eq</code> / <code>b</code> 这样的跳转。</li></ol>
-<h2>VMP 把这条链倒着放给你看</h2>
+<h2 id="sec-13">VMP 把这条链倒着放给你看</h2>
 <ul><li><strong>壳的打包器</strong> → 对 <strong>原生指令</strong> → 不走后端，而是按自己的 opcode 表把每条指令翻成自定义字节码 → 结果是你熟悉的 <code>add</code> 在文件里彻底消失，只剩一串数字。</li><li><strong>dispatcher</strong> → 对 <strong>字节码流</strong> → 用 <code>pc</code> 取一个 opcode、查 <code>handler_table[op]</code> → 结果是把「该执行哪条语义」变成一次表查找，反编译器看到的就只剩那个巨大的 <code>switch</code>。</li><li><strong>某个 handler</strong> → 对 <strong>虚拟寄存器数组</strong> → 模拟一条真实语义（加法、跳转、取字段）→ 结果是语义还在，只是藏在一个不起眼的小函数里，而且往往被拆成好几个片段。</li><li><strong>dispatcher 尾部</strong> → 对 <strong>vctx</strong> → 写回 <code>next_pc</code>、虚拟栈和标志位再回到循环头 → 结果是控制流不再体现为 CFG 的边，而体现为状态变量的值，这也是平坦化看起来那么别扭的根源。</li><li><strong>你</strong> → 对 <strong>handler 表</strong> → 逐条执行、记录虚拟寄存器变化、把每条 opcode 的语义写回 IR → 结果是自定义字节码被翻译回三地址码，前面那半边编辑器终于能对上了。</li></ul>
-<h2>可复现实验：二十行写一个玩具 IR 生成器</h2>
+<h2 id="sec-14">可复现实验：十几行写一个玩具 IR 生成器</h2>
 <div class="code">
 <div class="code-title">真的能跑的 python（把左边那句话变成右边那种三地址码）</div>
 <pre><code>import re

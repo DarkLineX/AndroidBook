@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">02</span><h1>Android 手机启动过程</h1><p class="ch-en">从 abl 开始</p></div>
 <p class="lead">把“按下电源键”到“看到桌面”拆成八步，每步都标上可信边界。</p>
-<h2>2.1 八个阶段，一条链</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>从你按下电源键，到屏幕亮起能滑动，中间大概十几秒。这十几秒里手机换了五六个“当家的”：先是焊接在芯片里的一小段死代码，然后是引导程序，然后是内核，最后才交给你熟悉的那个桌面。</p><p>为什么要分这么多棒？因为每一棒能做的事不一样，而且每一棒都要先验证下一棒是不是“原装”的。这一章就是把这条接力赛的每一棒摊开看：谁跑第几棒、交接时检查什么、哪一棒最容易被人做手脚。看懂这条链，后面所有“改机”和“检测”的讨论才有落点——因为绝大多数攻防，都是在某一棒上做文章。</p></div></aside>
+<h2 id="sec-1">2.1 八个阶段，一条链</h2>
 <p>启动过程看起来很长，但结构非常规整：每一级都负责验证下一级，然后把控制权交出去。这种“链式信任”是所有安全启动方案的基础，也是所有攻击者要逐段攻破的目标。</p>
 <figure>
 <img src="../assets/f01_boot_chain.png" alt="图 2-1" width="1080">
 <figcaption><b>图 2-1</b><span>启动链全景：上排硬件与内核，下排用户态</span></figcaption>
 </figure>
-<h2>2.2 阶段一：BootROM 与 abl</h2>
+<h2 id="sec-2">2.2 阶段一：BootROM 与 abl</h2>
 <p>上电后 CPU 从固化在 SoC 内的 BootROM 开始执行。这段代码物理上不可改，它做的最重要的一件事是：<strong>验证下一级引导程序的签名</strong>。验证通过后，才把控制权交给 SBL / XBL，最终到 abl（Android Bootloader）。</p>
 <p>abl 是你能“看见”的第一层，也是 <code>fastboot</code> 模式所在的地方。它负责：读分区表、加载 boot.img、校验 AVB（如果开启）、把 boot 状态通过 <code>androidboot.verifiedbootstate=</code> 传进内核命令行，然后跳进内核。<strong>注意方向</strong>：abl 是“值的产生者”，它写的是 cmdline；<code>ro.boot.*</code> 这组只读属性是 init 起来后从 cmdline 解析出来的——abl 自己不读属性。</p>
 <div class="tbl"><table>
@@ -114,18 +115,18 @@
 <tr><td>ORANGE</td><td>已解锁</td><td>只能拿到 BASIC</td></tr>
 <tr><td>RED</td><td>验证失败</td><td>启动被拒或降级</td></tr>
 </tbody></table></div>
-<h2>2.3 阶段二：kernel 到 init</h2>
+<h2 id="sec-3">2.3 阶段二：kernel 到 init</h2>
 <p>内核被解压、建立页表、初始化子系统，然后挂载 rootfs 并执行 <code>/init</code>。这个 init 是 PID 1，它读一堆 <code>.rc</code> 文件（<code>init.rc</code>、<code>init.&lt;hardware&gt;.rc</code>、<code>vendor</code> 下的 rc），按触发器启动服务、设置属性、并把 SELinux 从 permissive 切到 enforcing。</p>
 <p>这一层有三个高价值位置：<strong>rc 文件</strong>（决定启动什么）、<strong>sepolicy</strong>（决定能干什么）、<strong>属性系统</strong>（决定上层看到什么）。Magisk 的改动全部落在这三处。</p>
-<h2>2.4 阶段三：zygote 与 system_server</h2>
+<h2 id="sec-4">2.4 阶段三：zygote 与 system_server</h2>
 <p>init 拉起 zygote：它预加载 framework 的常用类与资源，然后进入循环，等 system_server 通过 socket 请求 fork 新进程。system_server 自己也是 zygote fork 出来的，它承载 AMS、PMS、WMS 等核心服务，从这一刻起，Android 的“系统”才算真正活过来。</p>
 <figure>
 <img src="../assets/f05_app_launch.png" alt="图 2-2" width="1080">
 <figcaption><b>图 2-2</b><span>从 zygote fork 到 Activity 可见的完整时序</span></figcaption>
 </figure>
-<h2>2.5 阶段四：App 进程</h2>
+<h2 id="sec-5">2.5 阶段四：App 进程</h2>
 <p>点击图标时，Launcher 通过 Binder 请求 AMS 启动 Activity；AMS 决定进程不存在，于是通过 socket 让 zygote fork 一个子进程。子进程继承 zygote 里预加载的一切，然后跑 <code>RuntimeInit</code> → <code>ActivityThread.main()</code> → 建立主线程 Looper → <code>attachApplication</code> 把自己的 Binder 代理交给 AMS → AMS 回调 <code>bindApplication</code> → 创建 Application → 启动 Activity。</p>
-<h2>2.6 三个“必须记住”的观察点</h2>
+<h2 id="sec-6">2.6 三个“必须记住”的观察点</h2>
 <ol><li><strong>zygote 是所有 Java 进程的父亲</strong>。任何“覆盖全部 App”的方案（Zygisk、LSPosed、Frida 门控）都从这里下手。</li><li><strong>降权发生在 fork 之后</strong>。所以中间存在一个“已是新进程、但还没有 App 身份”的窗口期，这就是 pre-specialize 阶段的价值。</li><li><strong>sepolicy 与 mount 视图是按 namespace 分的</strong>。同一份文件，在不同进程眼里可以是不同内容——隐藏与检测的战场就在这里。</li></ol>
 <div class="code">
 <div class="code-title">查看启动状态的常用命令</div>
@@ -137,9 +138,10 @@ getprop | grep -i &#x27;init.svc&#x27;        # 看服务状态</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>常见的误解：以为“解锁 bootloader”就等于“有 root”。实际上是两件事——解锁只是允许你刷入修改过的镜像，真正决定权限的，是你刷进去的东西做了什么。</div></aside>
-<h2>2.7 本章自测</h2>
+<h2 id="sec-7">2.7 本章自测</h2>
 <ul><li>八个阶段按顺序背出来，并指出哪一步开始有 Java 世界。</li><li>AVB 的四种状态分别对应什么检测结果？</li><li>为什么说“fork 之后、降权之前”是一个有价值的窗口？</li><li>如果目标 App 在 <code>init</code> 阶段就被注入，它在 <code>attachApplication</code> 时能观察到什么异常？</li></ul>
-<h2>2.8 深入：为什么“启动早期”是检测的黄金窗口</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>开机那几秒，很多东西还没起来：日志没开、服务没连、能动手脚的工具也还没装上。这时候看到的状态最接近「本来面目」。</p><p>所以做检测的人偏爱早起，做隐藏的人最怕早起。这一节讲这个时间窗口为什么值钱，读完你会明白为什么同一份检测代码，放早了比放晚了有用得多。</p></div></aside>
+<h2 id="sec-8">2.8 深入：为什么“启动早期”是检测的黄金窗口</h2>
 <p>启动早期（init 到 zygote 之间）有三个特点：<strong>观察者少</strong>（还没有第三方代码在跑）、<strong>时序确定</strong>（每一步都可预期）、<strong>权限高</strong>（还没降权）。检测方喜欢在这里布置检查，因为它拿到的数据最“干净”；注入方也喜欢在这里动手，因为一旦过了这个窗口，很多状态就已经定型了。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>观察者</th><th>可被检测的状态</th></tr></thead><tbody>
@@ -149,7 +151,7 @@ getprop | grep -i &#x27;init.svc&#x27;        # 看服务状态</code></pre>
 <tr><td>zygote 之前</td><td>极少</td><td>几乎无</td></tr>
 <tr><td>zygote 之后</td><td>AMS / PMS 等</td><td>进程、包、服务表</td></tr>
 </tbody></table></div>
-<h2>2.9 属性系统：一个被低估的观测面</h2>
+<h2 id="sec-9">2.9 属性系统：一个被低估的观测面</h2>
 <p><code>getprop</code> 返回的键值对，是“系统自述”。它同时被 init、zygote、App 读取，所以一旦某个属性被改动，影响面很广，痕迹也很明显。</p>
 <div class="code">
 <div class="code-title">几条值得记住的属性</div>
@@ -162,11 +164,12 @@ init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>隐蔽的坑：有些属性是“只读”的（<code>ro.</code>），但只读只是“init 之后不可改”，不代表“运行时读不到真实值”。不少隐藏方案改了 <code>getprop</code> 的输出，却忘了直接读 property area 的路径。</div></aside>
-<h2>2.10 一次真实的排查记录</h2>
+<h2 id="sec-10">2.10 一次真实的排查记录</h2>
 <p>现象：某 App 在测试机上一切正常，在另一台同型号设备上启动即闪退。</p>
 <ol><li>对比两台设备的 <code>getprop ro.build.fingerprint</code>——一致。</li><li>对比 <code>ro.boot.verifiedbootstate</code>——一台 GREEN，一台 ORANGE。</li><li>确认第二台设备解锁过 bootloader 且未重新上锁。</li><li>结论：App 的启动校验里包含 boot 状态检查，解锁设备被判定为“不可信环境”。</li><li>处理：在测试流程里明确区分“已锁 / 已解锁”两类设备，避免把环境差异误判为代码问题。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>方法论：<strong>同型号不同表现，先比环境再比代码</strong>。环境差异（boot 状态、系统版本、SELinux 模式）造成的问题，往往比代码 bug 更常见。</div></aside>
-<h2>2.11 原理推演：为什么“链式信任”必然有断点</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>信任是一环验一环：后一步信前一步，前一步信更前一步，一路往上追。可链条总得有一端是「默认就这么信」——没人再验它了。那一端就是断点。</p><p>理解这一点，你就不会幻想做一个「没有缝」的方案。真正要回答的是：我这条链的断点在哪、它有多难碰。这个问法比「怎么做到绝对安全」有用得多。</p></div></aside>
+<h2 id="sec-11">2.11 原理推演：为什么“链式信任”必然有断点</h2>
 <p>链式信任的结构是：A 验证 B、B 验证 C、C 验证 D……听起来天衣无缝。但它有一个结构性的弱点：<strong>链条的起点必须被无条件信任</strong>，而链条的每一环都必须是“能够验证下一环”的代码。</p>
 <p>于是攻击面自然分成两类：攻破根（物理手段、eFuse 读出）与攻破某一环的“验证逻辑”——后者现实得多，因为验证逻辑也是代码，也可能有 bug，也可能被“绕过而不是破解”。</p>
 <div class="tbl"><table>
@@ -176,7 +179,8 @@ init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
 <tr><td>kernel → 用户态</td><td>dm-verity</td><td>改 fstab 或改 dm 表</td></tr>
 <tr><td>App 层</td><td>签名 / 完整性</td><td>改返回结果、重打包</td></tr>
 </tbody></table></div>
-<h2>2.12 数据细节：启动各阶段的时间预算</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「开机慢」这个抱怨没法排查，因为它没说慢在哪一段。这张表把整个开机能切成的几段分别给了大致的时间量级。</p><p>它的用法是「先定位再深挖」：量一下自己设备上某一段，跟表里的量级对一下，差得远的那一段才是要继续查的。数字会随硬件变，比例不会。</p></div></aside>
+<h2 id="sec-12">2.12 数据细节：启动各阶段的时间预算</h2>
 <p>知道各阶段耗时，对“注入窗口”的把握很有帮助。下面是典型中高端机型的量级（仅供建立直觉）：</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>量级</th><th>说明</th></tr></thead><tbody>
@@ -188,10 +192,11 @@ init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
 <tr><td>首次桌面</td><td>数秒</td><td>含 system_server 启动</td></tr>
 </tbody></table></div>
 <p>这张表的实用价值：如果检测逻辑要在“zygote 之后立即”执行，那它只有几百毫秒的窗口；如果注入方要在“specialize 之前”介入，窗口更短。谁能在这个量级上稳定工作，谁就赢了一半。</p>
-<h2>2.13 工程权衡：为什么不要在 rc 里加东西</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>启动脚本是最容易下手的地方，也是最容易被看见的地方：它是一份明文清单，谁加了什么，一行一行摆着。而且启动早期很多东西还没准备好，你的代码跑太早会撞上一堆「还没初始化」。</p><p>所以这里要算的是两笔账：留痕和时机。这一节讲这两笔账怎么权衡，读完你不会因为「这里好改」就把东西塞进去。</p></div></aside>
+<h2 id="sec-13">2.13 工程权衡：为什么不要在 rc 里加东西</h2>
 <p>在 <code>init.rc</code> 里加一个 service 是最直观的“开机自启”方式，但它有三个明显缺点：<strong>rc 文件本身可被校验</strong>、**service 会出现在 <code>init.svc.*</code> 属性里<strong>、</strong>崩溃会被 init 记录并重启**。</p>
 <p>更隐蔽的做法是“挂到已有 service 上”——不新增节点，而是修改既有服务的启动参数或环境变量。这样属性面、进程面都不变，只有真正比对 rc 内容的人才能发现。</p>
-<h2>把时间倒回到上电那一纳秒</h2>
+<h2 id="sec-14">把时间倒回到上电那一纳秒</h2>
 <figure class="anim" data-delay="820" data-n="8" data-key="a_boot">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -225,13 +230,13 @@ init.svc.&lt;service&gt;          # 服务运行状态</code></pre>
 <script type="application/json" class="anim-data">["上电，BootROM 从 SoC 内部开始执行", "BootROM 验签后跳到 abl", "abl 校验 vbmeta，加载并跳进 kernel", "kernel 起来后执行 /init（PID 1）", "init 拉起 zygote，预加载 framework", "zygote fork 出 system_server", "AMS 请求 zygote 再 fork 出 App 进程", "Activity 完成绘制，桌面可见"]</script>
 <p>手指按住电源键，PMIC 把各路电压依次拉起来，复位信号被拉高的那一纳秒，CPU 还不知道什么是内存——DDR 没初始化、没有栈、没有堆，连一条 <code>C</code> 函数都调不了。它只能从复位向量跳进固化在 SoC 里的几十 KB 的 BootROM。把镜头停在这里：整台手机此后所有的「信任」，都是从这几十 KB、物理上再也改不了的代码开始的。</p>
 <p>接下来的十几秒是一场接力：每一级跑起来后，先验证下一级的签名，再把控制权交出去。只要中间有一级说「对不上」，链子就断在那一拍。与其背八个阶段的名字，不如盯住每一拍里那个「谁验谁、验不过会怎样」的动作。</p>
-<h2>验签这一下，到底比对了什么</h2>
+<h2 id="sec-15">验签这一下，到底比对了什么</h2>
 <ol><li><strong>BootROM 读熔丝</strong> → 对 SoC 内一次性可编程的 efuse → 取出出厂时烧死的公钥哈希 → 结果：手里有了一把「信任根」，它不在磁盘上，改不动。</li><li><strong>BootROM 读下一级镜像头</strong> → 对 XBL/SBL 镜像 → 取出签名与公钥，先用 efuse 哈希核对公钥是否被换过 → 结果：公钥是原厂的那把，才继续。</li><li><strong>BootROM 算哈希并验签</strong> → 对镜像正文 → 用公钥解出签名里的摘要，与自己算的摘要逐字节比 → 结果：一致就跳进去执行，不一致直接停在这里，屏幕全黑。</li><li><strong>abl 接棒</strong> → 对 boot.img 与 vbmeta → 再做一次 AVB 校验，把 <code>androidboot.verifiedbootstate=</code> 拼进内核命令行 → 结果：一个带着「本次启动是否可信」结论的 cmdline 被递给了内核。</li><li><strong>内核把 cmdline 收好</strong> → 对 <code>/proc/cmdline</code> → 原样保存这串参数 → 结果：这个结论第一次落到了普通世界能读到的地方。</li></ol>
 <p>这里最容易记反的是方向：<strong>abl 是值的产生者，它写 cmdline；init 是值的翻译者，它把 cmdline 变成属性</strong>。BootROM 那一步则连「属性」这个概念都还不存在——它只有熔丝和一段验签代码。</p>
-<h2>一条 cmdline 是怎么变成 ro.boot.* 的</h2>
+<h2 id="sec-16">一条 cmdline 是怎么变成 ro.boot.* 的</h2>
 <ol><li><strong>内核启动</strong> → 对收到的一长串参数 → 原样挂到 <code>/proc/cmdline</code> → 结果：<code>adb shell cat /proc/cmdline</code> 能逐字看到它。</li><li><strong>init 作为 PID 1 起来</strong> → 对 cmdline 里所有 <code>androidboot.*</code> 键值对 → 逐个解析 → 结果：<code>androidboot.verifiedbootstate=green</code> 被识别成一个待设的属性。</li><li><strong>init 写属性区</strong> → 对共享的 property area → 把键名换成 <code>ro.boot.verifiedbootstate</code> 并写入 → 结果：<code>getprop ro.boot.verifiedbootstate</code> 第一次有了值。</li><li><strong>上层开读</strong> → 对 zygote、system_server、App → 通过 property 接口读到这个只读值 → 结果：Play Integrity、检测 SDK、Attestation 全都拿它当「系统自述」用。</li></ol>
 <p>于是同一份事实在三个地方有三个形态：熔丝里的哈希、cmdline 里的字符串、属性区里的键值对。伪造者往往只改最后一层，却忘了前两层还在那儿——这就是后面所有交叉校验能成立的原因。</p>
-<h2>动手：把这条链从头到尾摸一遍</h2>
+<h2 id="sec-17">动手：把这条链从头到尾摸一遍</h2>
 <div class="code">
 <div class="code-title">从 cmdline 到属性的三段采样</div>
 <pre><code>adb shell cat /proc/cmdline                       # 看 abl 到底拼了什么进来

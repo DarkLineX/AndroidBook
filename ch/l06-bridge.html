@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L06</span><h1>Binder、FD 与 linker 账本收口</h1><p class="ch-en">bridge detach、mmap/FD 生命周期、link_map、solist、sonext、module counter</p></div>
 <p class="lead">“看不见”是一致性问题：所有账本必须讲同一个故事。</p>
-<h2>6.1 四本账</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>隐藏做得好不好，不看“有没有藏住某一个东西”，而看<strong>“所有账本是不是在讲同一个故事”</strong>。</p><p>系统里有四本账：Binder 的引用账、文件描述符的账、linker 的加载账、以及模块自己的计数账。你从第一本账里删掉一笔，另外三本还留着，一交叉比对就露馅。</p><p>这一章讲这四本账分别记什么、三个“收口”动作（把该对齐的对齐、该延后的延后、该拆的拆）、以及怎么用三个方向互相验证。“看不见”从来不是“删掉”，而是“一致”。</p></div></aside>
+<h2 id="sec-1">6.1 四本账</h2>
 <figure>
 <img src="../assets/l_l06.png" alt="图 L6-1" width="1080">
 <figcaption><b>图 L6-1</b><span>四本账与三个收口动作</span></figcaption>
@@ -110,9 +111,9 @@
 <tr><td>linker</td><td>solist、link_map、sonext</td><td>dl_iterate_phdr</td></tr>
 <tr><td>module counter</td><td>加载计数、引用计数</td><td>内部状态</td></tr>
 </tbody></table></div>
-<h2>6.2 三个收口动作</h2>
+<h2 id="sec-2">6.2 三个收口动作</h2>
 <ol><li><strong>bridge detach</strong>：摘掉不该存在的 Binder 代理，并处理好死亡通知。</li><li><strong>mmap / FD 生命周期</strong>：映射与 fd 必须成对存在、成对消失。</li><li><strong>链表缝合</strong>：摘节点前后都要修 <code>prev</code> / <code>next</code>，防止遍历崩溃。</li></ol>
-<h2>6.3 三向验证</h2>
+<h2 id="sec-3">6.3 三向验证</h2>
 <p>同一本账，用三种方式验证：正向遍历、反向遍历、计数核对。任何一项对不上，就说明没收干净。</p>
 <div class="code">
 <div class="code-title">验证脚本骨架</div>
@@ -123,9 +124,10 @@ assert n1 == n2 == n3, f&#x27;{n1} {n2} {n3}&#x27;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>风险提示：改链表是最容易“今天没事、明天崩”的操作。务必在单线程窗口期做，并保留“改失败就回滚”的路径。</div></aside>
-<h2>6.10 本章自测</h2>
+<h2 id="sec-4">6.4 本章自测</h2>
 <ul><li>四本账分别怎么查？</li><li>为什么摘链表节点要同时修 prev 和 next？</li><li>三向验证能发现哪类问题？</li><li>bridge detach 为什么还要处理死亡通知？</li></ul>
-<h2>6.5 深入：为什么“摘链表”比“改字段”危险</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改一个字段，影响范围就在那个结构里。把节点从链表上摘掉，等于让所有顺着这条链走的人都看不见它——包括系统自己。</p><p>系统一旦在遍历时发现链断了，轻则报错，重则直接崩。这一节讲这条风险的形状，读完你处理「这东西必须从账本上消失」时，会先想有没有更温和的做法。</p></div></aside>
+<h2 id="sec-5">6.5 深入：为什么“摘链表”比“改字段”危险</h2>
 <p>改字段只影响“读这个字段的人”；摘链表会影响“正在遍历链表的人”。如果遍历者已经把 <code>next</code> 读到寄存器里，你这时候释放了下一个节点，它下一次解引用就踩空。</p>
 <div class="tbl"><table>
 <thead><tr><th>操作</th><th>影响范围</th><th>风险</th></tr></thead><tbody>
@@ -133,9 +135,10 @@ assert n1 == n2 == n3, f&#x27;{n1} {n2} {n3}&#x27;</code></pre>
 <tr><td>摘链表节点</td><td>所有遍历者</td><td>高（需同步）</td></tr>
 <tr><td>释放节点</td><td>所有持有引用者</td><td>最高</td></tr>
 </tbody></table></div>
-<h2>6.6 实战：安全摘链的顺序</h2>
+<h2 id="sec-6">6.6 实战：安全摘链的顺序</h2>
 <ol><li>先让“新加入”停止（阻止并发插入）。</li><li>等当前遍历结束（或用 RCU 的宽限期）。</li><li>修改 <code>prev-&gt;next</code> 与 <code>next-&gt;prev</code>。</li><li>确认遍历者已离开，再释放。</li></ol>
-<h2>6.7 原理推演：为什么“账本一致”比“单点隐藏”更难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>藏一处痕迹，只要那一处不出现在别人眼前就行。可系统里有好几本账，每本都在记自己那一份，而且它们会互相对照：这边少一个，那边多一个，一对就露。</p><p>所以难的不是「藏」，而是「让所有账本同时说同一套话」。这一节讲这几本账各自的记法，读完你会先写对账脚本，再动手改——先能看见差异，才谈得上消掉差异。</p></div></aside>
+<h2 id="sec-7">6.7 原理推演：为什么“账本一致”比“单点隐藏”更难</h2>
 <p>因为每一本账都有自己的“计数规则”。你可以让一本账看起来干净，但要同时让四本账“互相印证”，就必须理解每一条规则的细节——而这正是工程量所在。</p>
 <div class="tbl"><table>
 <thead><tr><th>账本</th><th>计数规则</th><th>容易漏的点</th></tr></thead><tbody>
@@ -145,7 +148,8 @@ assert n1 == n2 == n3, f&#x27;{n1} {n2} {n3}&#x27;</code></pre>
 <tr><td>module counter</td><td>引用计数</td><td>并发增减</td></tr>
 </tbody></table></div>
 <p>实务建议：写一个“对账脚本”，把四本账的关键数字打出来，改动前后各跑一次。</p>
-<h2>6.8 数据细节：三向验证的输出</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>验证「账本对不对」，不能只顺着数一遍，得正着数、反着数、再跟另一本账对一次，三个数都一样才算过。</p><p>这一段给的就是这个输出长什么样。它的用处是当模板：你自己写对账脚本时照这个格式打，一眼就能看出哪一项对不上。</p></div></aside>
+<h2 id="sec-8">6.8 数据细节：三向验证的输出</h2>
 <div class="code">
 <div class="code-title">对账输出示例</div>
 <pre><code>solist forward : 42
@@ -154,7 +158,8 @@ module counter : 42
 =&gt; OK</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.9 深入：Binder 代理对象为什么难清理</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个代理可能同时被好几方拿着：你的代码、系统服务、别的进程。你只能清掉自己手上那份，别人手上那份你既看不到也收不回。</p><p>这一节讲这个困境。读完你对「清理干净」这个词会有更现实的预期，也会知道该从哪一方入手才有效。</p></div></aside>
+<h2 id="sec-9">6.9 深入：Binder 代理对象为什么难清理</h2>
 <p>因为一个 Binder 代理可能被多方持有：你的代码、系统服务、甚至别的进程。你只能清理“你自己创建的”那一份，而“别人持有的”你无从得知。</p>
 <div class="tbl"><table>
 <thead><tr><th>持有者</th><th>能否清理</th><th>说明</th></tr></thead><tbody>
@@ -163,7 +168,8 @@ module counter : 42
 <tr><td>其他进程</td><td>不能</td><td>完全不可控</td></tr>
 </tbody></table></div>
 <p>所以“隐藏 Binder 痕迹”的正确姿势是“从一开始就不要注册”，而不是“注册了再想办法删掉”。后者几乎不可能做干净。</p>
-<h2>6.12 深入：FD 泄漏的三个典型场景</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>打开的文件描述符用完了不关，数量就一直涨。涨到上限，新的打开全部失败——可报错的地方离真正的原因很远。</p><p>这一节列三个最常见的漏法。读完你看到「莫名其妙打不开文件」时，会先数一下自己开了多少。</p></div></aside>
+<h2 id="sec-10">6.10 深入：FD 泄漏的三个典型场景</h2>
 <ol><li><strong>打开了不关</strong>：异常路径忘记 close。</li><li><strong>fork 继承</strong>：父进程的 fd 被复制到子进程，子进程退出才释放。</li><li><strong>dup 之后只关一个</strong>：引用计数没归零。</li></ol>
 <div class="code">
 <div class="code-title">排查 fd 泄漏</div>
@@ -172,7 +178,7 @@ module counter : 42
 # 上升 = 泄漏</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.11 实战：一份对账脚本的设计</h2>
+<h2 id="sec-11">6.11 实战：一份对账脚本的设计</h2>
 <div class="tbl"><table>
 <thead><tr><th>检查项</th><th>期望</th><th>失败含义</th></tr></thead><tbody>
 <tr><td>solist 双向计数一致</td><td>相等</td><td>链表被改坏</td></tr>
@@ -180,7 +186,7 @@ module counter : 42
 <tr><td>fd 数在基线 ±10%</td><td>是</td><td>有泄漏或有残留</td></tr>
 <tr><td>Binder 服务数与基线一致</td><td>相等</td><td>有残留注册</td></tr>
 </tbody></table></div>
-<h2>四本账，讲了一夜也没对上</h2>
+<h2 id="sec-12">四本账，讲了一夜也没对上</h2>
 <p>框架的隐藏逻辑全部跑完，日志干干净净，字符串抹了，加载器也归位了。可检测库还是报了阳性。把 <code>/proc/self</code> 摊开看才明白：<code>service list</code> 里多了一个没在 AOSP 清单上的 Binder 服务名，<code>/proc/self/fd</code> 里躺着一个指向已删除文件的 fd，<code>dl_iterate_phdr</code> 数出来的 so 比内部计数器少一个，而 <code>link_map</code> 双向链表的 <code>prev</code> 还指着刚被摘掉的节点。<strong>四本账各讲各的故事</strong>，只要有一本对不上，整体就不自洽。</p>
 <p>这就是&#x27;收口&#x27;这个词的来历：隐藏不是一个开关，而是一致性工程。Binder 驱动记着谁注册过服务，内核记着每个 fd，linker 记着 <code>solist</code> 与 <code>sonext</code>，框架自己还记着一份 module counter。你改的不是某一个值，而是<strong>四个不同所有者手里的账页</strong>，它们必须同时翻到同一页。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_binder">
@@ -211,13 +217,14 @@ module counter : 42
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_binder.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["Client 调 Proxy，参数写进 Parcel", "ioctl 发 BC_TRANSACTION，数据进内核", "驱动按 handle 找到目标 BBinder", "目标进程线程池取事务，Stub.onTransact 解包", "结果经 BR_REPLY 回到 Proxy，调用返回"]</script>
-<h2>四本账各自归谁管</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>“账本”在这里是比喻：系统里有好几份记录，各自记着“现在有哪些模块活着”。它们本来应该一致，但你挂一个模块进去，可能只改了其中一两份，剩下的对不上。</p><p>为什么要拆成四本？因为四份记录由不同的代码维护、更新时机也不同。你只堵住最显眼的那一本，另外三本照样能被人拿去对账。这一节先把四本账各自的主人认清楚，后面才知道该按什么顺序去对。</p></div></aside>
+<h2 id="sec-13">四本账各自归谁管</h2>
 <ol><li><strong>框架 → ServiceManager</strong>：初始化时可能注册一个内部服务或持有代理；收口时要 <code>unlinkToDeath</code> 并丢弃 BpBinder 引用；结果是服务注册表与进程内代理计数同时归零。</li><li><strong>框架 → Binder 驱动的 death recipient</strong>：如果只丢代理不注销死亡通知，对端销毁时回调会打到一个已释放的对象；结果是必须把通知从驱动的 <code>death recipients</code> 链表里一并摘掉。</li><li><strong>框架 → mmap / FD 表</strong>：每块匿名映射配一个 fd（或 <code>memfd</code>），<code>close(fd)</code> 与 <code>munmap</code> 必须成对；结果是 <code>/proc/self/fd</code> 里既不留孤儿 fd，也不留没有 back-file 的匿名段。</li><li><strong>linker → solist / sonext / link_map</strong>：<code>dlclose</code> 会走 <code>soinfo</code> 的卸载流程，手工摘节点要同时修 <code>prev-&gt;next</code> 与 <code>next-&gt;prev</code>；结果是正向遍历、反向遍历都能走通。</li><li><strong>框架 → module counter</strong>：每次加载增减计数，收口后应与正向遍历结果一致；结果是三向核对能互相印证，不留&#x27;只有内部状态知道&#x27;的差额。</li><li><strong>校验器 → 全部账本</strong>：正向计数、反向计数、内部计数三者相等，且 fd 数与映射数之差符合预期；结果是一次可重复的收口断言，而不是靠肉眼看日志。</li></ol>
 <p>第 2 拍常被跳过。死亡通知是驱动侧持有的引用，它的生命周期跟你的 Java 对象毫无关系：对端进程一死，驱动照着链表回调过来，此时对象若已释放，就是一次典型的 use-after-free。所以 <code>bridge detach</code> 的完整语义是&#x27;摘代理 + 摘通知 + 减引用&#x27;，三步缺一不可。</p>
-<h2>收口动作的三道缝</h2>
+<h2 id="sec-14">收口动作要补的五道缝</h2>
 <ul><li><strong>Binder 缝</strong>：<code>service list</code> 与 <code>dumpsys</code> 是外部视角，进程内 <code>BpBinder</code> 引用计数是内部视角；两边都为零才算干净，只清一边会留一个&#x27;查得到但没有持有者&#x27;的幽灵服务。</li><li><strong>FD 缝</strong>：<code>mmap</code> 之后即便 <code>close(fd)</code>，映射依然有效；反过来 <code>munmap</code> 了而 fd 没关，<code>/proc/self/fd</code> 里会留一个指向已删除路径的句柄。两个方向都要走。</li><li><strong>linker 缝</strong>：<code>solist</code> 单向链、<code>sonext</code> 尾指针、<code>link_map</code> 双向链是三份独立视图；改一处不改另外两处，遍历时要么漏节点要么踩野指针。</li><li><strong>窗口缝</strong>：所有摘链操作必须落在单线程窗口（挂起其它线程或持 linker 锁），否则另一个线程正在 <code>dlopen</code> 就会看到半截链表。</li><li><strong>回滚缝</strong>：任何一步失败都要能恢复原状；&#x27;改到一半崩了&#x27;比&#x27;没改&#x27;更糟，因为账本永久不一致。</li></ul>
 <p>这五道缝的排查顺序有讲究：<strong>先查外部视角，再查内部状态</strong>。<code>service list</code>、<code>/proc/self/fd</code>、<code>dl_iterate_phdr</code> 都不需要框架配合，能先给你一个客观事实；等这三样都干净了，再去看内部计数器。反过来做，很容易被一份滞后的内部状态带偏。</p>
-<h2>可复现：把三向核对做成一条命令</h2>
+<h2 id="sec-15">可复现：把三向核对做成一条命令</h2>
 <div class="code">
 <div class="code-title">收口后的现场核对</div>
 <pre><code># 1. Binder 外部视角：应看不到内部服务名

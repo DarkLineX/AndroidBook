@@ -98,11 +98,13 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">01</span><h1>APatch 的 root 原理</h1><p class="ch-en">从 boot.img patch 开始</p></div>
 <p class="lead">先搞清一件事：为什么“改一个镜像文件”就能换来 uid=0。</p>
-<h2>1.1 从“我是谁”开始：uid 到底存在哪</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>手机里有个规矩：谁能干什么，不看你是谁，看系统给你发的那张“工牌”——这张工牌叫 uid。普通 App 的工牌上写着“你是第 10xxx 号客人”，所以你动不了别人的东西；root 干的事，说穿了就是想弄到一张写着“0 号”的工牌。</p><p>这一章讲 APatch 是怎么弄到这张工牌的。它不走“偷一张”的路子，而是直接改开机时加载的那份内核镜像——相当于在保安上岗之前，先把保安手册改了一页。读完你应该能说清：改的是哪个文件、改了之后凭什么能生效、以及为什么这么改会被系统的“防篡改”机制盯上。</p></div></aside>
+<h2 id="sec-1">1.1 从“我是谁”开始：uid 到底存在哪</h2>
 <p>Android 的权限模型本质上很简单：内核里每个进程都挂着一个 <code>cred</code> 结构，里面写着 uid、gid、能力集。系统里所有“你能不能干这件事”的判断，最后都要回到这个结构上。所以“拿到 root”这句话翻译成内核语言，就是一句话：<strong>让某个进程的 cred 里，uid 变成 0</strong>。</p>
 <p>剩下的所有技术，都是围绕“怎么合法地改到那个字段”展开的。用户态方案要在内核的规则里找缝隙；内核态方案则干脆把自己变成规则的一部分。APatch 属于后者。</p>
-<h2>1.2 boot.img 是什么</h2>
-<p>boot.img 是一个容器，里面按顺序装着几样东西：boot header（描述各段位置与大小）、kernel（压缩过的内核镜像）、ramdisk（一个 cpio 归档，init 与一堆 .rc 文件都在里面）、部分机型还有 second 或 dtb，最后是 AVB footer（40 字节，记录原镜像大小与 vbmeta 的位置，本身不带摘要签名）。</p>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>boot.img 就是手机开机时最先被读进来的那个“启动包”。它里面装着三样东西：一段内核（真正管硬件的代码）、一段极简的文件系统（开机时临时用的工具箱）、以及一张说明表（告诉引导程序每样东西放在哪、多大）。改它，等于改开机的第一步——后面所有程序都跑在它铺好的地基上。</p></div></aside>
+<h2 id="sec-2">1.2 boot.img 是什么</h2>
+<p>boot.img 是一个容器，里面按顺序装着几样东西：boot header（描述各段位置与大小）、kernel（压缩过的内核镜像）、ramdisk（一个 cpio 归档，init 与一堆 .rc 文件都在里面）、部分机型还有 second 或 dtb，最后是 AVB footer（固定 64 字节，记录原镜像大小与 vbmeta 的位置，本身不带摘要签名）。</p>
 <aside class="note"><span class="note-tag">要点</span><div>别把“vbmeta 摘要与签名”算到 footer 头上：footer 只是<strong>一个指针</strong>（magic <code>AVBf</code>、<code>original_image_size</code>、<code>vbmeta_offset</code>、<code>vbmeta_size</code>）。真正的哈希树与签名在 <code>vbmeta</code> 分区里，由它去描述 boot/system 等分区的摘要。</div></aside>
 <div class="tbl"><table>
 <thead><tr><th>组成</th><th>内容</th><th>被谁使用</th></tr></thead><tbody>
@@ -110,23 +112,25 @@
 <tr><td>kernel</td><td>压缩的 Image（gzip / lz4 / zstd）</td><td>kernel 自身解压</td></tr>
 <tr><td>ramdisk</td><td>cpio.gz，init、init.rc、sepolicy 等</td><td>init</td></tr>
 <tr><td>second / dtb</td><td>第二阶段引导、硬件描述</td><td>bootloader / kernel</td></tr>
-<tr><td>AVB footer</td><td>指向 vbmeta 的偏移与大小（本身只有 40 字节，不含摘要）</td><td>bootloader 校验</td></tr>
+<tr><td>AVB footer</td><td>指向 vbmeta 的偏移与大小（固定 64 字节，不含摘要）</td><td>bootloader 校验</td></tr>
 </tbody></table></div>
 <p>关键点在于：<strong>内核启动参数、init 的行为、以及一部分安全策略，都在这个文件里</strong>。改它，等于改了整个系统启动时的“出厂设置”。</p>
-<h2>1.3 传统 Magisk 的思路：动 ramdisk</h2>
+<h2 id="sec-3">1.3 传统 Magisk 的思路：动 ramdisk</h2>
 <p>Magisk 选择动 ramdisk：把 <code>magiskinit</code> 塞进去，让它抢在真正的 init 之前跑，做几件事——挂载模块目录、用 mount 覆盖替换系统文件、启动 <code>magiskd</code> 守护进程、并 patch SELinux 策略让 su 能工作。</p>
 <p>这条路的优点是成熟、生态完整；缺点是痕迹相对多：多出来的进程、mount 记录、被覆盖的文件在 <code>mountinfo</code> 里都能看到，于是隐藏就变成了一场“和检测方比拼谁更细心”的持久战。</p>
-<h2>1.4 APatch 的思路：动 kernel</h2>
+<h2 id="sec-4">1.4 APatch 的思路：动 kernel</h2>
 <p>APatch 把改动点下移了一层：不在 ramdisk 里做文章，而是往<strong>内核</strong>里塞进一段能被调用的代码。它引入了 KPM（Kernel Patch Module）这个概念——一种自带的、轻量的内核模块，由用户态的 loader 加载进内核并执行。</p>
 <figure>
 <img src="../assets/f02_apatch.png" alt="图 1-1" width="1080">
 <figcaption><b>图 1-1</b><span>boot.img 的组成与 APatch 的四步走</span></figcaption>
 </figure>
 <ol><li><strong>解包</strong>：把 boot.img 拆成 kernel 与 ramdisk，取出原始内核镜像。</li><li><strong>打桩</strong>：在内核里定位一个稳定的调用点，写入跳转，或者预留一个 hook 槽位。</li><li><strong>装模块</strong>：把编译好的 .kpm 通过自己的 loader 加载进内核内存，完成重定位与符号绑定。</li><li><strong>提权</strong>：模块代码运行在内核态（EL1），直接改写目标进程的 cred，uid 变 0。</li></ol>
-<h2>1.5 为什么“内核态”这件事这么关键</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>程序分两个“楼层”：楼下是用户态，所有 App 都在这层，做什么都要先打报告；楼上是内核态，可以直接指挥硬件、直接读写任何内存。</p><p>在楼下想改楼上的东西，只能找门缝——门缝会被堵、会被查。而 APatch 是把自己搬到了楼上：它变成了规则的一部分，所以它不需要门缝。代价是它一旦出错，整台机器直接黑屏，没有“这个 App 崩了”这种温和结局。</p></div></aside>
+<h2 id="sec-5">1.5 为什么“内核态”这件事这么关键</h2>
 <p>因为内核态不需要“请求许可”，它就是许可本身。用户态的一切伪装——改名、改路径、改返回值——都要经过内核这一层；而如果改动发生在内核里，那么所有来查询的人，看到的都是“内核说的事实”。</p>
 <blockquote>用户态 root 靠“骗”，内核态 root 靠“本来就是”。</blockquote>
-<h2>1.6 代价：AVB 与三绿</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「我能改」和「改完还能用」是两件事。系统有一套校验机制，专门检查「系统被没被动过」，而这类改动恰恰会被它看出来。</p><p>所以代价不是技术难度，而是「会亮起一盏灯」。这一节讲这盏灯是什么、亮了会有什么后果。读完你评估一个 root 方案时，会先问「它动了哪一层、会不会被发现」，再去问「它稳不稳」。</p></div></aside>
+<h2 id="sec-6">1.6 代价：AVB 与三绿</h2>
 <p>改 boot.img 会破坏 AVB 校验：bootloader 会算哈希、对 vbmeta 验签，对不上就拒绝启动或给出警告。所以 patch 完必须同时处理 vbmeta——要么关掉校验（在 fastboot 侧用 <code>fastboot --disable-verity --disable-verification flash vbmeta vbmeta.img</code> 重刷 vbmeta），要么重新签名（需要自己的密钥，且要改 bootloader 的信任根）。</p>
 <p>这就直接牵出了第 03 章的主题：一旦 boot 状态被标记为“已解锁 / 未验证”，Google 的 Play Integrity 就从 STRONG 掉到 BASIC。想让三绿同时亮，就必须在<strong>证明链</strong>上做文章，而不只是在内核里。</p>
 <div class="tbl"><table>
@@ -138,9 +142,10 @@
 <tr><td>对 AVB 的影响</td><td>需处理 vbmeta</td><td>需处理 vbmeta</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>学习路线建议：先把本章的“boot.img 五段结构”记牢，再读第 02 章的启动过程，最后读第四部 M01（KPM 生命周期）。三章连起来，才是完整的“从镜像到内核执行”的链路。</div></aside>
-<h2>1.7 本章自测</h2>
+<h2 id="sec-7">1.7 本章自测</h2>
 <ul><li>不看资料，画出 boot.img 的五段结构，并说明每段被谁使用。</li><li>用一句话解释“为什么改 kernel 比改 ramdisk 更隐蔽”。</li><li>AVB 校验失败会发生什么？有哪两种处理方式？</li><li>如果目标设备的三绿要求 STRONG，单靠 APatch 能解决吗？为什么？</li></ul>
-<h2>1.8 深入：patch 到底改了哪几个字节</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「改镜像」听起来像改文档，其实是拿尺子量着改：文件里每一段都有固定的位置和长度，动错一个字节，整份文件就废掉。</p><p>这一节就是让你看得见这些位置：哪几个字节是头、哪几个是大小、哪几个是校验。读完你能自己核对一份镜像改得对不对，而不是等刷机失败再回头猜。</p></div></aside>
+<h2 id="sec-8">1.8 深入：patch 到底改了哪几个字节</h2>
 <p>很多人第一次拆开 patched boot.img 时会失望：改了的地方往往只有几十个字节，甚至只是 header 里的几个标志位。因为真正的“载荷”不在 kernel 里，而是在 ramdisk 或另外的数据分区里；kernel 侧只留一个“接应点”。</p>
 <div class="tbl"><table>
 <thead><tr><th>改动位置</th><th>典型内容</th><th>作用</th></tr></thead><tbody>
@@ -150,7 +155,7 @@
 <tr><td>ramdisk 中的 rc</td><td>新增 service 定义</td><td>拉起守护</td></tr>
 </tbody></table></div>
 <p>理解这一点，对“为什么不同机型 patch 方式不一样”就不再困惑了：不同内核版本里可用的“空槽”位置、padding 大小、以及对镜像压缩格式的支持都不一样。</p>
-<h2>1.9 实战步骤：一次完整的 patch 流程</h2>
+<h2 id="sec-9">1.9 实战步骤：一次完整的 patch 流程</h2>
 <ol><li><strong>取镜像</strong>：从官方固件包或设备分区里取出 <code>boot.img</code>（<code>dd if=/dev/block/by-name/boot</code>）。</li><li><strong>解包</strong>：用 <code>magiskboot unpack</code> 拆出 kernel 与 ramdisk，确认内核版本与压缩格式。</li><li><strong>打桩</strong>：定位可用的调用点或 padding，写入跳转与载荷，记录原始字节以便回滚。</li><li><strong>重打包</strong>：<code>magiskboot repack</code> 生成新镜像，记录新旧哈希。</li><li><strong>刷入并验证</strong>：<code>fastboot flash boot</code>，重启后确认 <code>uid=0</code> 可用，同时记录 AVB 状态。</li><li><strong>准备回滚</strong>：保留原始镜像与一键刷回脚本。</li></ol>
 <div class="code">
 <div class="code-title">最小命令序列（示意，路径按机型替换）</div>
@@ -163,9 +168,10 @@ fastboot reboot</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>回滚比成功更重要。刷机前务必确认：原始镜像已备份、fastboot 可用、且知道如何进 recovery。在没备份的情况下动 boot 分区，是新手最常见的“把手机变砖”方式。</div></aside>
-<h2>1.10 常见坑</h2>
+<h2 id="sec-10">1.10 常见坑</h2>
 <ul><li><strong>A/B 分区</strong>：现代设备有两套 boot 槽位，刷错槽位表现为“刷了没反应”。用 <code>fastboot getvar current-slot</code> 确认。</li><li><strong>vendor_boot</strong>：部分机型把 ramdisk 拆到 <code>vendor_boot</code> 里，只刷 boot 不够。</li><li><strong>动态分区</strong>：<code>super</code> 分区里的逻辑分区不能直接 dd，要用 <code>fastbootd</code> 或 <code>lpmake</code> 处理。</li><li><strong>加密与 verity</strong>：<code>dm-verity</code> 开启时，改过的系统分区会导致启动失败，需要同时处理 fstab。</li></ul>
-<h2>1.11 原理推演：从“能改镜像”到“能执行代码”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把镜像改掉，只是改了硬盘上的一串字；机器开机时会不会把这些字读进去、按什么顺序读、读完给谁执行，是另一回事。很多人卡在这里：文件明明改对了，现象却一点没变。</p><p>这一节补的就是中间那一段。读完你能分清「文件被改了」和「代码真的在跑」是两种完全不同的状态，排查时不会拿前者当证据。</p></div></aside>
+<h2 id="sec-11">1.11 原理推演：从“能改镜像”到“能执行代码”</h2>
 <p>这里有一条容易被跳过的逻辑链，值得单独推一遍：改镜像只是“把字节写进去”，而“字节被执行”需要三个条件同时成立——<strong>它必须在可执行的内存里</strong>、<strong>必须有人把控制权交给它</strong>、<strong>它的执行必须不破坏系统既定假设</strong>。</p>
 <div class="tbl"><table>
 <thead><tr><th>条件</th><th>不满足的后果</th><th>怎么满足</th></tr></thead><tbody>
@@ -175,7 +181,8 @@ fastboot reboot</code></pre>
 </tbody></table></div>
 <p>APatch 的“打桩”本质上就是在解决第二个条件：它找到了一个“系统必然会走到”的位置，在那里留下一个跳转。至于第一个条件，kernel 的 text 段本身就是可执行的，所以最省事的做法就是“把载荷塞进 kernel 自己的映射里”。</p>
 <p>这也解释了为什么“改 ramdisk”和“改 kernel”在能力上差别这么大：ramdisk 的东西运行在用户态，受 SELinux 与 capability 的全部约束；而 kernel 里的东西运行在 EL1，约束少了一个数量级。</p>
-<h2>1.12 数据细节：一次 patch 之后，设备上多了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改完之后到底变了什么？不是「能用了」这么模糊的一句话，而是几样能被列举出来的具体东西：多了什么文件、多了什么入口、多了什么权限。</p><p>这张表就是那份清单。它的用处有两个方向：你自己核对改得全不全，或者反过来，据此判断一台陌生设备有没有被动过。</p></div></aside>
+<h2 id="sec-12">1.12 数据细节：一次 patch 之后，设备上多了什么</h2>
 <p>把“新装了一台设备”和“patch 过的设备”放在一起做 diff，能看到的东西比想象中多：</p>
 <div class="tbl"><table>
 <thead><tr><th>观测面</th><th>干净设备</th><th>patch 后</th></tr></thead><tbody>
@@ -186,11 +193,12 @@ fastboot reboot</code></pre>
 <tr><td>进程列表</td><td>标准服务</td><td>可能有 su 守护</td></tr>
 </tbody></table></div>
 <p>这张表的用处是：它告诉你“哪些面本来就不会变”，于是那些变了的面就成了高价值线索。做检测时，优先查“本该稳定却变了”的地方，比遍历所有特征高效得多。</p>
-<h2>1.13 工程权衡：为什么不直接改 syscall 表</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>改系统调用表像把整条路的红绿灯全换掉：动静大、影响所有进程，而且那张表本身形状固定，一改就和预期对不上。相比之下，挑一个点、只改自己需要的那一次调用，面积小得多。</p><p>这一节比的不是「能不能」，而是「面积」：改得越广，越难保证别处不出事，也越难解释痕迹。读完你能判断一个方案是在控风险还是在赌运气。</p></div></aside>
+<h2 id="sec-13">1.13 工程权衡：为什么不直接改 syscall 表</h2>
 <p>新手常问：既然都在内核里了，为什么不直接把 <code>open</code> 的 syscall 换掉？答案有三层。</p>
 <ol><li><strong>性能</strong>：syscall 是所有进程的高频路径，换掉它意味着每次调用都要多走一层。</li><li><strong>风险</strong>：一旦实现有 bug，整个系统立刻不可用（连 shell 都起不来）。</li><li><strong>暴露</strong>：syscall 表是最经典的检测点，几乎所有内核完整性检查都会比对它。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>结论：能在一个“低频、必经、且不被比对”的位置动手，就不要动高频路径。这是内核工程的第一条实践原则。</div></aside>
-<h2>把 su 敲下去之后的一百毫秒</h2>
+<h2 id="sec-14">把 su 敲下去之后的一百毫秒</h2>
 <figure class="anim" data-delay="820" data-n="4" data-key="a_apatch">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -220,13 +228,13 @@ fastboot reboot</code></pre>
 <script type="application/json" class="anim-data">["把 boot.img 拆成各段，取出原始内核", "在内核里定位调用点，写入跳转槽", "loader 把 .kpm 映射、重定位并运行", "模块在 EL1 改写目标进程 cred，uid 归零"]</script>
 <p>想象你正拿着一台刚解锁的机器，屏幕上停着一个终端，<code>$</code> 提示符一闪一闪。你敲下 <code>su</code>，回车。不到一百毫秒，提示符变成了 <code>#</code>。这一百毫秒里没有新文件被写进 <code>/system</code>，也没有哪个守护进程被拉起——真正变的，是内核里某一个进程的<strong>几十个字节</strong>。把镜头放慢，跟着这几十个字节走一遍，APatch 的全部原理就在里面了。</p>
 <p>先把「拿到 root」这句口语拆成内核能听懂的话：每个进程的 <code>task_struct</code> 里挂着一个 <code>cred</code>，<code>cred</code> 里写着 uid。所谓提权，就是让<strong>这个 uid 字段从 2000 变成 0</strong>。麻烦在于用户态根本碰不到 <code>cred</code>——那是内核内存。于是所有 root 方案本质上都在回答同一个问题：怎么让一段跑在内核态（EL1）的代码，替你去改那几个字节。</p>
-<h2>跟着一次提权请求走一遍</h2>
+<h2 id="sec-15">跟着一次提权请求走一遍</h2>
 <ol><li><strong>你在终端敲 `su`</strong> → 对 <code>su</code> 这个二进制 → 发起一次执行 → 结果：一个新进程被 fork 出来，uid 仍是 2000，什么都干不了。</li><li><strong>`su` 找到用户态守护进程 `apd`</strong> → 对 APatch 的 daemon → 通过本地 socket 递上自己的 pid 和想要的身份 → 结果：<code>apd</code> 校验调用方是否落在你允许的超管名单里，不在就直接拒绝。</li><li><strong>`apd` 发出一次 supercall</strong> → 对内核 → 走 APatch 预留的专用调用通道（一个特定编号的 syscall，内核侧的 KPM 早在这个入口上装了钩子）→ 结果：CPU 从 EL0 陷到 EL1，进入了 KPM 的代码。</li><li><strong>KPM 找到目标 `task_struct`</strong> → 对当前进程的 <code>cred</code> → 申请一份副本，把 uid/gid/fsuid/fsgid 全改成 0，补齐 capability 位图，并把 SELinux 的 secid 切到允许的域 → 结果：一份「uid=0」的新身份被原子地挂回进程。</li><li><strong>内核返回用户态</strong> → 对刚才那个 <code>su</code> 进程 → 从系统调用正常返回 → 结果：<code>getuid()</code> 现在是 0，<code>#</code> 提示符出现，一百毫秒结束。</li></ol>
 <p>注意第 4 步改的是<strong>副本</strong>不是原结构：<code>cred</code> 在内核里是引用计数、写时复制的共享对象，直接改原结构会波及所有共享它的线程。规范做法是 <code>prepare_creds()</code> 取副本、改字段、再用 <code>commit_creds()</code> 换上去——这也是内核态代码敢动手却不把系统搞崩的原因。</p>
-<h2>KPM 是怎么住进内核的</h2>
+<h2 id="sec-16">KPM 是怎么住进内核的</h2>
 <ol><li><strong>patch boot.img 时</strong> → 对内核镜像 → 在稳定的调用点上留一个 hook 槽位，并把 KPM loader 一并塞进镜像 → 结果：开机后内核自带一个「能被叫醒的入口」。</li><li><strong>开机、用户态 `apd` 起来后</strong> → 对模块目录下的 <code>.kpm</code> 文件 → 读进内存、再通过 supercall 把这段字节交给内核 → 结果：一段模块代码进入了内核地址空间。</li><li><strong>内核侧重定位</strong> → 对模块里的未解析符号 → 拿内核符号表逐个填上真实地址 → 结果：模块终于能调用 <code>prepare_creds</code>、<code>commit_creds</code> 这些内核函数了。</li><li><strong>跑模块的 init</strong> → 对那个预留的 hook 槽位 → 注册提权回调与 supercall 处理函数 → 结果：从这一刻起，前面那条提权链路才真正接通。</li></ol>
 <p>所以顺序是反直觉的：<strong>不是先有 root 再装模块，而是先让内核带上一个入口，再靠这个入口把模块喂进去，最后模块才把 root 交出来</strong>。开机到 <code>apd</code> 就绪之间的那几秒 <code>su</code> 是无效的，因为槽位还空着。</p>
-<h2>动手：亲眼看见那几十个字节</h2>
+<h2 id="sec-17">动手：亲眼看见那几十个字节</h2>
 <div class="code">
 <div class="code-title">一次提权前后的对照（adb shell）</div>
 <pre><code>adb shell id                                  # 基线：uid=2000(shell)

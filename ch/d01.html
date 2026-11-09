@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">D01</span><h1>DexProtect 的检测逻辑拆解</h1><p class="ch-en">从“查什么”反推“怎么防”</p></div>
 <p class="lead">企业壳不是“一个检测”，而是一套分层叠加的检测流水线。</p>
-<h2>1.1 一套典型的检测流水线</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把企业壳想成「一道很严的门」就错了。它更像机场安检：先进一道便宜的机器，可疑了才叫你去开箱。因为真正的深度检查很贵，全程跑一遍，App 直接卡死。</p><p>这个设计选择本身就泄露了它的弱点：贵的那几道不可能一直开着，只能在启动时、或者关键操作前跑一次。剩下的时间，就是你能干活的时间窗口。</p><p>这一章讲这条流水线怎么排、以及三个设计原则。</p></div></aside>
+<h2 id="sec-1">1.1 一套典型的检测流水线</h2>
 <p>把前面所有章节的检测点按“代价从低到高”排一排，就是企业壳的真实结构：便宜的先跑，贵的只在高风险时才跑；任何一层报警，都会提高后续层的采样率。</p>
 <div class="tbl"><table>
 <thead><tr><th>层</th><th>检测内容</th><th>代价</th><th>误报率</th></tr></thead><tbody>
@@ -109,9 +110,9 @@
 <tr><td>L5 证明</td><td>Key Attestation 一致性</td><td>高</td><td>极低</td></tr>
 <tr><td>L6 行为</td><td>时延分布、调用序列、异常路径</td><td>高</td><td>中</td></tr>
 </tbody></table></div>
-<h2>1.2 它的三个设计原则</h2>
+<h2 id="sec-2">1.2 它的三个设计原则</h2>
 <ol><li><strong>分层叠加</strong>：单点不可信，但六层同时命中就足够了。</li><li><strong>动静结合</strong>：静态规则便宜、覆盖广；动态行为贵、但难绕。</li><li><strong>交叉验证</strong>：不看单个值，看“值之间的关系”是否自洽（见第 03 章的三绿交叉校验）。</li></ol>
-<h2>1.3 对抗的思路：找它的“成本边界”</h2>
+<h2 id="sec-3">1.3 对抗的思路：找它的“成本边界”</h2>
 <p>企业壳必须在“保护强度”与“性能 / 兼容性”之间取平衡。这个平衡点就是突破口：它不可能对每一帧都做 CRC，也不可能对每个方法都做完整性校验——所以“在不被采样到的窗口里做改动”永远是有效的思路。</p>
 <div class="code">
 <div class="code-title">一条实用的分析路径</div>
@@ -122,9 +123,10 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>重要提醒：不要一上来就 hook 检测函数让它返回“安全”。这类“一刀切”最容易被二次校验抓到，因为壳会检查“检测函数是否被改过”。正确做法是<strong>让被检测的事实真的正常</strong>。</div></aside>
-<h2>1.4 本章自测</h2>
+<h2 id="sec-4">1.4 本章自测</h2>
 <ul><li>六层流水线里，哪一层最难绕？</li><li>为什么“动静结合”是必然选择？</li><li>企业壳的成本边界在哪？</li><li>为什么“让检测函数返回安全”是坏主意？</li></ul>
-<h2>1.5 深入：为什么企业壳偏爱“分层 + 加权”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把检测做成一条条独立的判断，每条给一点分，加起来超过阈值就判定。这样任何一条失效，整体还能工作；想加强某一方面，只要调一个权重。</p><p>这一节讲这套结构为什么适合「要长期维护」的产品。读完你看一份检测逻辑时，能看出它的重心压在哪一项上。</p></div></aside>
+<h2 id="sec-5">1.5 深入：为什么企业壳偏爱“分层 + 加权”</h2>
 <p>单一的“是/否”判定太容易被针对：对手只要找到那一个判断点就赢了。而“分层 + 加权”让对手必须同时在多个层面都做到无痕，成本成倍上升。</p>
 <div class="tbl"><table>
 <thead><tr><th>设计</th><th>对手成本</th><th>自身成本</th></tr></thead><tbody>
@@ -132,9 +134,10 @@
 <tr><td>分层加权</td><td>高</td><td>中</td></tr>
 <tr><td>分层 + 动态下发</td><td>很高</td><td>高</td></tr>
 </tbody></table></div>
-<h2>1.6 实战：给一个壳画“检测地图”</h2>
+<h2 id="sec-6">1.6 实战：给一个壳画“检测地图”</h2>
 <ol><li>列出它采集的所有数据（从 hook 点反推）。</li><li>标注每项数据的采集频率与时机。</li><li>找出“没被采集的维度”。</li><li>在这些维度上做改动，而不是正面对抗。</li></ol>
-<h2>1.7 原理推演：为什么企业壳要“反调试优先”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>壳的所有保护都建立在「对手看不见我在干什么」这个前提上。一旦有人能停下来一步步看，加密、混淆、抽取都会被慢慢拆开——只是时间问题。</p><p>所以最划算的一步不是把算法做得更绕，而是先让「看」这件事本身变难。这一节讲这个优先级的道理，读完你看一个壳时会先找它的反调试，而不是先找它的加密算法。</p></div></aside>
+<h2 id="sec-7">1.7 原理推演：为什么企业壳要“反调试优先”</h2>
 <p>因为所有后续检测都建立在“能在目标进程里正常执行”这个前提上。如果对手能随意单步、随意改内存，任何检测逻辑都可以被绕过。所以第一优先级永远是“把调试与注入挡住”。</p>
 <div class="tbl"><table>
 <thead><tr><th>优先级</th><th>目标</th><th>手段</th></tr></thead><tbody>
@@ -144,7 +147,8 @@
 <tr><td>4</td><td>环境判定</td><td>root、模拟器</td></tr>
 </tbody></table></div>
 <p>这也解释了为什么“绕过检测”的第一步永远是“先让调试能跑起来”——不解决这个，后面全免谈。</p>
-<h2>1.8 数据细节：检测点的时间分布</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>企业壳的检测不是均匀铺开的，而是集中在几个时刻：启动早期、关键操作前、以及一些看似随机的点。这张表给的就是这个分布。</p><p>它的用处是决定「什么时候最危险」。知道检测集中在哪几段，你就知道该在哪些时刻格外小心，而不是全程紧绷。</p></div></aside>
+<h2 id="sec-8">1.8 数据细节：检测点的时间分布</h2>
 <div class="tbl"><table>
 <thead><tr><th>时机</th><th>跑什么检测</th><th>说明</th></tr></thead><tbody>
 <tr><td>启动 0~200ms</td><td>反调试、环境</td><td>最密集</td></tr>
@@ -152,7 +156,8 @@
 <tr><td>周期性</td><td>线程/FD 差分</td><td>低频</td></tr>
 <tr><td>退出前</td><td>上报</td><td>汇总</td></tr>
 </tbody></table></div>
-<h2>1.9 深入：为什么“反调试”总是第一个跑</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>后面所有的保护都假设「没人能停下来看」。如果这一条不成立，加密和混淆都只是多花点时间的事。所以它必须最先确认，确认不过就直接退出，后面的活都不用干。</p><p>这一节讲这个先后顺序的道理。读完你看一份壳时会先找这道门在哪，而不是先去啃最厚的那个算法。</p></div></aside>
+<h2 id="sec-9">1.9 深入：为什么“反调试”总是第一个跑</h2>
 <p>因为它保护的是“其他检测能不能正常工作”。如果对手能在你的进程里随便单步、随便改内存，那你后面所有的检测都可以被“改成返回安全”。</p>
 <div class="tbl"><table>
 <thead><tr><th>顺序</th><th>检测</th><th>被绕过的后果</th></tr></thead><tbody>
@@ -162,7 +167,8 @@
 <tr><td>4</td><td>环境</td><td>误判</td></tr>
 </tbody></table></div>
 <p>所以“绕过壳”的第一步永远是“让调试能跑起来”。这一步不通，后面全是盲猜。</p>
-<h2>1.10 深入：加权评分的一个真实参数</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>打分系统里每一项占多少分，不是拍脑袋定的，是从真实样本上试出来的：漏掉的样本多就调高，误判的多就调低。</p><p>这一节给一个具体参数看它怎么起作用。读完你再看别人的评分表时，能看出他的重心压在哪一项上。</p></div></aside>
+<h2 id="sec-10">1.10 深入：加权评分的一个真实参数</h2>
 <div class="code">
 <div class="code-title">一个可以起步的配置</div>
 <pre><code>W = {
@@ -173,7 +179,7 @@ alert = sum(v for k, v in W.items() if hit(k)) &gt;= 45</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>这个阈值（45）的含义是：单个“证明失败”就能报警，但单个“线程多”不行。这就是“加权”的实际效果——让高置信度的信号有更大的话语权。</div></aside>
-<h2>1.11 实战：画出自己的“检测地图”</h2>
+<h2 id="sec-11">1.11 实战：画出自己的“检测地图”</h2>
 <div class="tbl"><table>
 <thead><tr><th>层级</th><th>采集的数据</th><th>采集频率</th></tr></thead><tbody>
 <tr><td>L1</td><td>包名、su 路径</td><td>启动一次</td></tr>
@@ -182,7 +188,7 @@ alert = sum(v for k, v in W.items() if hit(k)) &gt;= 45</code></pre>
 <tr><td>L4</td><td>TracerPid</td><td>周期</td></tr>
 <tr><td>L5</td><td>attestation</td><td>按需</td></tr>
 </tbody></table></div>
-<h2>凌晨一点，测试机还亮着屏</h2>
+<h2 id="sec-12">凌晨一点，测试机还亮着屏</h2>
 <p>测试机上刚装好加固包，logcat 滚得飞快，但没有一行写着「检测到风险」。你把 frida-server 挂上去，脚本刚 attach，界面照常进了主页面，什么都没发生。这不是壳没工作，恰恰相反：它已经把六项数据全采完、打完分，只是把处置动作压到了后面。真正的线索不在界面上，而在时间线上——某些 native 函数只在启动后的第 380 毫秒前后密集跑了一批，之后每 5 秒稀疏地跑一次。你要做的第一件事不是 hook 它返回安全，是把这个节奏量出来。</p>
 <p>把手机横放好，左边开 <code>adb logcat -v time</code>，右边开 <code>frida-trace</code> 的调用时间戳。你会看到检测不是一个开关，而是一条有呼吸的流水线：便宜的动作密集跑，昂贵的动作只在关键操作前跑一次。理解这条节奏比记住任何一条绕过技巧都管用，因为它直接决定了「哪一段窗口里做的改动不会被采样到」。前面把六层按代价排过序，这里要看的是同一套分层在真实时间轴上怎么排队、谁先动手、谁最后才结算。</p>
 <figure class="anim" data-delay="820" data-n="4" data-key="a_detect">
@@ -212,11 +218,12 @@ alert = sum(v for k, v in W.items() if hit(k)) &gt;= 45</code></pre>
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_detect.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["在靶场 App 里写一道具体、可证伪的检测", "干净环境与修改环境各跑一遍，确认差异可复现", "找出检测依赖的事实，让事实本身恢复正常", "换维度交叉校验，把闭环再跑一轮并记录"]</script>
-<h2>采样调度器先动了谁</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>检测和反检测经常最后落到“时间”上：某个操作比正常情况慢了零点几毫秒，就能被判定为被 hook 了。可时间是最难测准的东西——因为操作系统本来就在不停切换线程。</p><p>这一节讲的不是“怎么测更快”，而是“为什么你测到的数字本身就带着噪声”。先承认噪声存在，再谈怎么把它和真实差异分开，这是所有侧信道工作的第一步。</p></div></aside>
+<h2 id="sec-13">采样调度器先动了谁</h2>
 <ol><li><strong>调度器</strong> → 对 <strong>L1 静态项</strong>（包名、<code>su</code> 路径、系统属性、调试开关）→ 在 Application 初始化最开头读一批字符串和 <code>getprop</code> → 结果只是给内部计数器加一个很小的权重，既不写日志也不弹窗。</li><li><strong>调度器</strong> → 对 <strong>进程自身</strong>（<code>/proc/self/maps</code>、<code>/proc/self/task</code>、<code>/proc/self/fd</code>）→ 在启动后约 300~500 毫秒连续采三次 → 结果得到一份「结构基线」，后面每一轮周期采样都拿它当参照，而不是拿一个写死的常量。</li><li><strong>调度器</strong> → 对 <strong>自身代码段</strong> → 只在登录、支付、下发密钥这类关键操作前做一次 CRC → 结果是一次高置信度判定，命中就把计数器直接推过阈值。</li><li><strong>调度器</strong> → 对 <strong>证明链</strong> → 按需向 TEE 请求一次 attestation → 结果不落本地缓存，因为壳自己也怕缓存被改。</li><li><strong>调度器</strong> → 对 <strong>行为时序</strong> → 在后台按 5~30 秒间隔抽样 → 结果用来修正前几层的误报，而不是单独定罪。</li></ol>
-<h2>分数到了以后，事情才刚开始</h2>
+<h2 id="sec-14">分数到了以后，事情才刚开始</h2>
 <ul><li><strong>汇聚器</strong> → 对 <strong>六路返回值</strong> → 按权重求和再和阈值比较 → 结果是一个内部 risk 等级，不是布尔值；等级低时什么也不做，只悄悄提高下一轮采样率。</li><li><strong>处置器</strong> → 对 <strong>risk 等级</strong> → 不立刻退出进程，而是把动作挂到「下一个关键操作」上 → 结果是用户看到的现象变成「登录偶发失败」「某个按钮点了没反应」，而不是干净利落的闪退。</li><li><strong>上报器</strong> → 对 <strong>设备指纹与命中项</strong> → 攒够一批才发 → 结果是你在本地抓包时往往看不到「一次检测就一次上报」，容易误判成检测根本没触发。</li><li><strong>规则器</strong> → 对 <strong>采样率与阈值</strong> → 收到服务端配置后热更新 → 结果是同一台机器、同一个 APK，隔一天的行为可能完全不同。</li></ul>
-<h2>把节奏量出来：一次可复现的观测</h2>
+<h2 id="sec-15">把节奏量出来：一次可复现的观测</h2>
 <div class="code">
 <div class="code-title">host 端三行命令，先观测再动手</div>
 <pre><code># 1. spawn 目标，只跟踪名字里带 check / detect 的导出函数

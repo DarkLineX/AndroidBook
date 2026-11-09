@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">M02</span><h1>内核观察面与基础检测处理</h1><p class="ch-en">maps/smaps/map_files、mountinfo/statx、syscall table、调试状态、USB/VPN/netlink/Binder 只读观测</p></div>
 <p class="lead">内核态最大的优势不是能改，而是“能看见用户态看不见的东西”。</p>
-<h2>2.1 六个高价值观测面</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个进程想骗外面很容易：它自己报什么，外面就看到什么。可它报的那份东西，终究是从某个地方抄出来的——抄的那份它改不了。</p><p>这就是为什么「从内核看」和「从进程里看」结论会不一样：一个看的是账本，一个看的是账本的摘要。对不上，就说明有人动过摘要。</p><p>这一章列六个高价值的观测面（内存映射、挂载信息、系统调用表、调试状态、设备与网络、Binder 记录），并解释一个原则：<strong>优先只读</strong>。只读不改，既不会被检测到，也不会把系统搞崩。</p></div></aside>
+<h2 id="sec-1">2.1 六个高价值观测面</h2>
 <figure>
 <img src="../assets/m02_observe.png" alt="图 M2-1" width="1080">
 <figcaption><b>图 M2-1</b><span>六类只读观测与对应的异常表现</span></figcaption>
@@ -112,9 +113,10 @@
 <tr><td>调试状态</td><td>TracerPid、ptrace 标志</td><td>被调试进程</td></tr>
 <tr><td>USB/VPN/netlink</td><td>外设与网络</td><td>异常连接、代理</td></tr>
 </tbody></table></div>
-<h2>2.2 为什么优先“只读”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「看一眼」和「改一下」的风险差得很远：看只是读，改要写，写就可能把系统弄崩、把状态弄脏。</p><p>所以在内核里做事，第一原则是能不写就不写。这一节讲这条原则，读完你设计检测时会先想「这个信息能不能只读着拿」，而不是一上来就改。</p></div></aside>
+<h2 id="sec-2">2.2 为什么优先“只读”</h2>
 <p>读不会引起崩溃，也不会留下“被改过”的痕迹。等你确认了异常，再决定要不要动手——这个顺序能避免 90% 的“改完才发现方向错了”。</p>
-<h2>2.3 syscall table 的两种用法</h2>
+<h2 id="sec-3">2.3 syscall table 的两种用法</h2>
 <ol><li><strong>观测</strong>：对比表项与预期符号地址，发现被替换的项。</li><li><strong>利用</strong>：替换某个 syscall 的入口，实现全局拦截（这是最“重”的一类 hook，痕迹也最明显）。</li></ol>
 <div class="code">
 <div class="code-title">检测 syscall 表是否被改</div>
@@ -126,9 +128,10 @@ for (int i = 0; i &lt; NR_syscalls; i++) {
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意：不同内核版本 syscall 表的组织方式不同（有的用数组，有的用跳转表 / 分段），写死结构会直接踩坑。先 dump，再决定怎么读。</div></aside>
-<h2>2.4 本章自测</h2>
+<h2 id="sec-4">2.4 本章自测</h2>
 <ul><li>六个观测面里，哪个最能揭示“内容与身份不符”？</li><li>为什么优先只读观测？</li><li>syscall 表被替换有什么特征？</li><li>如果目标内核用了不同的 syscall 组织方式，你怎么适配？</li></ul>
-<h2>2.5 深入：map_files 为什么能戳穿伪装</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>每个进程的内存段在系统里都有一条记录，指向它背后的那个文件。有些伪装手法只改了「进程自己看到的那份说明」，却没动这条记录。</p><p>于是两边一对，谁在说谎立刻清楚。这一节讲这条记录怎么读，读完你多了一条成本极低、但很难被糊弄的判据。</p></div></aside>
+<h2 id="sec-5">2.5 深入：map_files 为什么能戳穿伪装</h2>
 <p><code>/proc/pid/map_files/&lt;start&gt;-&lt;end&gt;</code> 是一个符号链接，指向“这段映射对应的真实文件”。它绕过了路径层面的伪装——即使你在 maps 里把路径改成了 <code>/system/lib64/libc.so</code>，<code>map_files</code> 仍然指向真实的 inode。</p>
 <div class="code">
 <div class="code-title">对比两个视图</div>
@@ -144,7 +147,8 @@ ls -l /proc/self/map_files/ | grep libc
 <tr><td>smaps</td><td>VMA + 统计</td><td>较难</td></tr>
 <tr><td>pagemap</td><td>页表</td><td>很难</td></tr>
 </tbody></table></div>
-<h2>2.6 原理推演：为什么“内核视角”能看到用户态看不到的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>用户态程序看世界，靠的是系统替它整理好的几份摘要：这个进程有哪些内存段、开了哪些文件。这些摘要本身就是可以被改的。</p><p>内核看的是原始记录：页表怎么指的、对象还在不在链上。摘要能骗，原始记录不能。这一节讲这种「降一个视角」的差别，读完你写检测时会知道该把哪一条判据放到内核侧去问。</p></div></aside>
+<h2 id="sec-6">2.6 原理推演：为什么“内核视角”能看到用户态看不到的</h2>
 <p>因为用户态的一切观测，都是“内核把某些信息格式化后给你”。而内核自己可以直接读数据结构——没有格式化、没有过滤、也没有“按你的 namespace 裁剪”。</p>
 <div class="tbl"><table>
 <thead><tr><th>信息</th><th>用户态可见</th><th>内核态可见</th></tr></thead><tbody>
@@ -154,7 +158,8 @@ ls -l /proc/self/map_files/ | grep libc
 <tr><td>task 的 cred</td><td>部分</td><td>全部</td></tr>
 </tbody></table></div>
 <p>这就是为什么“内核级检测”比“App 级检测”强：它不受“被检测者能改什么”的限制。</p>
-<h2>2.7 数据细节：遍历所有 task 的正确姿势</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>在内核里把所有进程过一遍，看着简单，其实有讲究：要不要加锁、能不能睡眠、拿到之后能不能一直用。姿势不对会偶发崩溃。</p><p>这张表把这几个讲究列出来。它的用处是让你第一次写就能写对——这类问题一旦写错，往往要跑很久才复现一次。</p></div></aside>
+<h2 id="sec-7">2.7 数据细节：遍历所有 task 的正确姿势</h2>
 <div class="code">
 <div class="code-title">必须在 RCU 保护下</div>
 <pre><code>rcu_read_lock();
@@ -165,7 +170,8 @@ rcu_read_unlock();</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>常见错误：在循环里 <code>sleep</code> 或做可能睡眠的操作。RCU 读侧临界区不能睡眠，否则会死锁或读到已释放的对象。</p>
-<h2>2.8 深入：smaps 里哪些字段最有用</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这个文件把每个内存段的情况列成一大张表：多大、什么权限、背后是哪个文件、有多少页真的在物理内存里。字段很多，大部分你一辈子用不上。</p><p>这一节挑出真正有用的那几个。读完你查内存相关的问题时，不会在一屏几十行里找花眼。</p></div></aside>
+<h2 id="sec-8">2.8 深入：smaps 里哪些字段最有用</h2>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>含义</th><th>异常信号</th></tr></thead><tbody>
 <tr><td>Rss / Pss</td><td>驻留内存</td><td>与预期不符</td></tr>
@@ -174,7 +180,8 @@ rcu_read_unlock();</code></pre>
 <tr><td>VmFlags</td><td>映射标志</td><td>出现不该有的标志</td></tr>
 </tbody></table></div>
 <p><code>VmFlags</code> 特别有用：它能告诉你“这段是不是可执行、是不是共享、是不是被锁定”。很多异常映射在 <code>VmFlags</code> 上比在权限位上一目了然。</p>
-<h2>2.9 深入：syscall 表在不同内核上的形态</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这张表是「编号 → 处理函数」的对照。不同内核版本、不同架构，表的形状和内容都可能变：多几个、少几个、顺序调整。</p><p>所以按固定偏移去读它，换个设备就错。这一节讲几种形态的差别，读完你会先确认「这台机器上是哪一种」再动手。</p></div></aside>
+<h2 id="sec-9">2.9 深入：syscall 表在不同内核上的形态</h2>
 <div class="code">
 <div class="code-title">三种常见形态</div>
 <pre><code>// 1. 经典数组
@@ -185,7 +192,7 @@ sys_call_table[NR_syscalls]
 <button class="copy" type="button">复制</button>
 </div>
 <p>写“检测 syscall 表”的代码前，先 dump 一下当前内核的实际结构。写死结构是最常见的失败原因。</p>
-<h2>2.10 实战：只读观测的一个完整例子</h2>
+<h2 id="sec-10">2.10 实战：只读观测的一个完整例子</h2>
 <div class="code">
 <div class="code-title">统计“匿名可执行映射”的数量</div>
 <pre><code>// 遍历 mm-&gt;mmap，检查 (vm_flags &amp; VM_EXEC) &amp;&amp; !vma-&gt;vm_file
@@ -196,10 +203,10 @@ pr_info(&quot;anon exec mappings: %d\n&quot;, n);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>写成“统计”而不是“判定”，是为了先拿到数据分布。有了分布，才知道阈值该定在哪。</div></aside>
-<h2>把探针放到 proc 的上游</h2>
+<h2 id="sec-11">把探针放到 proc 的上游</h2>
 <p>检测线程正一行行读自己的 <code>/proc/self/maps</code>，把每个 r-xp 段的 CRC 记下来；另一条线程翻着 <code>map_files</code> 核对路径，再看一眼 <code>TracerPid</code>。这些动作在用户态看起来天衣无缝。把视角降到 EL1：你能看到它读之前内核遍历的 <code>mm-&gt;mmap</code> 链表，能看到 VMA 背后真实的 <code>vm_file</code> 与 <code>inode</code>，也能看到它自己看不到的 <code>task-&gt;ptrace</code> 与 per-task 的调试状态。<strong>观测面比被观测者高一层，这就是内核态最实在的优势</strong>。</p>
 <p>而且这层优势几乎免费：读不会改变对象，不会制造“被改过”的痕迹，也不会让目标进程崩。先把六个面各采一份快照，确认异常落在哪一面，再决定要不要动手——顺序反过来，最容易在错误的方向上改出一堆难以回退的状态。</p>
-<h2>一次 maps 读取，六个可截点</h2>
+<h2 id="sec-12">一次 maps 读取，六个可截点</h2>
 <ol><li><strong>检测线程 → 对 /proc/self/maps</strong>：发起 <code>open</code>，proc 层为它建 <code>seq_file</code> 并绑到该 pid 的 <code>mm</code>，结果是接下来每次 <code>read</code> 都从这张 VMA 链表生成文本；注意 <code>seq_file</code> 分段输出，一次读到的可能只是半张表。</li><li><strong>内核 → 对 mm-&gt;mmap 链表</strong>：逐项取 <code>vm_start</code>、<code>vm_end</code>、<code>vm_flags</code>、<code>vm_file</code>、<code>vm_pgoff</code>，结果是拼出 <code>/proc/pid/maps</code> 的每一行；在这里读 <code>vm_file</code> 是否为 NULL，就能把匿名可执行段与文件映射段分开，这是用户态文本里最容易被伪装的一列。</li><li><strong>你的只读 kprobe → 对 show_map_vma 一类生成函数</strong>：记录入参与返回的行内容而不修改，结果是提前知道“检测方即将看到什么”；回调里不能睡眠、不能分配大内存、不能长时间持锁。</li><li><strong>检测线程 → 对 /proc/self/map_files</strong>：用映射区间名反查 fd 与 <code>dentry</code>，结果是拿到“路径文本对应的真实文件”；若这里给出的 inode 与 maps 行里的路径/dev 对不上，就是路径被伪造的直接证据。</li><li><strong>内核 → 对 mountinfo 与 statx</strong>：给出挂载树、<code>s_dev</code> 与 <code>i_ino</code>，结果是给每条映射补上“文件身份”；dev+inode 比路径字符串稳定得多，也是交叉校验的锚点。</li><li><strong>检测线程 → 对 syscall table、TracerPid、netlink/Binder 状态</strong>：比对入口地址、非零的 tracer 与异常连接，结果得出“是否被替换、是否被调试、是否被代理”的结论；你的观测点就放在它取数之前。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>观测面</th><th>内核里的真实数据源</th><th>用户态可见性</th><th>异常信号</th></tr></thead><tbody>
@@ -210,11 +217,11 @@ pr_info(&quot;anon exec mappings: %d\n&quot;, n);</code></pre>
 <tr><td>调试状态</td><td>task-&gt;ptrace、TracerPid、ptrace_scope</td><td>可见</td><td>TracerPid 非零</td></tr>
 <tr><td>USB / VPN / netlink / Binder</td><td>net ns、sk、binder_proc</td><td>部分可见</td><td>异常连接与代理</td></tr>
 </tbody></table></div>
-<h2>只读观测也要按规矩来</h2>
+<h2 id="sec-13">只读观测也要按规矩来</h2>
 <p>很多人以为“只读”就等于零代价，其实不然。<code>seq_file</code> 的 <code>start/stop</code> 之间、kprobe 的回调里、中断上下文里，都有“不能睡眠”这条硬约束；在高频遍历的 VMA 路径上打一条 printk，可能把一次几毫秒的 maps 读取拖成几十毫秒，进而让基于超时的检测换个分支。观测代码本身会改变时序，所以第一步永远是<strong>先记差异，再动手改</strong>，而且差异要在同一台机器同一套用例上复现三次才算数。</p>
-<h2>把一次差异做成可复现的三拍</h2>
+<h2 id="sec-14">把一次差异做成可复现的三拍</h2>
 <ol><li><strong>你 → 对干净环境</strong>：同一台机器、同一套用例跑三次，记录六个观测面的基线值，结果是得到一张带波动范围的对照表；没有基线，后面所有“异常”都只是感觉。</li><li><strong>你 → 对修改环境</strong>：只改一个变量再跑三次，把差异落到具体某一面某一行，结果是能说出“是 maps 的匿名段多了两条”而不是“内存不太对”。</li><li><strong>你 → 对结论</strong>：换一台同型号设备复跑，差异仍在同一位置才算成立；只在单台出现的差异，多半是时序或缓存噪声。</li></ol>
-<h2>可复现实验：抓一次读取，验证两条路径自洽</h2>
+<h2 id="sec-15">可复现实验：抓一次读取，验证两条路径自洽</h2>
 <div class="code">
 <div class="code-title">只读观测与交叉校验</div>
 <pre><code># 1. 确认符号可解析（记下原值，实验后恢复）

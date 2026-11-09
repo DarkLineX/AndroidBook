@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F06</span><h1>Frida 默认 Hook</h1><p class="ch-en">pthread registry、module registry、signal/sigaction、ExitMonitor、child gating</p></div>
 <p class="lead">agent 一加载，就有一批“基础设施级”的 hook 被注册——它们既是能力，也是痕迹。</p>
-<h2>6.1 五项默认设施</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>frida 的 agent 一加载进进程，就自动注册了一批 hook。这些 hook 不是给你用的，是它自己维持功能需要的——比如接管线程创建、接管模块加载、接管信号处理。</p><p>问题是：<strong>这些 hook 同时也是最明显的痕迹</strong>。检测方只要检查“这几个系统级接口有没有被动过”，就能知道 frida 在不在，连你的脚本内容都不用看。</p><p>这一章列这五项默认设施、解释为什么它们恰好是检测重点，以及两条出路：关掉它们（会损失功能），或者自己重新实现一套（工作量大但干净）。</p></div></aside>
+<h2 id="sec-1">6.1 五项默认设施</h2>
 <figure>
 <img src="../assets/f_f06.png" alt="图 F6-1" width="1080">
 <figcaption><b>图 F6-1</b><span>五项默认 hook 与它们各自的痕迹</span></figcaption>
@@ -111,14 +112,16 @@
 <tr><td>ExitMonitor</td><td>监控进程退出</td><td>atexit 相关 hook</td></tr>
 <tr><td>child gating</td><td>拦截 fork/exec</td><td>fork 返回路径被改</td></tr>
 </tbody></table></div>
-<h2>6.2 为什么这五项恰好是检测重点</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>检测方不会随便挑几个地方看，他们挑的是「你几乎一定要动的地方」：要执行代码就得有可执行内存、要通信就得有连接、要常驻就得有线程。</p><p>这五项之所以是重点，不是因为它们显眼，而是因为它们躲不开。这一节讲这个逻辑，读完你设计隐藏方案时，会先问「这一项我能不能不动」，而不是「怎么把它藏好」。</p></div></aside>
+<h2 id="sec-2">6.2 为什么这五项恰好是检测重点</h2>
 <p>因为它们是“无论你写什么脚本都会发生”的副作用。检测方不需要知道你在 hook 什么，只要发现这五处之一异常，就足以怀疑。</p>
-<h2>6.3 两条路：关掉，或自建</h2>
+<h2 id="sec-3">6.3 两条路：关掉，或自建</h2>
 <ol><li><strong>关掉</strong>：牺牲能力换安静。比如不做 child gating，就不拦子进程。</li><li><strong>自建最小实现</strong>：只实现你需要的那一小部分，不加载整套 Gum。这是工程上更彻底的方案（F09）。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>取舍原则：先问“我真的需要这个能力吗”。大多数场景只需要“在某个函数上挂一次”，根本用不到线程注册表与信号接管。</div></aside>
-<h2>6.4 本章自测</h2>
+<h2 id="sec-4">6.4 本章自测</h2>
 <ul><li>五项默认设施分别解决什么问题？</li><li>为什么说它们“无论写什么脚本都会发生”？</li><li>如果只需要 hook 一个函数，最小实现应该包含什么？</li><li>child gating 关掉后会失去什么能力？</li></ul>
-<h2>6.5 深入：module registry 与 linker 账本的差异</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>进程里关于「有哪些库」的记录不止一份：一份是系统加载器记的，一份是这个工具自己记的。两份记的东西不完全一样，覆盖的范围也不同。</p><p>所以「查了系统那份没发现问题」不代表干净。这一节讲两份账的差别，读完你知道该去查哪一份才对应你关心的那件事。</p></div></aside>
+<h2 id="sec-5">6.5 深入：module registry 与 linker 账本的差异</h2>
 <p>Frida 自己维护一份“已加载模块”的列表，用来支持 <code>Module.findBaseAddress</code> 之类的 API。这份列表来自 linker 的遍历，但它是<strong>快照</strong>——如果之后有新的 so 加载，两份账本就会不一致。</p>
 <div class="tbl"><table>
 <thead><tr><th>情况</th><th>module registry</th><th>linker solist</th></tr></thead><tbody>
@@ -126,7 +129,7 @@
 <tr><td>自行 mmap 加载</td><td>无</td><td>无</td></tr>
 <tr><td>运行时 dlopen</td><td>可能滞后</td><td>有</td></tr>
 </tbody></table></div>
-<h2>6.6 实战：怎么判断“某个 so 是不是被 Frida 记录过”</h2>
+<h2 id="sec-6">6.6 实战：怎么判断“某个 so 是不是被 Frida 记录过”</h2>
 <div class="code">
 <div class="code-title">对比两份账本</div>
 <pre><code>// Frida 侧
@@ -137,7 +140,8 @@ Process.enumerateModules().map(m =&gt; m.path)
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>如果系统侧有、Frida 侧没有，说明这个 so 是“后加载”的，或者 Frida 的列表没刷新。这个小差异本身也是一个可用于检测的信号。</div></aside>
-<h2>6.7 原理推演：为什么“默认 hook”是设计选择而非疏忽</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个工具默认替你做很多事，用起来很省，可这些「默认」全都会在目标进程里留下痕迹。作者不是没想到，而是权衡过：不默认做，绝大多数人根本跑不起来。</p><p>所以别把默认行为当bug去骂，要当成一笔已经替你付过的账：它换来了省事，代价是更容易被看见。这一节讲这笔账怎么算，读完你知道哪些默认该关、关掉之后要自己补什么。</p></div></aside>
+<h2 id="sec-7">6.7 原理推演：为什么“默认 hook”是设计选择而非疏忽</h2>
 <p>Frida 的目标是“让脚本作者不用关心底层”。要做到这一点，它必须接管信号（否则崩溃就丢了）、记录线程（否则 pause/resume 做不到）、记录模块（否则 findModule 做不到）。这些能力都有代价，但去掉它们，可用性会大幅下降。</p>
 <div class="tbl"><table>
 <thead><tr><th>能力</th><th>依赖的 hook</th><th>去掉后的后果</th></tr></thead><tbody>
@@ -146,7 +150,8 @@ Process.enumerateModules().map(m =&gt; m.path)
 <tr><td>模块查询</td><td>module registry</td><td>API 失效</td></tr>
 </tbody></table></div>
 <p>所以“低痕迹”方案的本质，是“自己实现一个更小的子集”，而不是“让 Frida 变安静”。</p>
-<h2>6.8 数据细节：最小实现需要多少代码</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个能跑起来的最小实现到底要多少行？这张表给的是量级——不是让你照着抄，而是让你知道「这件事本身有多重」。</p><p>知道量级有实际好处：别人说「几行就能搞定」时，你能判断他说的是最小演示还是可用版本；自己排期时也不会把工作量估得太乐观。</p></div></aside>
+<h2 id="sec-8">6.8 数据细节：最小实现需要多少代码</h2>
 <div class="tbl"><table>
 <thead><tr><th>功能</th><th>最小实现规模</th><th>说明</th></tr></thead><tbody>
 <tr><td>单点 inline hook</td><td>约 100 行</td><td>含跳转与蹦床</td></tr>
@@ -155,7 +160,8 @@ Process.enumerateModules().map(m =&gt; m.path)
 <tr><td>完整替代 Frida</td><td>数万行</td><td>不现实</td></tr>
 </tbody></table></div>
 <p>结论：不要试图替代 Frida，而是“裁剪出你真正需要的那一小块”。</p>
-<h2>6.9 深入：signal 接管为什么必须“链式”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>信号处理是「一个坑一个萝卜」：你占了那个位置，原来的处理函数就被挤掉了。被挤掉的可能是系统自己的、也可能是别的工具的。</p><p>链式的意思是：占位置的同时把原来那个记下来，事情来了先干自己的，再转交给它。这一节讲这套交接怎么做，读完你能避免「用了我的工具，别的功能就失灵」这种连带事故。</p></div></aside>
+<h2 id="sec-9">6.9 深入：signal 接管为什么必须“链式”</h2>
 <p>因为 App 自己可能也注册了信号处理（比如崩溃收集 SDK）。如果你直接替换，就把它的逻辑吃掉了——表现为“崩溃收集失效”或“某些功能异常”。</p>
 <div class="tbl"><table>
 <thead><tr><th>做法</th><th>App 感知</th><th>风险</th></tr></thead><tbody>
@@ -163,7 +169,8 @@ Process.enumerateModules().map(m =&gt; m.path)
 <tr><td>链式调用</td><td>无感</td><td>需保存原 handler</td></tr>
 </tbody></table></div>
 <p>所以正确做法是：保存原 handler，在你的处理函数里先做自己的事，再调用原来的。</p>
-<h2>6.10 深入：ExitMonitor 的实现方式</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>进程退出的时候，如果有东西想「临走前说一句」，就得有人在那儿守着。守的方式有几种，各有各的代价：占资源、抢信号、或者干脆不可靠。</p><p>这一节比较这几种做法。读完你遇到「退出后日志丢了」时，知道问题出在守的方式上，而不是日志本身。</p></div></aside>
+<h2 id="sec-10">6.10 深入：ExitMonitor 的实现方式</h2>
 <p>它通常 hook <code>exit</code> / <code>_exit</code> / <code>abort</code> / <code>pthread_exit</code> 等函数，以及 <code>atexit</code> 注册链。目的是“在进程死之前，把消息发出去”。</p>
 <div class="code">
 <div class="code-title">为什么会漏</div>
@@ -171,7 +178,7 @@ Process.enumerateModules().map(m =&gt; m.path)
 // 所以 ExitMonitor 只能覆盖“正常退出”与“可捕获的异常”</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.11 实战：判断“默认 hook 是否被触发过”</h2>
+<h2 id="sec-11">6.11 实战：判断“默认 hook 是否被触发过”</h2>
 <div class="code">
 <div class="code-title">反查痕迹</div>
 <pre><code># 1. 线程链表里是否多了节点
@@ -180,12 +187,12 @@ ls /proc/self/task | wc -l
 # 3. 模块列表是否与 maps 一致</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>现场：空脚本留下的脚印</h2>
+<h2 id="sec-12">现场：空脚本留下的脚印</h2>
 <p>你写了一个只有一行 <code>console.log(&#x27;empty&#x27;)</code> 的脚本，什么 hook 都没挂，打算先确认通道通不通。注入前后一对比却愣住了：<code>/proc/self/task</code> 平白多了三条线程，maps 里多了两段匿名可执行页，<code>cat /proc/self/status | grep TracerPid</code> 在注入瞬间非 0，连 SIGSEGV 的处理函数指针都不再指向 libc 的默认实现了。</p>
 <p>这些都不是你的脚本干的。<strong>agent 一落地，Gum 就先给自己铺好整套基础设施</strong>：记线程、记模块、接管信号、盯退出、守子进程。对检测方来说这是天大的便宜——它完全不需要知道你 hook 了什么，只要发现“多出来了”，就够立案。换句话说，真正决定痕迹的是“加载了什么运行时”，不是“运行了什么代码”。</p>
-<h2>把空脚本的启动拆成七拍</h2>
+<h2 id="sec-13">把空脚本的启动拆成七拍</h2>
 <ol><li><strong>agent 初始化 → 对 pthread_create / pthread_setname_np → 拦下所有线程创建</strong> → 结果：Gum 的 pthread registry 为每个线程建节点，<code>/proc/self/task</code> 同时多出 JS 线程与 pool 线程。</li><li><strong>agent → 对 linker 的 dlopen / android_dlopen_ext 与 solist → 登记模块</strong> → 结果：module registry 与系统 linker 账本变成两份可以互相核对的清单，差一项就是线索。</li><li><strong>agent → 对 sigaction → 接管 SIGSEGV / SIGABRT / SIGBUS 等</strong> → 结果：崩溃能被转成 JS 异常或规整的 tombstone，但 signal handler 的地址不再属于 libc。</li><li><strong>agent → 对 atexit / exit / _exit → 装 ExitMonitor</strong> → 结果：进程退出时有机会卸载 agent 并 flush 未发完的消息，代价是退出路径被多包了一层。</li><li><strong>host 若启用 child gating → 对 fork / vfork / execve / posix_spawn → 装钩子</strong> → 结果：子进程一出生就被暂停等待注入，fork 的返回路径被改写，时序上多出一段可测的停顿。</li><li><strong>agent → 对 GLib 主循环与线程池 → 建 gmain 上下文</strong> → 结果：多出固定命名的线程，以及若干 pipe / socket FD，名字和数量都相当稳定。</li><li><strong>你的空脚本 → 对 JS 线程 → 只执行一句 console.log</strong> → 结果：前六拍一个不少地全部发生完，脚印早已铺好；写三百行复杂 hook 与写这一行，痕迹完全一样。</li></ol>
-<h2>复现：空脚本的差分实验</h2>
+<h2 id="sec-14">复现：空脚本的差分实验</h2>
 <p>做一次“注入前 / 注入后”的差分，比读十页源码都直观。关键是两次采样必须对准<strong>同一个 PID</strong>、并且在 App 处于同一状态下采；否则你会得到一份空 diff，然后错误地得出“没有痕迹”的结论。</p>
 <div class="code">
 <div class="code-title">基线、注入、再采样</div>

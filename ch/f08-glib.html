@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F08</span><h1>Frida 线程名称处理</h1><p class="ch-en">GLib/Gum 线程命名、/proc/self/task、comm、Thread-N 规范化</p></div>
 <p class="lead">一行 comm 就能暴露你——它只存 15 字节，却是最廉价的检测入口。</p>
-<h2>8.1 名字的四个来源</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Linux 里每个线程都有一个名字，最长 15 个字节，存在 <code>/proc/&lt;pid&gt;/task/&lt;tid&gt;/comm</code> 里。任何进程都能读，不需要任何权限。</p><p>frida 的线程叫 <code>gum-js-loop</code>、<code>gmain</code>、<code>pool-frida</code>。这几乎是最廉价的检测手段：一行 shell 命令，列出所有线程名，看见 gum 就知道 frida 在。</p><p>这一章讲名字有哪四个来源、为什么“改名字”这件事比看起来难（改的时机有窗口期、而且名字之外的字段会互相矛盾）、以及规范化的三条规则。</p></div></aside>
+<h2 id="sec-1">8.1 名字的四个来源</h2>
 <figure>
 <img src="../assets/f_f08.png" alt="图 F8-1" width="1080">
 <figcaption><b>图 F8-1</b><span>线程名的来源与一行检测命令</span></figcaption>
@@ -110,26 +111,27 @@
 <tr><td>GLib 线程池</td><td>g_thread_new</td><td>带默认前缀</td></tr>
 <tr><td>Gum 内部线程</td><td>JS 线程 / pool 线程</td><td>有固定命名风格</td></tr>
 </tbody></table></div>
-<h2>8.2 检测方一行命令</h2>
+<h2 id="sec-2">8.2 检测方一行命令</h2>
 <div class="code">
 <div class="code-title">最廉价的检测</div>
 <pre><code>cat /proc/self/task/*/comm | sort | uniq -c
 # 可疑：gum-js-loop / pool-frida / gmain</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.3 规范化的三条规则</h2>
+<h2 id="sec-3">8.3 规范化的三条规则</h2>
 <ol><li>改名要“像这个 App 自己会起的名字”，而不是像系统线程——系统线程名在 App 进程里反而可疑。</li><li><code>Thread-N</code> 这类默认名必须覆盖，否则一眼假。</li><li>改名只是“看起来对”；线程数量、创建时序、栈大小仍是线索（见 L09）。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>工程细节：改名要在“线程创建后立刻”做，否则中间有一段窗口期会被采样到。如果检测方高频轮询，这个窗口是能抓到的。</div></aside>
-<h2>8.4 本章自测</h2>
+<h2 id="sec-4">8.4 本章自测</h2>
 <ul><li>线程名最长多少字节？存在哪？</li><li>为什么“像系统线程”反而可疑？</li><li>改名之后还剩哪些线索？</li><li>如何验证改名逻辑没有窗口期？</li></ul>
-<h2>8.5 深入：comm 的长度限制带来的连锁问题</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>线程名在系统里有个长度天花板，超了会被截断。截断看着无害，实际会引发一串麻烦：两个不同的名字截完变成同一个、按名字做的判断全部失准。</p><p>这一节讲这个限制从哪来、会影响哪些地方。读完你看到「名字看着对但就是对不上」时，会先怀疑是不是被截了。</p></div></aside>
+<h2 id="sec-5">8.5 深入：comm 的长度限制带来的连锁问题</h2>
 <p>15 字节的限制意味着长名字会被截断。这带来一个有趣的现象：两个不同的线程名可能截断成同一个，于是“按名字统计线程数”会算错。写检测规则时要注意这一点。</p>
 <div class="code">
 <div class="code-title">验证截断</div>
 <pre><code>cat /proc/self/task/*/comm | awk &#x27;{print length($0), $0}&#x27; | sort -rn | head</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.6 实战：一次性规范化所有线程名</h2>
+<h2 id="sec-6">8.6 实战：一次性规范化所有线程名</h2>
 <div class="code">
 <div class="code-title">在 agent 启动时执行</div>
 <pre><code>const re = /^(gum|pool|gmain|frida)/i;
@@ -137,7 +139,8 @@
 // 注意：改名要在“线程刚创建”时做，避免窗口期</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>8.7 原理推演：为什么线程名是“最廉价的检测”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>查一个线程叫什么，只要读一小段文字，不用扫内存、不用算哈希、不用碰权限。成本低到几乎没有，所以它一定是最先被查的那一项。</p><p>反过来，改它也最便宜——但改不干净就会露馅：名字改了，线程数量、栈的位置、创建的顺序还在。这一节讲这条「便宜」的线到底能查多深，读完你不会只改名字就以为过关。</p></div></aside>
+<h2 id="sec-7">8.7 原理推演：为什么线程名是“最廉价的检测”</h2>
 <p>因为它读取成本极低（读 <code>/proc</code> 一个文件）、不需要任何权限、且几乎不可能“没有名字”。对检测方来说，这是性价比最高的第一道筛子。</p>
 <div class="tbl"><table>
 <thead><tr><th>检测手段</th><th>成本</th><th>准确率</th></tr></thead><tbody>
@@ -147,7 +150,8 @@
 <tr><td>栈地址分布</td><td>中</td><td>高</td></tr>
 </tbody></table></div>
 <p>所以“改名”只是第一层；“让 start_routine 与栈看起来正常”才是真正的功夫。</p>
-<h2>8.8 数据细节：常见框架的线程名</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>不同的库给线程起名有各自的习惯：前缀、编号方式、大小写风格。这张表收集了一批常见的。</p><p>它的用处是双向的：看到某个名字能猜出来源；反过来，想让自己起的名字不显眼，就得先知道「正常的一群名字长什么样」。</p></div></aside>
+<h2 id="sec-8">8.8 数据细节：常见框架的线程名</h2>
 <div class="tbl"><table>
 <thead><tr><th>框架</th><th>线程名</th><th>说明</th></tr></thead><tbody>
 <tr><td>Frida</td><td>gum-js-loop / pool-frida</td><td>QJS/V8 与线程池</td></tr>
@@ -155,7 +159,8 @@
 <tr><td>ART</td><td>JDWP / Signal Catcher</td><td>系统线程</td></tr>
 <tr><td>应用</td><td>各业务自定义</td><td>通常带业务前缀</td></tr>
 </tbody></table></div>
-<h2>8.9 深入：线程名的“家族特征”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个工具创建的线程，名字往往有共同的形状：前缀一样、编号连号、风格一致。这种「家族感」比单个名字更难藏。</p><p>这一节讲怎么看出这种特征。读完你检查自己的方案时，不会只盯着「名字改没改」，而会看「这一群名字放在一起像不像一家人」。</p></div></aside>
+<h2 id="sec-9">8.9 深入：线程名的“家族特征”</h2>
 <p>同一个框架创建的线程，名字往往有共同前缀（<code>gum-</code>、<code>pool-</code>、<code>gmain</code>）。这种“家族特征”比单个名字更可靠——因为改名容易，但“所有线程都改成一致的风格”就很难。</p>
 <div class="tbl"><table>
 <thead><tr><th>特征</th><th>检测可靠度</th><th>改名能否消除</th></tr></thead><tbody>
@@ -164,7 +169,8 @@
 <tr><td>命名风格不一致</td><td>中高</td><td>需统一风格</td></tr>
 </tbody></table></div>
 <p>所以“规范化”不只是“改掉可疑名字”，还要“让所有线程的命名风格一致”——比如统一用业务前缀加序号。</p>
-<h2>8.10 深入：线程数量本身也是信号</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个正常 App 的线程数大概在某个范围。突然多出七八个，就算名字全都改得正常，这个「多」本身还是摆在那儿。</p><p>这一节讲这个信号怎么用、又怎么被误判。读完你知道为什么「结构合理」比「名字干净」难做到，也难对付。</p></div></aside>
+<h2 id="sec-10">8.10 深入：线程数量本身也是信号</h2>
 <p>即使名字全改对了，线程数量仍然会暴露。一个纯 UI 的 App 通常 10~20 个线程；注入 agent 后往往多 5~10 个。这个差异在“同机型同版本”的基线下非常明显。</p>
 <div class="code">
 <div class="code-title">统计线程数</div>
@@ -174,7 +180,7 @@ cat /proc/self/task/*/comm | sort | uniq -c | sort -rn</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>对策只有两个：<strong>减少线程</strong>（用更轻的运行时）、或<strong>合并到已有线程</strong>（复用业务线程做 JS 调度）。后者风险高（会影响业务），前者是主流方向。</p>
-<h2>8.11 实战：一个线程清单对比表</h2>
+<h2 id="sec-11">8.11 实战：一个线程清单对比表</h2>
 <div class="tbl"><table>
 <thead><tr><th>线程</th><th>干净设备</th><th>注入后</th><th>处理</th></tr></thead><tbody>
 <tr><td>main</td><td>有</td><td>有</td><td>不动</td></tr>
@@ -184,12 +190,12 @@ cat /proc/self/task/*/comm | sort | uniq -c | sort -rn</code></pre>
 <tr><td>pool-frida</td><td>无</td><td>有（多个）</td><td>合并</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>这张表就是“隐藏工作”的待办清单。逐行处理，处理完再复测——比凭感觉改有效得多。</div></aside>
-<h2>现场：十五字节卖了你</h2>
+<h2 id="sec-12">现场：十五字节卖了你</h2>
 <p><code>cat /proc/self/task/*/comm | sort | uniq -c</code> 这条命令花不到两毫秒，不需要 root，不需要任何权限，输出里却端端正正躺着 <code>gum-js-loop</code> 和 <code>pool-frida</code>。检测方什么都没做，只是把每个线程的 comm 读了一遍，就把整个注入现场点名了。更让人憋屈的是：这个字段只有 15 个可用字节，短得几乎写不下什么，却足够写下一个框架名。</p>
 <p>comm 由 <code>pthread_setname_np</code> 或 <code>prctl(PR_SET_NAME)</code> 写入，内核里 <code>TASK_COMM_LEN</code> 是 16，末尾一个字节留给 NUL。它是线程身上最便宜、最不需要权限、也<strong>最不容易“没有”</strong>的字段——你可以没有 maps 里的路径，可以没有 soname，但每个线程一定有个名字。所以改名是隐藏工程的第一层，也仅仅是第一层。</p>
-<h2>把一次改名拆成六拍</h2>
+<h2 id="sec-13">把一次改名拆成六拍</h2>
 <ol><li><strong>Gum 的 JS 线程创建 → 对 pthread_setname_np → 写入 gum-js-loop</strong> → 结果：<code>/proc/&lt;pid&gt;/task/&lt;tid&gt;/comm</code> 立刻可读，这条线程从诞生起就带着标签。</li><li><strong>GLib 线程池 → 对 g_thread_new → 给 pool-frida / gmain 这样的前缀</strong> → 结果：又多出两条可枚举的名字，而且命名风格在几乎所有版本里都一致。</li><li><strong>检测方 → 对 /proc/self/task → 遍历所有 tid 读 comm</strong> → 结果：两毫秒拿到全量名单，零权限、零依赖、零误报门槛。</li><li><strong>你的隐藏代码 → 对新建线程 → 在线程函数第一行调 prctl(PR_SET_NAME) 覆盖 comm</strong> → 结果：名字变成业务名，但“创建”与“改名”之间留了一段真实存在的窗口期。</li><li><strong>检测方若高频轮询 → 对同一个 tid → 恰好在窗口期内采一次</strong> → 结果：抓到原名，改名等于白做；采样频率只要压过你的改名前移量就够了。</li><li><strong>更严的检测 → 对 /proc/&lt;tid&gt;/stat、栈地址、start_routine → 与名字交叉核对</strong> → 结果：只改名字不改其余字段，两份数据自相矛盾，反而比不改更容易被判定为伪造。</li></ol>
-<h2>复现：把窗口期量出来</h2>
+<h2 id="sec-14">复现：把窗口期量出来</h2>
 <p>改名“看起来对了”不算完，得证明<strong>没有任何一帧能采到原名</strong>。下面先用高频采样把窗口期量化，再给出 C 侧的正确姿势：名字在创建前就算好，线程入口第一行立刻覆盖，别拖到初始化完成以后。</p>
 <div class="code">
 <div class="code-title">高频采样 + 入口第一行改名</div>

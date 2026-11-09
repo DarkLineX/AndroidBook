@@ -98,14 +98,16 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">03</span><h1>Android 硬件证明</h1><p class="ch-en">从 TEE 开始到 Google 三绿</p></div>
 <p class="lead">这一章讲的是“无法伪造的东西”，以及当它被绕过时，检测方靠什么翻盘。</p>
-<h2>3.1 TEE：手机里的第二个世界</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>你的手机里其实跑着两个系统：一个是你能看见的 Android，另一个你完全看不见，叫 TEE。TEE 有自己的 CPU 模式、自己的内存，Android 这边就算被 root 了、被改了，也够不着它。指纹、支付密钥、设备证书，都住在 TEE 里。</p><p>打个比方：Android 是客厅，谁都能进来坐；TEE 是保险柜内胆，只有特定几把钥匙能开，而且开的时候客厅里的人在干什么它一概不管。硬件证明的可信度，全部来自这个“够不着”。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>前面说的都是“谁能干什么”，这一章说的是“我怎么向你证明我是谁”。</p><p>现实里证明身份靠身份证，身份证靠公安部的系统背书。手机里也有一套一模一样的思路：芯片里藏着一把永远拿不出来的私钥，它给一份“设备状态报告”盖章，你再拿芯片厂商和 Google 的公钥去验这个章。伪造不了，是因为私钥拿不出来——这就是“硬件证明”。</p><p>那它是不是就无敌了？不是。这一章后半段讲的是：当有人绕过它时，检测方还能靠什么翻盘。读完你会明白，“三绿”不是一个开关，而是三个各自独立、可以互相矛盾的判定。</p></div></aside>
+<h2 id="sec-1">3.1 TEE：手机里的第二个世界</h2>
 <p>ARM 的 TrustZone 把 CPU 分成两个世界：普通世界（Normal World，跑 Android）和安全世界（Secure World，跑 TEE OS）。两边有独立的内存与外设访问权限，普通世界<strong>读不到</strong>安全世界的内存。</p>
 <p>手机上常见的 TEE 实现有 Qualcomm 的 QSEE、Google 的 Trusty。密钥运算、DRM、指纹比对，都在里面完成。这就带来一个性质：<strong>只要私钥在 TEE 里生成且从不出 TEE，那么“签名”这件事本身就证明了“请求来自这台设备”。</strong></p>
 <figure>
 <img src="../assets/f03_tee.png" alt="图 3-1" width="1080">
 <figcaption><b>图 3-1</b><span>从硬件根到 Google 服务器的信任链，以及三绿的三个独立判定</span></figcaption>
 </figure>
-<h2>3.2 Key Attestation：把“设备状态”签进证书</h2>
+<h2 id="sec-2">3.2 Key Attestation：把“设备状态”签进证书</h2>
 <p>Android 7 之后，Keystore 支持 attestation：应用可以请求生成一个密钥对，并让 TEE 给公钥签发一张证书。这张证书里除了公钥，还塞进了一段扩展数据，记录设备当时的状态：</p>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>含义</th><th>为什么重要</th></tr></thead><tbody>
@@ -118,7 +120,7 @@
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>字段名容易写错：证书里是 <code>osVersion</code> 与 <code>osPatchLevel</code>（不是 <code>version</code> / <code>patchLevel</code>）。Android 12 起还多了 <code>verifiedBootHash</code>——它把“这台机器实际加载的 vbmeta 摘要”也签了进去，比单纯的 GREEN 更难伪装。</div></aside>
 <p>因为这段数据是 TEE 签的，普通世界改不了。想伪造，就必须让 TEE 说假话，或者让上层看到假的证书——这就是两条不同的攻击路线。</p>
-<h2>3.3 Google 三绿到底是什么</h2>
+<h2 id="sec-3">3.3 Google 三绿到底是什么</h2>
 <p>Play Integrity 把“设备可信”拆成三层，后一层包含前一层，可以逐级通过：</p>
 <ul><li><strong>MEETS_BASIC_INTEGRITY</strong>：基本完整性。判定的是“这台设备没有被明显篡改”——系统分区没被改、没有可疑的 root 或注入痕迹、运行环境自洽。<strong>它不要求设备通过 CTS，也不要求是 Google 认证机型</strong>，所以大量国产 ROM、模拟器改过的设备也能过。</li><li><strong>MEETS_DEVICE_INTEGRITY</strong>：设备完整性。要求 = 基本完整性 <strong>＋</strong> 设备通过 Android 兼容性（即 GMS/CTS 认证机型、指纹合法）。这一档才真正卡“机型是否被伪造”。</li><li><strong>MEETS_STRONG_INTEGRITY</strong>：硬件级证明。要求 <code>verifiedBootState=GREEN</code> 且 <code>deviceLocked=true</code>，证书链能追到 Google 的根，且在支持的设备上还要校验 <code>verifiedBootHash</code>。</li></ul>
 <div class="tbl"><table>
@@ -128,10 +130,10 @@
 <tr><td>STRONG</td><td>硬件证明 + 已锁 + GREEN</td><td>不行（必然掉档）</td></tr>
 </tbody></table></div>
 <p>很多人以为三绿是“root 检测通过”，其实不是。三绿衡量的是<strong>证明链是否闭合</strong>。一个完全没 root 但解锁了 bootloader 的设备，一样拿不到 STRONG。</p>
-<h2>3.4 Tricky Store 的定位：接管证书返回路径</h2>
+<h2 id="sec-4">3.4 Tricky Store 的定位：接管证书返回路径</h2>
 <p>Tricky Store 的思路很清晰：既然难点在“TEE 不肯说假话”，那就不去动 TEE，而是<strong>在证书返回给上层的路上把它换掉</strong>。真实生成的证明被替换成一组预先准备、与目标设备指纹完全一致的合规证书链；同时配合拦截 boot 状态的读取，让上层同时看到 GREEN 与 locked。</p>
 <ol><li>拦截点通常在 Keystore 服务的 Binder 调用返回处，或者在应用侧读取证书链的 API 上。</li><li>证书链必须“自洽”：设备型号、序列号、签发时间、扩展字段，任何一处对不上就会被交叉校验抓出来。</li><li>魔改版本的核心工作，往往是维护一个足够大的、覆盖多机型多版本的证书库，并处理有效期与吊销。</li></ol>
-<h2>3.5 检测方怎么翻盘：从“看结果”转向“看一致性”</h2>
+<h2 id="sec-5">3.5 检测方怎么翻盘：从“看结果”转向“看一致性”</h2>
 <p>既然结果可以被替换，检测就转向“关系”：证书里的信息，和运行时能观察到的信息，是否互相矛盾。</p>
 <div class="tbl"><table>
 <thead><tr><th>交叉校验项</th><th>矛盾的表现</th></tr></thead><tbody>
@@ -144,9 +146,9 @@
 </tbody></table></div>
 <blockquote>伪造单个字段容易，伪造一整套互相自洽的事实很难。</blockquote>
 <aside class="note"><span class="note-tag">要点</span><div>工程提醒：做任何“证明类”改动前，先把“真实设备上这些字段分别是什么”采样记录一遍。没有基线，就无法判断自己造出来的东西是否自洽。</div></aside>
-<h2>3.6 本章自测</h2>
+<h2 id="sec-6">3.6 本章自测</h2>
 <ul><li>TEE 的两个世界分别叫什么？为什么普通世界读不到 TEE 内存？</li><li>Key Attestation 证书里哪五个字段最关键？</li><li>一个未 root 但解锁 bootloader 的设备，三绿能拿到几个？</li><li>如果让你设计检测，除了证书内容，你还会查什么？</li></ul>
-<h2>3.12 三绿转发：把“证明请求”送出去做</h2>
+<h2 id="sec-7">3.7 三绿转发：把“证明请求”送出去做</h2>
 <p>“三绿转发”要单独讲，因为它解决的是另一类问题：<strong>设备本身不具备通过条件，但可以让一台“干净的设备”替它完成证明</strong>。</p>
 <p>思路拆开看只有三步：<strong>拦截请求 → 转发给真机 → 把结果原样带回</strong>。难点全在“原样”两个字上。</p>
 <div class="tbl"><table>
@@ -155,10 +157,11 @@
 <tr><td>转发</td><td>把请求送到一台能通过的真机（或可信服务）</td><td>通道要稳、要有认证</td></tr>
 <tr><td>回传</td><td>把证书链塞回调用方，并保持字段自洽</td><td>challenge 必须对应、时间要新鲜</td></tr>
 </tbody></table></div>
-<h2>3.13 为什么“原样带回”这么难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「把设备上的真实状态一字不改地报出来」听起来是最简单的做法，其实最难——因为一旦设备被改过，报真话就等于自曝；而改报假话又得保证别人查不出矛盾。</p><p>这一节讲这个两难。读完你会明白为什么很多方案最终选了「让它查不到关键字段」，而不是「让它查到假值」。</p></div></aside>
+<h2 id="sec-8">3.8 为什么“原样带回”这么难</h2>
 <ol><li><strong>challenge 必须一一对应</strong>：检测方每次传一个新随机数，回传的证书里必须包含它。拿旧证书复用会立刻失效。</li><li><strong>时间戳要新鲜</strong>：证书的签发时间与请求时间差太多，会被判为“重放”。</li><li><strong>密钥要匹配</strong>：回传的公钥必须与调用方本地持有的私钥对应，否则后续签名验证不过。</li><li><strong>设备指纹要一致</strong>：证书里写的机型/序列号，必须与本地能观察到的信息不矛盾（见 3.5 节的交叉校验）。</li></ol>
 <p>所以“转发”方案的工程重心不在“能不能转”，而在“<strong>每次转回来的东西是否都自洽</strong>”。这也是为什么它比“本地替换证书”更复杂：本地替换只需要一份证书库，转发要维护一条实时链路 + 一致性校验。</p>
-<h2>3.14 检测方怎么看转发</h2>
+<h2 id="sec-9">3.9 检测方怎么看转发</h2>
 <div class="tbl"><table>
 <thead><tr><th>信号</th><th>异常表现</th></tr></thead><tbody>
 <tr><td>往返时延</td><td>明显高于本地 TEE 的固定开销</td></tr>
@@ -168,7 +171,7 @@
 <tr><td>证书序列</td><td>多台设备拿到同一段序列号区间</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>结论：转发方案最怕的不是“被看出来”，而是“<strong>被统计出来</strong>”。它必须联网、必须有往返，这两个物理约束无法消除——所以检测方只要测时延分布与离线行为，就能把它和真实 TEE 区分开。</div></aside>
-<h2>3.15 三条路线的对比</h2>
+<h2 id="sec-10">3.10 三条路线的对比</h2>
 <div class="tbl"><table>
 <thead><tr><th>路线</th><th>原理</th><th>优点</th><th>致命弱点</th></tr></thead><tbody>
 <tr><td>让 TEE 说谎</td><td>攻破安全世界</td><td>最彻底</td><td>难度极高</td></tr>
@@ -176,7 +179,8 @@
 <tr><td>三绿转发</td><td>借一台干净设备</td><td>无需自建证书库</td><td>必须联网、时延可测</td></tr>
 </tbody></table></div>
 <p>三条路线没有“最优”，只有“哪种约束你能接受”。这也是全书反复强调的一句话：<strong>先想清楚对手在测什么，再决定用哪条路</strong>。</p>
-<h2>3.7 深入：证书里还藏着什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一张证明证书，表面看是「通过/没通过」，其实里面写着系统自己报的一串状态：启动时校验过没有、设备锁没锁、系统版本是多少、补丁打到哪个月。</p><p>这些东西是系统自己填的，改起来比改一个返回值难得多。这一节带你把这些字段认全，读完你拿到一份证书时，能看出它是「真的说实话」还是「被人动了手脚」。</p></div></aside>
+<h2 id="sec-11">3.11 深入：证书里还藏着什么</h2>
 <p>除了前面列的五个字段，attestation 证书的应用层扩展里还有一批“看起来无关、实际很有用”的信息。检测方经常拿它们做交叉校验，因为伪造者往往只关注最显眼的那几个。</p>
 <div class="tbl"><table>
 <thead><tr><th>字段</th><th>含义</th><th>伪造者常忽略</th></tr></thead><tbody>
@@ -187,14 +191,14 @@
 <tr><td>uniqueId</td><td>设备唯一标识（部分实现）</td><td>多设备共用同一值</td></tr>
 <tr><td>creationDateTime</td><td>密钥创建时间</td><td>早于设备出厂</td></tr>
 </tbody></table></div>
-<h2>3.8 两种攻击路线的本质差别</h2>
+<h2 id="sec-12">3.12 两种攻击路线的本质差别</h2>
 <div class="tbl"><table>
 <thead><tr><th>路线</th><th>做法</th><th>能骗过</th><th>骗不过</th></tr></thead><tbody>
 <tr><td>让 TEE 说谎</td><td>利用 TEE 漏洞改写判定</td><td>全部本地检查</td><td>服务端行为分析</td></tr>
 <tr><td>替换返回结果</td><td>hook 证书返回路径</td><td>本地检查与自校验</td><td>耗时分布、跨应用一致性</td></tr>
 </tbody></table></div>
 <p>第一条路极其困难（要攻破安全世界），第二条路现实得多，但它的破绽是“太完美”——真实 TEE 的调用有固定开销，替换路径往往快得不像话。</p>
-<h2>3.16 一个可操作的交叉校验设计</h2>
+<h2 id="sec-13">3.13 一个可操作的交叉校验设计</h2>
 <div class="code">
 <div class="code-title">检测侧：把“证明”和“事实”对起来</div>
 <pre><code>cert = request_attestation()          # 拿证书
@@ -212,7 +216,8 @@ verdict = all(checks)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意最后一项：<code>uniqueId</code> 在多次请求间应该稳定，但不同设备之间必须不同。很多“证书库”方案在这里露馅——因为它给所有设备返回同一份证书。</div></aside>
-<h2>3.9 原理推演：为什么“硬件证明”在理论上不可伪造</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>平常的签名，密钥就躺在内存里，谁读到了谁就能替你签。硬件证明把密钥放进一块软件根本碰不到的地方，连签名的动作也在里面完成——软件只能递进去一句话，拿回来一个结果。</p><p>所以「伪造」的难点不在算，而在拿不到那支笔。想通这层，你就明白对抗的重心为什么会从「算出签名」转到「让它签的这句话不是实话」：改环境、骗它、让它照实描述一个被改过的系统。</p></div></aside>
+<h2 id="sec-14">3.14 原理推演：为什么“硬件证明”在理论上不可伪造</h2>
 <p>硬件证明的安全性建立在三个假设上：<strong>私钥不可导出</strong>、<strong>TEE 代码不可篡改</strong>、<strong>证书链可追溯</strong>。只要这三个假设成立，攻击者就无法凭空造出一份“来自这台设备”的证明。</p>
 <div class="tbl"><table>
 <thead><tr><th>假设</th><th>破坏方式</th><th>现实难度</th></tr></thead><tbody>
@@ -221,7 +226,8 @@ verdict = all(checks)</code></pre>
 <tr><td>证书链可追溯</td><td>泄露的厂商密钥</td><td>中（历史上有过）</td></tr>
 </tbody></table></div>
 <p>于是攻击者的现实选择就变成了第四条路：<strong>不去伪造证明，而是伪造“读取证明的那段代码看到的返回值”</strong>。这就是第 3.4 节讲的路线，也是所有“三绿方案”的共同基础。</p>
-<h2>3.10 数据细节：证书里那些数字</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>证明证书里除了「通过没通过」，还有一堆编号和日期：系统版本、补丁月份、启动状态、锁定状态。它们都是数字或枚举值，不是给人读的句子。</p><p>这张表就是这本字典。拿到一份证书想判断真假、或者想解释某个值是什么意思时来查它。重点看两列：这个字段表示什么、以及它从哪个系统版本开始才有。</p></div></aside>
+<h2 id="sec-15">3.15 数据细节：证书里那些数字</h2>
 <p>看一份真实的 attestation 证书（用 <code>openssl x509 -text</code> 解），会发现扩展里是一段 ASN.1 编码的 KeyDescription。它的结构大致是：</p>
 <div class="code">
 <div class="code-title">KeyDescription 的字段顺序</div>
@@ -238,7 +244,8 @@ verdict = all(checks)</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>关键点：<strong>`attestationChallenge` 必须与你请求时传入的随机数一致</strong>。这是防重放的核心——如果检测方每次都传一个新随机数，那么“拿一份旧证书重复使用”立刻失效。</p>
-<h2>3.11 工程权衡：三绿的三种取舍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>三项检查都做到「绿」，安全最强，但会带来一堆现实麻烦：升级受限、刷机变难、售后和用户抱怨。现实里几乎没人真的全绿，大家都是挑一个「够用」的点停下。</p><p>这一节讲三种取舍各自换来什么、又放弃什么。读完你能说清自己这套方案到底在买什么，而不是笼统地说「更安全了」。</p></div></aside>
+<h2 id="sec-16">3.16 工程权衡：三绿的三种取舍</h2>
 <div class="tbl"><table>
 <thead><tr><th>目标</th><th>手段</th><th>代价</th></tr></thead><tbody>
 <tr><td>只要 BASIC</td><td>不动</td><td>很多功能受限</td></tr>
@@ -246,15 +253,15 @@ verdict = all(checks)</code></pre>
 <tr><td>要 STRONG</td><td>证书替换 + 状态拦截</td><td>维护成本高，易失效</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>务实建议：先明确“业务到底需要哪一档”。绝大多数场景只需要 BASIC 或 DEVICE；为 STRONG 付出的维护成本，往往超过收益。</div></aside>
-<h2>把一次证明请求按成慢动作</h2>
+<h2 id="sec-17">把一次证明请求按成慢动作</h2>
 <p>App 弹出一个「验证设备」的转圈，你点下确认。几百毫秒后，一张证书被生成、被打包、被送去远端服务器，服务器回了一句「这台设备可信」。这几白毫秒里，普通世界忙得团团转，却始终没碰到最关键的那把私钥。把这段数据按成慢动作，你会看到一条清晰的界线：<strong>能被读到的都能被伪造，不能被读到的才叫证明</strong>。</p>
 <p>手机里其实有两个世界。ARM 的 TrustZone 把 CPU 切成普通世界（跑 Android）和安全世界（跑 TEE OS），两边的内存与外设访问权限相互隔离。密钥在这里面生成、在这里面签名，私钥从出生到销毁都没离开过 TEE。所以「签名」这件事本身，就成了「请求确实来自这台设备、状态确实被硬件读过」的证据。</p>
-<h2>跟着一张证书被造出来</h2>
+<h2 id="sec-18">跟着一张证书被造出来</h2>
 <ol><li><strong>App 调 Keystore</strong> → 对 <code>KeyGenParameterSpec</code> → 带上一个服务器下发的 nonce，请求生成带证明的密钥对 → 结果：请求经 Binder 落到 keystore 服务，再转成一次 TEE 调用。</li><li><strong>TEE 生成密钥对</strong> → 对安全世界内部的密钥槽 → 用硬件真随机源造出公私钥，私钥打上「永不可导出」标记 → 结果：公钥可以出来，私钥这辈子都出不来。</li><li><strong>TEE 收集设备状态</strong> → 对 boot 状态、锁状态、系统版本、补丁级别、vbmeta 摘要 → 逐项读进安全世界 → 结果：一组「当时的硬件事实」被攒齐，普通世界插不上手。</li><li><strong>TEE 签发证书</strong> → 对公钥＋这组状态＋那个 nonce → 用出厂时烧进 TEE 的 attestation 私钥签名，拼成一条证书链 → 结果：一张任何字段被改一个比特就会验签失败的证书。</li><li><strong>证书回到普通世界</strong> → 对 App → 沿 Binder 返回完整证书链 → 结果：App 拿到了全文，却改不动其中任何一个字段。</li></ol>
 <p>第 3 步是关键：状态不是 App 自己报的，是 TEE 去读的。所以绕过的两条路从一开始就分道扬镳——要么想办法让 TEE 读错（要攻破安全世界，极难），要么在<strong>证书返回的路上把它换掉</strong>（现实得多，但会留下别的不一致）。</p>
-<h2>服务器那一侧又做了什么</h2>
+<h2 id="sec-19">服务器那一侧又做了什么</h2>
 <ol><li><strong>验链</strong> → 对证书链 → 从叶子一路验签名到 Google 的根证书 → 结果：链断了就整包拒掉，不看内容。</li><li><strong>对 nonce</strong> → 对扩展里的 nonce 与本次请求下发的随机串 → 逐字节比 → 结果：防止把上一次的证明重放进来。</li><li><strong>读扩展字段</strong> → 对 <code>verifiedBootState</code>、<code>deviceLocked</code>、<code>osPatchLevel</code> 等 → 逐项判定三绿档位 → 结果：STRONG 要求 GREEN 且已锁，解锁设备必然掉到 BASIC。</li><li><strong>交叉校验</strong> → 对证书里的型号、耗时分布、跨应用一致性 → 与运行时事实对照 → 结果：字段全对但关系矛盾，一样判为可疑——这是替换证书路线最难补的一环。</li></ol>
-<h2>动手：把证书里的扩展字段挖出来</h2>
+<h2 id="sec-20">动手：把证书里的扩展字段挖出来</h2>
 <div class="code">
 <div class="code-title">解析一张 attestation 证书（host 侧）</div>
 <pre><code>adb pull /sdcard/attest.pem attest.pem            # App 导出的证书链

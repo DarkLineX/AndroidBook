@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L04</span><h1>模块 ClassLoader 与 DEX 生命周期</h1><p class="ch-en">委派顺序、SharedMemory、file-backed DEX、dexElements、资源与 native library</p></div>
 <p class="lead">模块代码要“进得去、找得到、卸得掉”。</p>
-<h2>4.1 类加载的委派顺序</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把一段代码塞给别人用，听着简单，实际有三道坎：得让它看得见、得让它找得到、还得能在不用的时候拿走。</p><p>最麻烦的是第三道。加进去容易，拿掉时如果还有人在用那份东西，App 下次启动就直接崩——而且崩的地方离你改的地方很远，很难查。</p><p>这一章讲类加载的委派顺序（为什么“先父后子”很重要）、dex 的三种落地方式（文件、内存、共享内存）各自的代价、以及资源和 native 库这两种附属物要怎么挂。</p></div></aside>
+<h2 id="sec-1">4.1 类加载的委派顺序</h2>
 <figure>
 <img src="../assets/l_l04.png" alt="图 L4-1" width="1080">
 <figcaption><b>图 L4-1</b><span>三层委派顺序与 DEX 的三种落法</span></figcaption>
@@ -110,19 +111,20 @@
 <tr><td>模块 ClassLoader</td><td>模块自己的 dex</td><td>需要能被 App 找到</td></tr>
 </tbody></table></div>
 <p>委派规则是“先父后子”：先让父加载器找，找不到才找自己。这也解释了为什么模块类不能被 App 直接引用——它们不在同一条委派链上，需要显式桥接。</p>
-<h2>4.2 DEX 的三种落法</h2>
+<h2 id="sec-2">4.2 DEX 的三种落法</h2>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
 <tr><td>SharedMemory</td><td>不落盘，匿名共享内存</td><td>实现复杂</td></tr>
 <tr><td>file-backed</td><td>简单可靠</td><td>私有目录留文件</td></tr>
 <tr><td>内存 dex</td><td>最隐蔽</td><td>兼容性差</td></tr>
 </tbody></table></div>
-<h2>4.3 资源与 native 库</h2>
+<h2 id="sec-3">4.3 资源与 native 库</h2>
 <p>模块若带资源，要自己构造 Resources 或把资源并入宿主；若带 so，要么解压到私有目录再 dlopen，要么自己 mmap 加载（否则 maps 里会露路径，见 F09/F11）。</p>
 <aside class="note"><span class="note-tag">要点</span><div>生命周期要点：模块的 dex 在什么时候加载、什么时候能卸载，跟 ClassLoader 的引用计数有关。如果 App 还持有模块类的引用，卸载就会失败——不是“忘了”，是“有人还拿着”。</div></aside>
-<h2>4.4 本章自测</h2>
+<h2 id="sec-4">4.4 本章自测</h2>
 <ul><li>委派顺序为什么是“先父后子”？</li><li>三种 DEX 落法各自的取舍是什么？</li><li>模块类为什么不能被 App 直接引用？</li><li>卸载失败通常是什么原因？</li></ul>
-<h2>4.10 深入：SharedMemory 方案的实现要点</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>两个进程想共用一份数据，最省事的办法是让系统给一块两边都能映射的内存。可这块内存的生命周期、归属、清理，都得自己管。</p><p>这一节讲几个必须处理的点：谁先建、谁后连、谁负责销毁。读完你能避开「用着用着突然读不到」这类和时序有关的坑。</p></div></aside>
+<h2 id="sec-5">4.5 深入：SharedMemory 方案的实现要点</h2>
 <p>思路是：把 dex 内容写进一块匿名共享内存（<code>memfd</code> 或 <code>ashmem</code>），然后构造一个 <code>DexFile</code> 直接指向这块内存。这样既不落盘，也不在 maps 里显示为“文件”。</p>
 <div class="code">
 <div class="code-title">关键步骤</div>
@@ -133,7 +135,8 @@
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>兼容性提示：<code>openInMemory</code> 在不同版本上行为不同，有的是隐藏 API，有的需要反射。务必做“调用失败就回退到 file-backed”的降级。</div></aside>
-<h2>4.5 原理推演：为什么“先父后子”的委派顺序很重要</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>找一个类的时候，是先问自己、还是先问父级？顺序不同，结果可能完全不同：同一个类名，可能在你自己的包里有一份，父级也有一份。</p><p>你要替换的通常是「父级那一份」，所以必须保证查找时先撞到你准备的。这一节讲这个顺序为什么是硬约束，读完你排查「我替换了但调用方拿到的是原件」时，第一步就知道去看委派链。</p></div></aside>
+<h2 id="sec-6">4.6 原理推演：为什么“先父后子”的委派顺序很重要</h2>
 <p>因为它保证了“核心类不会被替换”。如果子加载器能覆盖 <code>java.lang.String</code>，整个运行时就会崩。所以委派顺序是“安全边界”，不是“实现细节”。</p>
 <div class="tbl"><table>
 <thead><tr><th>层次</th><th>能否被覆盖</th><th>原因</th></tr></thead><tbody>
@@ -142,7 +145,8 @@
 <tr><td>模块 ClassLoader</td><td>是</td><td>自己的命名空间</td></tr>
 </tbody></table></div>
 <p>这也解释了为什么“模块类不能直接被 App 引用”：它们不在同一条委派链上，App 的加载器根本不知道它们存在。</p>
-<h2>4.6 数据细节：dexElements 的插入位置</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把一份新的代码塞进已经建好的加载器里，塞在最前面还是最后面，结果完全不同：放前面会盖住同名的类，放后面就永远轮不到它。</p><p>这张表讲这个位置的含义。它的用处是：想替换某个类，就得放前面；只想补几个新类，放后面更安全。</p></div></aside>
+<h2 id="sec-7">4.7 数据细节：dexElements 的插入位置</h2>
 <div class="code">
 <div class="code-title">插入位置决定优先级</div>
 <pre><code>// 插到最前面：你的类优先（可能覆盖宿主）
@@ -150,14 +154,16 @@
 // 实践中通常插到最前面，但要避免覆盖核心类</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>4.7 深入：模块资源的两种挂法</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>模块里带的图片、字符串，要让宿主 App 用得上，得先把它们「挂」进宿主的资源体系。挂法有两种，一种影响全局、一种只影响自己。</p><p>这一节比较这两种。读完你能按「会不会影响别的模块」来选，而不是随手用先看到的那种。</p></div></aside>
+<h2 id="sec-8">4.8 深入：模块资源的两种挂法</h2>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>做法</th><th>优点</th><th>缺点</th></tr></thead><tbody>
 <tr><td>合并进宿主</td><td>把资源加进宿主的 AssetManager</td><td>App 能直接用</td><td>改动宿主</td></tr>
 <tr><td>独立 Resources</td><td>自己构造 Resources 对象</td><td>隔离干净</td><td>要处理 density/配置</td></tr>
 </tbody></table></div>
 <p>合并进宿主的做法更“透明”（App 完全感知不到），但需要反射修改 <code>AssetManager</code> 的内部路径列表；独立构造更干净，但每个 API 都要显式传 Resources。</p>
-<h2>4.8 深入：native 库的三种加载方式</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有的方式要求库必须以真实文件存在，有的允许直接给个内存里的缓冲，还有的压根不走系统的加载器。三种方式能做的事不同，留下的痕迹也不同。</p><p>这一节讲这三种。读完你按「要不要留文件」就能选出该用哪种，也知道每种会被谁看见。</p></div></aside>
+<h2 id="sec-9">4.9 深入：native 库的三种加载方式</h2>
 <ol><li><strong>解压到私有目录再 dlopen</strong>：最简单，但会在文件系统留下 so 文件。</li><li><strong>从 APK 里直接 mmap 加载</strong>：不落盘，但要自己处理重定位（见 F09）。</li><li><strong>用 memfd 承载</strong>：内存文件，dlopen 后 maps 里显示 <code>/memfd:name</code>，仍算“半隐蔽”。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>落盘</th><th>maps 显示</th><th>实现难度</th></tr></thead><tbody>
@@ -165,7 +171,7 @@
 <tr><td>mmap 自加载</td><td>否</td><td>匿名段</td><td>高</td></tr>
 <tr><td>memfd + dlopen</td><td>否</td><td>/memfd:name</td><td>中</td></tr>
 </tbody></table></div>
-<h2>4.9 实战：确认模块类真的被加载了</h2>
+<h2 id="sec-10">4.10 实战：确认模块类真的被加载了</h2>
 <div class="code">
 <div class="code-title">两条命令</div>
 <pre><code>// Frida 侧
@@ -175,16 +181,17 @@ Java.enumerateClassLoaders({ onMatch: l =&gt; console.log(l), onComplete: () =&g
 // 抛 ClassNotFoundException = 没加载 / 路径不对</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>第一行 findClass 为什么会抛异常</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>找类这件事看着简单，其实很挑剔：得有一个「从哪儿找」的上下文，还得那个类真的在那个上下文里。少一样就抛异常。</p><p>这一节讲这行代码在什么条件下会失败。读完你看到这个异常时，会先确认「上下文对不对」，而不是怀疑类名拼错了。</p></div></aside>
+<h2 id="sec-11">第一行 findClass 为什么会抛异常</h2>
 <p>模块的 <code>handleLoadPackage</code> 里写了一句 <code>XposedHelpers.findClass(&#x27;com.target.Sign&#x27;, lpparam.classLoader)</code>，跑得好好的；换成 <code>Class.forName(&#x27;com.target.Sign&#x27;)</code> 却抛了 <code>ClassNotFoundException</code>。同一个类、同一个进程，只因为换了一个加载器就找不到——这是模块工程里第一道劝退坎。原因不玄：在 ART 里，一个类的身份是 <code>(ClassLoader, 类名)</code> 二元组，两个加载器加载同名类得到的是两个互不兼容的 <code>Class</code> 对象，连强转都会失败。</p>
 <p>再往下一层，模块自己带来的 DEX 该放在哪、能不能用匿名内存、带资源的模块怎么拿到 <code>Resources</code>、带 so 的模块又该怎么 <code>System.load</code>，最后是&#x27;什么时候能卸掉&#x27;。这一整串问题的答案都挂在一条委派链上。把方向画对，其余都是顺推。</p>
-<h2>谁看得见谁：把委派方向画对</h2>
+<h2 id="sec-12">谁看得见谁：把委派方向画对</h2>
 <ol><li><strong>BootClassLoader → framework 类</strong>：最顶层，负责 <code>java.lang</code>、<code>android.*</code> 等；结果是所有子加载器都能看到系统类，且这些类全局只有一份。</li><li><strong>App 的 PathClassLoader → APK dex</strong>：parent 是 BootClassLoader，先委托父、父找不到才查自己的 <code>DexPathList.dexElements</code>；结果是业务类由它独占，别的加载器看不见。</li><li><strong>框架 → 模块 ClassLoader</strong>：LSPosed 为每个模块建一个加载器，把 <strong>parent 设成 App 的 ClassLoader</strong>（而不是反过来）；结果是模块代码里能 <code>findClass</code> 到宿主类。</li><li><strong>模块代码 → 宿主类</strong>：用 <code>lpparam.classLoader</code> 显式查找，而不是 <code>Class.forName</code>；结果是拿到正确的 <code>Class</code> 对象，反射调用与 hook 才能对上号。</li><li><strong>宿主代码 → 模块类</strong>：查不到，因为委派只会向上不会向下；结果是模块类对 App 天然隐身，这既是限制，也是一层隔离。</li><li><strong>框架 → 桥接</strong>：需要让宿主&#x27;看见&#x27;某个模块类型时，只能由框架显式注入引用或改 dexElements；结果是这类桥接每多一处，就多一处可被枚举的结构差异。</li></ol>
 <p>第 3 拍的方向最容易记反。很多人以为是&#x27;把模块 dex 塞进 App 的加载器&#x27;，实际正相反：是让模块加载器挂在 App 加载器下面，于是模块能向下看不见自己、向上看得见宿主。<code>Class.forName</code> 用的是&#x27;调用者所在类的加载器&#x27;，调用者是模块类，自然掉进这条链的另一端。</p>
-<h2>DEX 落地的三种姿势与一次卸载</h2>
+<h2 id="sec-13">DEX 落地的三种姿势，以及资源、so 与卸载</h2>
 <ul><li><strong>file-backed</strong>：把 dex 释放到 <code>code_cache</code> 或私有目录再 <code>DexClassLoader</code> 加载——最稳，但 <code>/proc/self/maps</code> 里会留一条带路径的可读映射。</li><li><strong>InMemoryDexClassLoader / SharedMemory</strong>：API 26+ 传 <code>ByteBuffer[]</code>，或 <code>memfd_create</code> 后 走匿名 fd——不落盘，代价是要处理 fd 生命周期与不同 ROM 的兼容。</li><li><strong>纯内存 dex</strong>：自己构造 <code>DexFile</code> 并插入 <code>dexElements</code>——最不显眼，也最容易在版本升级后失效。</li><li><strong>资源</strong>：模块资源不并进宿主的 id 空间，用 <code>AssetManager.addAssetPath</code> 构造独立 <code>Resources</code>；少这一步，<code>getIdentifier</code> 会一律返回 0。</li><li><strong>native 库</strong>：<code>System.load</code> 要一个真实路径，通常从 APK 的 <code>lib/&lt;abi&gt;/</code> 释放到私有目录；想直接从 APK <code>dlopen</code> 得自己处理 <code>android_dlopen_ext</code> 与对齐。</li><li><strong>卸载</strong>：只要还有任一强引用——存活实例、静态字段、线程的 <code>contextClassLoader</code>、JNI global ref——ClassLoader 就不会被回收，<code>System.load</code> 过的 so 更是进程期内无法真正卸载。</li></ul>
 <p>最后一条常被误读成&#x27;忘了置空变量&#x27;。实际排查时，十有八九是某个后台线程创建于模块加载期间，它的 <code>contextClassLoader</code> 一直抓着模块加载器；或者一个 <code>JNI NewGlobalRef</code> 把模块类钉住了。所以 LSPosed 的模块热更新通常要重启目标进程，而不是在进程内做优雅卸载。</p>
-<h2>可复现：把加载器树打出来</h2>
+<h2 id="sec-14">可复现：把加载器树打出来</h2>
 <div class="code">
 <div class="code-title">在模块入口打印当前进程的加载器拓扑</div>
 <pre><code>// 遍历所有已加载的 ClassLoader，观察父子关系与 dex 来源

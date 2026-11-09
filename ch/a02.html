@@ -123,9 +123,11 @@
 <tr><td>Binder</td><td>Android IPC</td><td>跨进程调用的统一通道</td></tr>
 <tr><td>Stalker</td><td>Frida 的跟踪引擎</td><td>指令级可观测</td></tr>
 </tbody></table></div>
-<h2>B.1 三个容易混的概念</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>很多争论其实是同一个词被两个人当成两个意思。这一节挑出最容易撞车的几组，每组先给一句「它到底指什么」，再给一句「什么时候会跟它混」。</p><p>读完你在读文档或跟人讨论时，会先确认「我们说的是同一件事吗」，而不是各说各话半天才发现跑偏了。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>读到一半卡住，很多时候不是原理难，是某个词在你脑子里和别人写的不是同一个意思。把「虚拟地址」当成「物理地址」理解，后面每句话都会歪，而且你不会意识到自己歪了。</p><p>所以这一页不解释原理，只做一件事：给每个词一句能对上日常经验的话。词对齐了，再回去读那一段，往往一眼就通了。</p><p>后面还有五个最容易混淆的概念对比，那几个是真正容易搞错的。</p></div></aside>
+<h2 id="sec-1">B.1 三个容易混的概念</h2>
 <ul><li><strong>root 与解锁 bootloader</strong>：前者是权限，后者是允许你刷机。两件事互相独立。</li><li><strong>DAC 与 MAC</strong>：前者看 uid，root 能绕；后者看 domain，root 绕不了。</li><li><strong>hook 与 patch</strong>：hook 是运行时拦截，patch 是改文件。前者可撤回，后者不可。</li></ul>
-<h2>B.2 按主题分组的术语</h2>
+<h2 id="sec-2">B.2 按主题分组的术语</h2>
 <div class="tbl"><table>
 <thead><tr><th>主题</th><th>术语</th></tr></thead><tbody>
 <tr><td>启动</td><td>BootROM、abl、AVB、vbmeta、dm-verity、init、zygote</td></tr>
@@ -134,7 +136,7 @@
 <tr><td>安全</td><td>TEE、Keymaster、attestation、SELinux、AVC、CFI、BTI、PAC</td></tr>
 <tr><td>注入</td><td>ptrace、Zygisk、LSPlant、trampoline、gating</td></tr>
 </tbody></table></div>
-<h2>B.3 五个最容易混淆的对比</h2>
+<h2 id="sec-3">B.3 五个最容易混淆的对比</h2>
 <div class="tbl"><table>
 <thead><tr><th>对比</th><th>区别</th></tr></thead><tbody>
 <tr><td>euid vs fsuid</td><td>前者是“身份”，后者是“文件访问用的身份”</td></tr>
@@ -143,7 +145,7 @@
 <tr><td>DAC vs MAC</td><td>前者看 uid，后者看域与类型</td></tr>
 <tr><td>hook vs patch</td><td>前者运行时拦截，后者改文件</td></tr>
 </tbody></table></div>
-<h2>B.4 一句话记住每个部分</h2>
+<h2 id="sec-4">B.4 一句话记住每个部分</h2>
 <div class="tbl"><table>
 <thead><tr><th>部分</th><th>一句话</th></tr></thead><tbody>
 <tr><td>第一部</td><td>系统怎么跑起来，检测点在哪</td></tr>
@@ -151,8 +153,12 @@
 <tr><td>第三部</td><td>Frida 的机制与痕迹</td></tr>
 <tr><td>第四部</td><td>在内核里做 hook 的五种武器</td></tr>
 <tr><td>第五部</td><td>模块化方案的工程细节与验证</td></tr>
+<tr><td>第六部</td><td>商业壳怎么把检测做成流水线，加固又长什么样</td></tr>
+<tr><td>第七部</td><td>从编译原理推到 VMP，把混淆当成可分析的对象</td></tr>
+<tr><td>第八部</td><td>三份带交付物的训练：造检测、挖算法、走完隐藏与检测的闭环</td></tr>
 </tbody></table></div>
-<h2>B.5 五个“一词多义”的坑</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个词在不同层里有不同含义，这在系统里特别常见：进程、句柄、上下文、符号，换个场景指的东西就变了。</p><p>这一节把这几处摊开对照。读完你看到一句话读不通时，会先问「这里的这个词是哪一层的意思」，而不是怀疑自己理解能力。</p></div></aside>
+<h2 id="sec-5">B.5 五个“一词多义”的坑</h2>
 <div class="tbl"><table>
 <thead><tr><th>词</th><th>可能的含义</th><th>怎么区分</th></tr></thead><tbody>
 <tr><td>hook</td><td>API hook / 事件回调 / git hook</td><td>看上下文</td></tr>
@@ -161,14 +167,14 @@
 <tr><td>映射</td><td>内存映射 / 符号映射 / 端口映射</td><td>看域</td></tr>
 <tr><td>代理</td><td>Binder 代理 / 网络代理 / 调试代理</td><td>看协议</td></tr>
 </tbody></table></div>
-<h2>读 issue 时撞见一个不认识的缩写</h2>
+<h2 id="sec-6">读 issue 时撞见一个不认识的缩写</h2>
 <p>你在读一份英文 issue，句子是 <code>the entrypoint was patched but the caller still inlines the original</code>。每个单词都认识，连起来却拿不准：这里的 <code>entrypoint</code> 是 ELF 的 <code>e_entry</code>，还是 ART 里 <code>ArtMethod</code> 那个跳转地址？前面那张大术语表给了 22 个词条的一句话解释，B.1 和 B.5 又点过「一词多义」的坑。这一页要练的是现场怎么自己判：不靠背，靠看它旁边的动词和它所在的层。</p>
 <p>把 AOSP 源码窗口开在旁边。术语不是靠词典定义的，是靠「谁在用它、用它做了什么」定义的。一个词只要能回答「它描述的是结构、动作，还是状态」，八成的歧义就自动消失了。</p>
-<h2>一个词换三个上下文，逐拍看</h2>
+<h2 id="sec-7">一个词换三个上下文，逐拍看</h2>
 <ol><li><strong>linker</strong> → 对 <strong>`e_entry`</strong> → 读 ELF header 里的入口地址并跳过去 → 结果这里的 entrypoint 描述的是一个<strong>结构字段</strong>，动作是「读取」。</li><li><strong>ART</strong> → 对 <strong>`ArtMethod` 的 entrypoint</strong> → 把该方法Quick 编译后的代码地址写进去 → 结果同一个词描述的是<strong>运行时指针</strong>，动作是「替换」，所以才会牵扯 <code>kAccNative</code> 与 deopt。</li><li><strong>壳</strong> → 对 <strong>检测函数的 entrypoint</strong> → 先备份再改，之后做 CRC 比对 → 结果这个词出现在<strong>完整性语境</strong>，动作是「校验」，跟前面两种完全不同。</li><li><strong>你</strong> → 对 <strong>句子里的动词</strong> → 看到 <code>patched</code> 与 <code>inlines</code>，立刻把语境锁到 ART → 结果是判断出该去查 JIT 内联，而不是去翻 ELF header。</li><li><strong>你</strong> → 对 <strong>源码</strong> → <code>grep</code> 一下这个词在 AOSP 里出现的位置 → 结果是拿到真实定义，比任何二手解释都可靠。</li></ol>
-<h2>按「结构 / 动作 / 状态」给术语分筐</h2>
+<h2 id="sec-8">按「结构 / 动作 / 状态」给术语分筐</h2>
 <ul><li><strong>结构类</strong>：VMA、PTE、dexElements、handler_table、task_struct——它们回答「东西长在哪」，旁边常跟 <code>read</code>、<code>map</code>、<code>offset</code>。</li><li><strong>动作类</strong>：hook、patch、deopt、relocate、attest——它们回答「谁改了谁」，旁边常跟 <code>before/after</code>、<code>backup</code>、<code>restore</code>。</li><li><strong>状态类</strong>：verifiedBootState、TracerPid、risk 等级、Enforcing——它们回答「现在是什么情况」，旁边常跟 <code>is</code>、<code>get</code>、<code>compare</code>。</li><li><strong>易混提醒</strong>：<code>patch</code> 在二进制语境是改文件、在代码语境是改源码、在热修复语境是运行时替换；先看宾语再定动作。</li><li><strong>易混提醒</strong>：<code>sandbox</code> 在 SELinux 语境是域、在 App 语境是 uid 隔离、在分析语境是隔离虚拟机；先看层级再定范围。</li></ul>
-<h2>可复现实验：去源码里查一个词的真实定义</h2>
+<h2 id="sec-9">可复现实验：去源码里查一个词的真实定义</h2>
 <div class="code">
 <div class="code-title">在 AOSP  checkout 里跑（把词换成你撞见的那个）</div>
 <pre><code># 1. 先看它出现在哪些层，别急着看第一处

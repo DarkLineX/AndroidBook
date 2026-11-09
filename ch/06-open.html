@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">06</span><h1>Android linker 启动过程</h1><p class="ch-en">从 open so 到 JNI_OnLoad 结束</p></div>
 <p class="lead">so 的一生只有五步，但这五步里的每一步都能被观测、被利用、被伪造。</p>
-<h2>6.1 五步生命周期</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Android 上的 .so 文件，地位相当于 Windows 上的 .dll：都是一段编译好的机器码，运行时才被装进进程。负责“装”的这个东西叫 linker（链接器）。</p><p>为什么专门拿一章讲它？因为 linker 装东西的时候，会在一本账上登记：谁装的、装在哪、多大。这本账是所有“注入检测”的第一现场——你的代码只要走了正常流程，账上就有名字；想不留名字，就得绕开 linker 自己装。</p><p>这一章讲清两件事：一次 dlopen 到底走了哪五步；以及那本账具体长什么样、记了哪些字段。</p></div></aside>
+<h2 id="sec-1">6.1 五步生命周期</h2>
 <figure>
 <img src="../assets/f06_linker.png" alt="图 6-1" width="1080">
 <figcaption><b>图 6-1</b><span>dlopen 的六个阶段与 linker 的两本账</span></figcaption>
 </figure>
 <ol><li><strong>dlopen</strong>：先查 <code>solist</code> 缓存，命中就直接返回；没命中就打开文件、读 ELF 头。</li><li><strong>mmap</strong>：按每个 <code>PT_LOAD</code> 段的 <code>p_offset</code> / <code>p_vaddr</code> / <code>p_memsz</code> 建立映射，分别给 r-x、r--、rw- 权限。</li><li><strong>解析依赖</strong>：读 <code>DT_NEEDED</code>，递归加载 libc、liblog 等，并按依赖顺序排好初始化顺序。</li><li><strong>重定位</strong>：处理 <code>R_AARCH64_RELATIVE</code>（基址加偏移）、<code>GLOB_DAT</code>（全局符号）、<code>JUMP_SLOT</code>（GOT 表项）。</li><li><strong>初始化</strong>：按 <code>DT_INIT_ARRAY</code> 顺序跑构造函数，最后调用 <code>JNI_OnLoad</code> 注册 native 方法。</li></ol>
-<h2>6.2 linker 的两本账</h2>
+<h2 id="sec-2">6.2 linker 的两本账</h2>
 <p><code>solist</code> 是一条单向链表，把所有已加载的 so 串起来；每个节点是一个 <code>soinfo</code>，记着 soname、映射基址、大小、phdr 指针。另一本是 <code>link_map</code>（兼容 glibc 语义），用于 dl_iterate_phdr 之类的遍历。</p>
 <p>检测方最常用的手法，就是遍历这两本账，逐个核对：“这个 so 是谁加载的？它的 base 落在哪个区间？文件真的存在吗？”</p>
 <div class="code">
@@ -119,7 +120,7 @@ static int cb(struct dl_phdr_info* info, size_t size, void* data) {
 dl_iterate_phdr(cb, nullptr);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.3 自定义 linker 的动机</h2>
+<h2 id="sec-3">6.3 自定义 linker 的动机</h2>
 <p>如果 agent 走系统的 <code>dlopen</code>，那么它在 <code>solist</code> 里必然留下一条记录——名字再普通也是记录。自定义 linker（F09 详述）的意义就是：<strong>自己 mmap、自己重定位、自己跑 init_array</strong>，绕开系统账本。</p>
 <div class="tbl"><table>
 <thead><tr><th>做法</th><th>maps 里的样子</th><th>solist 里的样子</th></tr></thead><tbody>
@@ -129,9 +130,10 @@ dl_iterate_phdr(cb, nullptr);</code></pre>
 <tr><td>伪装成系统库</td><td>路径看起来正常</td><td>记录正常但 base 可疑</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>动手前先明确代价：自定义 linker 要自己处理 TLS 重定位、BTI/CFI 标记、以及卸载时的清理。漏一项，表现都是“加载成功但一调就崩”。</div></aside>
-<h2>6.4 本章自测</h2>
+<h2 id="sec-4">6.4 本章自测</h2>
 <ul><li>dlopen 的六个阶段按顺序说出来。</li><li>R_AARCH64_RELATIVE 与 GLOB_DAT 的区别是什么？</li><li>为什么“匿名可执行段”是一个强检测信号？有没有正当场景？</li><li>自定义 linker 最容易漏掉的三件事是什么？</li></ul>
-<h2>6.5 深入：符号解析与符号可见性</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个库对外提供的名字，有的是公开的、有的是内部的、有的干脆不写出来。程序要调它，得先在「名字 → 地址」这张表里查一遍。</p><p>查得到查不到、先查到谁，全看这些名字是怎么标的。这一节讲这套标法，读完你就明白为什么有时你能改到某个函数、有时连名字都找不到——问题不在技术，在名字没露出来。</p></div></aside>
+<h2 id="sec-5">6.5 深入：符号解析与符号可见性</h2>
 <p>一个 so 里定义的函数，默认是“全局可见”的，除非用 <code>-fvisibility=hidden</code> 或版本脚本限制。这决定了两件事：别人能不能 <code>dlsym</code> 到它，以及 GOT hook 能不能生效。</p>
 <div class="tbl"><table>
 <thead><tr><th>可见性</th><th>能否被外部 dlsym</th><th>典型用途</th></tr></thead><tbody>
@@ -140,7 +142,7 @@ dl_iterate_phdr(cb, nullptr);</code></pre>
 <tr><td>protected</td><td>能，但内部调用不走 PLT</td><td>性能敏感的内部函数</td></tr>
 </tbody></table></div>
 <p><code>protected</code> 这个细节很关键：它意味着“内部调用不经过 PLT”，所以 GOT hook 对它无效——想拦这类调用，只能上 inline hook。</p>
-<h2>6.6 实战：手工算一个函数地址</h2>
+<h2 id="sec-6">6.6 实战：手工算一个函数地址</h2>
 <ol><li>从 <code>/proc/self/maps</code> 找到目标 so 的映射基址（第一段的起始地址）。</li><li>解析 ELF 的 program header，找到 <code>PT_DYNAMIC</code>。</li><li>从 <code>DT_SYMTAB</code> / <code>DT_STRTAB</code> / <code>DT_HASH</code>（或 <code>DT_GNU_HASH</code>）构建符号表。</li><li>按名字查 <code>st_value</code>，加上基址就是运行时地址。</li></ol>
 <div class="code">
 <div class="code-title">验证思路的伪代码</div>
@@ -152,7 +154,8 @@ addr   = base + lookup(symtab, strtab, &quot;target_func&quot;);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>现成工具：<code>readelf -sW</code>、<code>nm -D</code>、<code>objdump -T</code> 都能在离线阶段给你同样的信息。运行时算地址的意义在于“版本无关”——换个 so 版本也能自动适配。</div></aside>
-<h2>6.7 原理推演：为什么“延迟绑定”让 GOT hook 成为可能</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>程序里调一个外部函数，编译时并不知道它最终在内存的哪个位置，于是先留一格「待填」。第一次真跑到那儿，才把真实地址填进去。</p><p>既然那格是留给人填的，它就必须可写；可写，就意味着能被别人改写。这条因果链是GOT hook 的全部前提。反过来，加固的思路也就自然了：把「必须可写」改成「填完就锁死」。</p></div></aside>
+<h2 id="sec-7">6.7 原理推演：为什么“延迟绑定”让 GOT hook 成为可能</h2>
 <p>如果所有外部函数调用都在加载时解析完地址，那么 GOT 表在加载后就是只读的，改它需要改页权限。而 ELF 的“延迟绑定”（lazy binding）机制让第一次调用时还要经过 <code>PLT → resolver → GOT</code> 的流程，这就给了“改表项”一个自然的时机与位置。</p>
 <div class="tbl"><table>
 <thead><tr><th>绑定方式</th><th>GOT 何时填</th><th>hook 难度</th></tr></thead><tbody>
@@ -160,7 +163,8 @@ addr   = base + lookup(symtab, strtab, &quot;target_func&quot;);</code></pre>
 <tr><td>延迟绑定</td><td>首次调用时</td><td>低（时机明确）</td></tr>
 </tbody></table></div>
 <p>这也解释了为什么有些加固会开启 <code>-Wl,-z,now</code>：让所有符号在加载时解析完，减少“首次调用”这个可被利用的窗口。</p>
-<h2>6.8 数据细节：一个 so 的典型段布局</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个库文件在内存里不是一个整块，而是被切成几段：代码一段、只读数据一段、可写数据一段、还有一些加载时用的说明。每段的权限不一样。</p><p>这张表把这些段和它们的权限摆出来。想改哪儿、能改哪儿、改完会不会被权限挡住，答案都在这张表里。看的时候重点记「哪一段是可写的」——能动手的地方就那么几处。</p></div></aside>
+<h2 id="sec-8">6.8 数据细节：一个 so 的典型段布局</h2>
 <div class="tbl"><table>
 <thead><tr><th>段</th><th>权限</th><th>内容</th></tr></thead><tbody>
 <tr><td>PT_LOAD #1</td><td>r--</td><td>ELF 头、只读数据</td></tr>
@@ -170,7 +174,7 @@ addr   = base + lookup(symtab, strtab, &quot;target_func&quot;);</code></pre>
 <tr><td>PT_DYNAMIC</td><td>r--</td><td>动态链接信息</td></tr>
 </tbody></table></div>
 <p>注意 <code>PT_GNU_RELRO</code>：它让“重定位完成后”的一段区域变成只读。所以想在 GOT 上做手脚，往往要先把 RELRO 保护的那一页改回来——这本身就是一个可以被检测到的动作。</p>
-<h2>把 dlopen 拆成一帧一帧</h2>
+<h2 id="sec-9">把 dlopen 拆成一帧一帧</h2>
 <figure class="anim" data-delay="820" data-n="6" data-key="a_linker">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -202,9 +206,10 @@ addr   = base + lookup(symtab, strtab, &quot;target_func&quot;);</code></pre>
 <script type="application/json" class="anim-data">["dlopen 先查 solist，避免重复加载", "解析 ELF 头，读出 PT_LOAD 与依赖", "按段 mmap，建立内存映射", "重定位：把真实地址填进 GOT / PLT", "执行 init_array 里的构造函数", "调用 JNI_OnLoad，注册 native 方法"]</script>
 <p>App 里那行 <code>System.loadLibrary</code> 看起来只是一句声明。把它按成逐帧回放：Java 层先去找 so 到底躺在哪个目录，然后一次调用穿过 JNI 掉进 bionic linker；linker 打开文件、只读几十个字节的 ELF 头，接着连续发起若干次 <code>mmap</code>，把磁盘上的段一页页铺进内存；再回头把依赖一个个拉进来、把表项一个个填好、把构造函数一个个跑完，最后才轮到 <code>JNI_OnLoad</code>。整个过程中，<strong>没有一帧是「加载完了」——只有一长串必须按顺序做完的动作</strong>。</p>
 <p>为什么要盯这么细？因为每一步都有可观测的副作用：mmap 会在 <code>/proc/self/maps</code> 里留段，依赖加载会在 <code>solist</code> 里留节点，重定位会改 GOT 页，构造函数会跑你的 <code>init_array</code>。注入与检测的战场，就铺在这条链上。</p>
-<h2>从 loadLibrary 到 JNI_OnLoad 的八拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>.so 不是拷进去就能用的。它进来之后要先被“接上线”：谁依赖谁、每个符号该对应哪个地址、初始化函数按什么顺序跑，这些活由 linker 干。</p><p>看这八拍时只需要盯住一件事：<strong>地址是什么时候被填进去的</strong>。因为后面所有的 hook 方案，本质都是在某个“已经填好”的地址上做替换；替换得早还是晚，决定了你会不会被后续的填充覆盖掉。</p></div></aside>
+<h2 id="sec-10">从 loadLibrary 到 JNI_OnLoad 的八拍</h2>
 <ol><li><strong>`Runtime.nativeLoad`</strong> → 对 ClassLoader → 查出 <code>nativeLibraryDirs</code>（如 <code>/data/app/.../lib/arm64</code>）→ 结果：拼出 <code>libfoo.so</code> 的完整路径，交给 linker。</li><li><strong>linker 查缓存</strong> → 对全局 <code>solist</code> → 按 soname 比对已加载节点 → 结果：命中就只加引用计数、直接返回，后面的步骤一拍都不跑；未命中才继续。</li><li><strong>读 ELF 头与 program header</strong> → 对打开的文件 → 读 <code>e_ident</code>、校验 machine 与 class、取出所有 <code>PT_LOAD</code> → 结果：知道要映射几段、每段多大、什么权限。</li><li><strong>映射段</strong> → 对 <code>mmap</code> → 按 <code>p_offset</code>/<code>p_vaddr</code>/<code>p_filesz</code>/<code>p_memsz</code> 分别建 r-x、r--、rw- 映射，多出来的 <code>p_memsz</code> 部分（.bss）匿名补零 → 结果：文件字节第一次变成进程里的可执行页。</li><li><strong>递归加载 `DT_NEEDED`</strong> → 对每个依赖名 → 走同一套查找与映射 → 结果：libc、liblog、libm 等依次入列，并按依赖关系排出初始化顺序（依赖先跑）。</li><li><strong>符号解析与重定位</strong> → 对 <code>.rela.dyn</code> / <code>.rela.plt</code> / <code>DT_ANDROID_RELA</code> → 处理 <code>R_AARCH64_RELATIVE</code>（基址加偏移）、<code>GLOB_DAT</code> 与 <code>JUMP_SLOT</code>（查符号填 GOT），用 GNU hash 找定义 → 结果：代码里所有外部地址变成真实地址。</li><li><strong>跑构造函数</strong> → 对 <code>DT_INIT</code> 与 <code>DT_INIT_ARRAY</code> → 按数组顺序逐个调用 → 结果：全局对象被构造、自检代码被触发；这一步在 <code>JNI_OnLoad</code> <strong>之前</strong>。</li><li><strong>调 `JNI_OnLoad`</strong> → 对 <code>JavaVM*</code> → 由它 <code>RegisterNatives</code> 登记 native 方法并返回 <code>JNI_VERSION_1_6</code> → 结果：Java 侧的 <code>native</code> 方法终于有了可跳转的实现，<code>dlopen</code> 返回句柄。</li></ol>
-<h2>动手：把这条链打印出来</h2>
+<h2 id="sec-11">动手：把这条链打印出来</h2>
 <div class="code">
 <div class="code-title">离线看结构 + 设备上看日志</div>
 <pre><code># host：先看清楚这个 so 到底要什么

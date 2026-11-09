@@ -98,32 +98,35 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">L01</span><h1>LSPosed 总体设计与进程进入</h1><p class="ch-en">Zygisk pre/post specialize、进程筛选、framework DEX、Binder、Main.forkCommon</p></div>
 <p class="lead">先解决“进不进得来”，再解决“进来之后干什么”。</p>
-<h2>1.1 五个阶段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>LSPosed 的目标是：把模块代码送进目标 App 的进程里，在它的 Java 方法上挂钩子。听起来跟 frida 类似，区别在于它是<strong>常驻的、模块化的</strong>——装一次，之后所有 App 启动时自动生效。</p><p>第一个问题是“进不进得来”。Android 的进程不是你想进就能进的，得借道 zygote：在 App 进程刚被复制出来、还没开始跑自己的代码之前，抢先插进去。这个时机只有两个窗口，错过就得等下一次启动。</p><p>这一章讲这五个阶段、为什么要分两个时机、以及检测方会从哪里看出“这个进程被动过”。</p></div></aside>
+<h2 id="sec-1">1.1 五个阶段</h2>
 <figure>
 <img src="../assets/l_l01.png" alt="图 L1-1" width="1080">
 <figcaption><b>图 L1-1</b><span>从 zygote 注入到 forkCommon 的五个阶段</span></figcaption>
 </figure>
 <ol><li><strong>Zygisk 注入 zygote</strong>：与第 08 章同一套机制。</li><li><strong>pre-specialize</strong>：读模块配置，决定哪些包需要注入。</li><li><strong>fork 出 App</strong>：子进程带着已加载的 framework dex。</li><li><strong>post-specialize</strong>：按包名 / UID 做二次筛选。</li><li><strong>Main.forkCommon</strong>：初始化 Hook 框架，加载模块。</li></ol>
-<h2>1.2 为什么要分两个时机</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一个动作，做早了没用（东西还没准备好），做晚了也没用（别人已经拿走了）。所以只能在中间那个很窄的窗口里做。</p><p>这一节讲这两个时机各是什么、为什么不能合并成一个。读完你排计划时，会先确认「这件事必须在第几步之后、第几步之前」，再去写代码。</p></div></aside>
+<h2 id="sec-2">1.2 为什么要分两个时机</h2>
 <div class="tbl"><table>
 <thead><tr><th>时机</th><th>优势</th><th>限制</th></tr></thead><tbody>
 <tr><td>pre-specialize</td><td>还能读 /data/adb 下的模块目录与配置</td><td>还不知道自己的包名</td></tr>
 <tr><td>post-specialize</td><td>已知道包名与 UID，可精确筛选</td><td>读不到模块目录</td></tr>
 </tbody></table></div>
 <p>所以典型做法是：pre 阶段把需要的东西（dex、配置）先读进内存，post 阶段再根据“我是谁”决定用不用。</p>
-<h2>1.3 检测视角</h2>
+<h2 id="sec-3">1.3 检测视角</h2>
 <p>pre 阶段会打开模块目录，而一个沙箱内的 App 却“曾经”访问过 <code>/data/adb</code>——这是很强的信号。同理，framework dex 的内存映射、以及 fork 之后多出来的 dexElements，也都是线索。</p>
 <aside class="note"><span class="note-tag">要点</span><div>理解这一章的价值：所有“模块化”方案的骨架都长这样（Zygisk → pre/post → 进程内 hook）。换一个名字，机制是同一套。</div></aside>
-<h2>1.4 本章自测</h2>
+<h2 id="sec-4">1.4 本章自测</h2>
 <ul><li>pre 与 post 两个时机各能做什么、不能做什么？</li><li>为什么要把 dex 在 pre 阶段就读进内存？</li><li>pre 阶段访问 /data/adb 会留下什么信号？</li><li>如果目标进程没有 forkCommon（比如纯 native 进程），会发生什么？</li></ul>
-<h2>1.5 深入：framework dex 为什么要预加载</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>想在别人的 App 里改系统框架的行为，得先让框架的那份代码在进程里「已经可用」。可它通常是等 App 自己去要的时候才加载——那时候已经晚了。</p><p>所以得提前把它准备好，让后面的加载直接命中。这一节讲这个「提前」有多早、以及早到什么程度会撞上「系统还没初始化好」。</p></div></aside>
+<h2 id="sec-5">1.5 深入：framework dex 为什么要预加载</h2>
 <p>如果每个 App 进程在运行时才去读 dex 文件，会有两个问题：一是慢，二是“读文件”这个动作本身可见。预加载到 zygote 后，子进程通过 fork 直接继承内存映射，既不慢也不产生新的文件访问。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>启动开销</th><th>文件访问痕迹</th></tr></thead><tbody>
 <tr><td>运行时读取</td><td>高</td><td>明显</td></tr>
 <tr><td>zygote 预加载</td><td>低</td><td>仅一次</td></tr>
 </tbody></table></div>
-<h2>1.6 实战：判断某个进程是否被注入</h2>
+<h2 id="sec-6">1.6 实战：判断某个进程是否被注入</h2>
 <div class="code">
 <div class="code-title">三个信号</div>
 <pre><code># 1. maps 里有没有 framework dex 的匿名映射
@@ -133,7 +136,8 @@ grep -c &#x27;anon&#x27; /proc/&lt;pid&gt;/maps
 # 3. dexElements 里是否有私有目录路径</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.7 原理推演：为什么要在“两个时机”分别做事</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>进程刚起来的时候，很多东西还没建好：类加载器没影、常用类没加载。这时候做事，能改到最早的状态，但能用的工具几乎没有。等一切建好，工具齐了，可变的东西也都定型了。</p><p>所以一个成熟的方案会在两处各做一半：早的那次占位置，晚的那次补细节。这一节讲这两处各能做什么、不能做什么，读完你看别人的实现时，能看懂他为什么把代码放在那儿。</p></div></aside>
+<h2 id="sec-7">1.7 原理推演：为什么要在“两个时机”分别做事</h2>
 <p>因为“能读到什么”与“知道我是谁”这两件事，在时间上是错开的：fork 之后、specialize 之前，能读模块目录但不知道自己是谁；specialize 之后，知道自己是谁但读不到模块目录。</p>
 <div class="tbl"><table>
 <thead><tr><th>信息</th><th>pre</th><th>post</th></tr></thead><tbody>
@@ -142,7 +146,8 @@ grep -c &#x27;anon&#x27; /proc/&lt;pid&gt;/maps
 <tr><td>SELinux 域</td><td>zygote 域</td><td>untrusted_app 域</td></tr>
 </tbody></table></div>
 <p>所以正确的架构是“pre 读、post 用”——把需要的东西提前读进内存，等知道身份后再决定用不用。</p>
-<h2>1.8 数据细节：forkCommon 做了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>新进程从母体分出来的那一刻，系统会跑一段固定的准备逻辑：把该继承的继承、该重置的重置、该通知的通知。这段逻辑就是 forkCommon。</p><p>这张表列出它做的事。读懂它，你就知道「进程刚出来时是什么状态」，也就知道自己的代码放在它之前还是之后会看到什么。</p></div></aside>
+<h2 id="sec-8">1.8 数据细节：forkCommon 做了什么</h2>
 <div class="code">
 <div class="code-title">初始化顺序（概念）</div>
 <pre><code>1. 初始化 Hook 框架（LSPlant）
@@ -153,7 +158,8 @@ grep -c &#x27;anon&#x27; /proc/&lt;pid&gt;/maps
 <button class="copy" type="button">复制</button>
 </div>
 <p>如果第 3 步失败（模块 dex 加载不了），表现是“框架起来了但模块没生效”。排查时先看这一步的日志。</p>
-<h2>1.9 深入：进程筛选的三种粒度</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「给哪些进程生效」可以按包名挑、按用户挑、按进程特征挑。三种粒度各有各的漏：按包名漏掉没名字的、按用户漏掉跨用户的、按特征漏掉特征不明显的。</p><p>这一节比较这三种。读完你能按「我要覆盖谁」直接选一种，也知道它一定会漏掉什么。</p></div></aside>
+<h2 id="sec-9">1.9 深入：进程筛选的三种粒度</h2>
 <div class="tbl"><table>
 <thead><tr><th>粒度</th><th>依据</th><th>优缺点</th></tr></thead><tbody>
 <tr><td>全量</td><td>所有 App</td><td>简单，但开销大、暴露面广</td></tr>
@@ -161,7 +167,8 @@ grep -c &#x27;anon&#x27; /proc/&lt;pid&gt;/maps
 <tr><td>按 UID</td><td>运行时判断</td><td>能覆盖多进程 App</td></tr>
 </tbody></table></div>
 <p>实践中常用“包名 + UID”组合：包名决定“要不要进”，UID 决定“进来后怎么处理多进程”。</p>
-<h2>1.10 深入：framework dex 的加载时机</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>它什么时候变成可用的，决定了你最早能动手的时刻。早了没得用，晚了别人的判断已经做完了。而这个时机在不同系统版本上还不一样。</p><p>这一节讲这个时机怎么找。读完你面对一台新设备时，知道该往哪儿打点去确认，而不是照抄别人的位置。</p></div></aside>
+<h2 id="sec-10">1.10 深入：framework dex 的加载时机</h2>
 <p>它必须在“App 的 ClassLoader 创建之前”就准备好，否则插不进 <code>dexElements</code>。这也是为什么它要在 pre-specialize 阶段读进内存——那时还没有 App 的 ClassLoader。</p>
 <div class="code">
 <div class="code-title">概念顺序</div>
@@ -170,7 +177,7 @@ fork -&gt; specialize: App 的 ClassLoader 创建
 post-specialize: 把 dex 插进 dexElements</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.11 实战：确认 forkCommon 是否被调用</h2>
+<h2 id="sec-11">1.11 实战：确认 forkCommon 是否被调用</h2>
 <div class="code">
 <div class="code-title">三个信号</div>
 <pre><code>1. 日志里有框架初始化输出
@@ -178,7 +185,7 @@ post-specialize: 把 dex 插进 dexElements</code></pre>
 3. dexElements 里有额外条目</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>进程睁眼前的那一秒</h2>
+<h2 id="sec-12">进程睁眼前的那一秒</h2>
 <p>一个 App 刚被 zygote <code>fork</code> 出来，还没来得及执行第一行 <code>Application.onCreate</code>。此刻它继承了父进程整张页表、几十个已经打开的 fd、以及 zygote 里所有已加载的 DEX。LSPosed 必须在这个进程<strong>睁眼之前</strong>做完三件事：把 framework dex 摆到能被调用的位置、按包名决定要不要继续、把模块列表变成进程内的回调。晚一步，App 的 <code>PathClassLoader</code> 就已经建好，想再往 <code>dexElements</code> 里塞东西就得动隐藏 API；早一步，你还不知道自己是 <code>com.example.app</code> 还是 <code>com.android.systemui</code>。</p>
 <p>把这一秒放大看，它其实是一条<strong>权限递减</strong>的通道：<code>preAppSpecialize</code> 时进程还顶着 zygote 的 SELinux 域，能读 <code>/data/adb/lspd</code> 下的模块配置，但 <code>nice_name</code> 与最终包名还没落定；<code>specialize</code> 一过，UID、补集 GID、<code>seinfo</code>、<code>untrusted_app</code> 域一次性贴上，<code>/data/adb</code> 立刻变成 <code>EACCES</code>。所以框架不是&#x27;可选地分两段&#x27;，而是&#x27;只有这两段各自能拿到对方拿不到的东西&#x27;——配置必须过河，权限必须留下。</p>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_lsp">
@@ -209,11 +216,12 @@ post-specialize: 把 dex 插进 dexElements</code></pre>
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_lsp.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["Zygisk 在 specialize 前后把 framework 注入进程", "加载模块 DEX，调整 ClassLoader 委派顺序", "LSPlant 改写 ArtMethod，生成 trampoline 与 backup", "多个模块按 priority 串成 HookItem 回调链", "before → 原方法 → after，结果沿链回传"]</script>
-<h2>两道门之间，谁搬了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>模块要在目标进程里跑起来，得过两道门：第一道决定“你能不能进来”，第二道决定“进来之后以什么身份待着”。很多人卡住，是因为把这两道门当成了一件事——结果第一道过了、第二道没过，就以为模块根本没加载。</p><p>这一节把两道门之间“谁把什么交给了谁”摊开：模块代码是什么时候被搬进目标进程的、身份是什么时候换的、中间那段空窗期由谁负责。搞清这个，“模块日志一条都没打出来”这种问题就有地方下手了。</p></div></aside>
+<h2 id="sec-13">两道门之间，谁搬了什么</h2>
 <ol><li><strong>Zygisk 加载器 → zygote 进程</strong>：Magisk / KernelSU 的 Zygisk 在 zygote 启动时 <code>dlopen</code> 模块 so，注册 <code>preAppSpecialize</code> 与 <code>postAppSpecialize</code> 两个回调；结果是此后每个即将诞生的 App 都会先穿过这一段 native 代码，没有例外。</li><li><strong>preAppSpecialize → 模块配置与 framework dex</strong>：框架在这道门里读 scope 配置、把 <code>framework.dex</code> 的字节缓存进堆；结果是子进程不需要再碰 <code>/data/adb</code>，配置已经以内存形态躺在被继承的页表里。</li><li><strong>companion 进程 → 特权读写</strong>：枚举模块 APK、读 sqlite 配置这类需要高权限的活，通过 <code>connectCompanion()</code> 转交给一个独立进程；结果是 zygote 里不会长时间挂着一个指向模块目录的 fd。</li><li><strong>fork + specialize → 子进程</strong>：内核复制页表（COW），Android 侧补上 UID/GID、进程名与 SELinux context；结果是同一份 framework dex 被父子共享，但权限已经塌到 <code>untrusted_app</code>。</li><li><strong>postAppSpecialize → 二次筛选</strong>：框架用此时才准确的包名与 UID 查 scope 表，不在作用域内就直接返回并释放缓存；结果是白名单外的进程几乎零残留，连初始化日志都不打。</li><li><strong>Main.forkCommon → 进程内框架</strong>：命中作用域才初始化 <code>LSPosedBridge</code>、装配 LSPlant、构造模块 ClassLoader、把 <code>handleLoadPackage</code> 派发给各模块；结果是 App 的 <code>onCreate</code> 执行时，回调链已经挂好，业务代码一无所知。</li></ol>
 <p>最容易被读漏的是第五拍：<strong>筛掉也是一种动作</strong>。很多&#x27;进不进得来&#x27;的排查，最后发现问题不在注入，而在 scope 没勾上目标包，框架在 post 阶段自己退了出去。日志一片安静，不代表机制失效，只代表筛选器按预期工作。</p>
 <p><code>framework.dex</code> 必须在 pre 阶段读进内存，还有一个更硬的理由：它要在 App 的 <code>PathClassLoader</code> 构造之前就变成可用的 <code>DexFile</code>，否则只能事后去改 <code>DexPathList.dexElements</code>——那是隐藏 API，Android 14 之后还要再过一层 <code>VMRuntime</code> 的校验。fork 时继承一份已加载的 dex，比在子进程里补插一段数组干净得多，也不会在 <code>dexElements</code> 上留下突兀的追加痕迹。</p>
-<h2>把进没进来变成日志里的一行</h2>
+<h2 id="sec-14">把进没进来变成日志里的一行</h2>
 <div class="code">
 <div class="code-title">四步现场确认（替换包名与 PID）</div>
 <pre><code># 1. 拿 PID：输出一个数字算成功，空输出说明进程根本没起来

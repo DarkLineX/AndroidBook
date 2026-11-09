@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">10</span><h1>Android frida 源码讲解</h1><p class="ch-en">从 frida 启动开始</p></div>
 <p class="lead">不背 API，只讲清“谁在什么时候做了什么”。</p>
-<h2>10.1 五段式启动</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>frida 是这套东西里最常用的工具，但大部分人只会背 API。这一章不讲 API，讲它内部是怎么排布工作的：你在电脑上敲的那条命令，最后是怎么变成手机里某个进程中的一段 JS 在跑。</p><p>整条链有五个环节：电脑端的命令行、手机里的 server、把 agent 塞进目标进程的注入器、agent 里的运行时、以及你写的那段脚本。每一环都有自己的职责和通信方式。</p><p>为什么要弄清这个？因为<strong>排查问题时，你必须先知道问题出在哪一环</strong>。脚本没反应，可能是脚本本身错、可能是注入没成功、可能是 server 没起来、也可能是端口没通——四件事的修法完全不同。</p></div></aside>
+<h2 id="sec-1">10.1 五段式启动</h2>
 <figure>
 <img src="../assets/f10_frida_boot.png" alt="图 10-1" width="1080">
 <figcaption><b>图 10-1</b><span>从 host 命令行到脚本执行的五段链路</span></figcaption>
 </figure>
-<ol><li><strong>host 端</strong>：<code>frida-tools</code> 通过 <code>frida-core</code> 连接设备（USB 走 adb forward，或直接 TCP）。</li><li><strong>设备端 server</strong>：<code>frida-server</code> 监听端口，管理 Session、进程枚举、注入。</li><li><strong>注入器</strong>：ptrace 进目标，或走 zygote 门控；把 agent so 映射进目标地址空间。</li><li><strong>agent</strong>：自带 Gum（插桩引擎）与 JS 运行时（QuickJS 或 V8），跑你的脚本。</li></ol>
-<h2>10.2 三个对象模型</h2>
+<ol><li><strong>host 端</strong>：<code>frida-tools</code> 通过 <code>frida-core</code> 连接设备（USB 走 adb forward，或直接 TCP）。</li><li><strong>设备端 server</strong>：<code>frida-server</code> 监听端口，管理 Session、进程枚举、注入。</li><li><strong>注入器</strong>：ptrace 进目标，或走 zygote 门控；把 agent so 映射进目标地址空间。</li><li><strong>agent</strong>：自带 Gum（插桩引擎）与 JS 运行时（QuickJS 或 V8），跑你的脚本。</li><li><strong>脚本</strong>：<code>createScript()</code> 把源码交给 agent 的运行时编译求值，<code>send()</code> 的消息再经 agent → server → host 中转到终端。</li></ol>
+<h2 id="sec-2">10.2 三个对象模型</h2>
 <div class="tbl"><table>
 <thead><tr><th>对象</th><th>生命周期</th><th>能做什么</th></tr></thead><tbody>
 <tr><td>Device</td><td>整个连接期间</td><td>枚举进程、spawn、attach</td></tr>
@@ -112,7 +113,7 @@
 <tr><td>Script</td><td>一次 load 到 unload</td><td>执行 JS、收发消息</td></tr>
 </tbody></table></div>
 <p>理解这三层的好处：出问题时能快速定位是哪一层断了。脚本没反应 → 先看 Session 是否建立；Session 建立了但 hook 不生效 → 看 Script 是否加载成功；加载成功但没回调 → 看 hook 是否真的挂上了。</p>
-<h2>10.3 server 端的通信结构</h2>
+<h2 id="sec-3">10.3 server 端的通信结构</h2>
 <p>server 用 GLib 的 <code>GSocket</code> / <code>GDBusConnection</code> 做对象与传输。不必背具体类名，但要记住一条：<strong>host 与 agent 之间的每条消息，都要经过 server 中转</strong>。这也是为什么 server 被杀掉，脚本会立刻失联。</p>
 <div class="code">
 <div class="code-title">最小可用的连通性验证</div>
@@ -125,9 +126,10 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>排查顺序：连通性 → 权限（SELinux）→ 注入 → 脚本语法 → 目标类是否存在。这个顺序能解决 90% 的“frida 用不了”问题。</div></aside>
-<h2>10.4 本章自测</h2>
+<h2 id="sec-4">10.4 本章自测</h2>
 <ul><li>Device / Session / Script 三层各管什么？</li><li>server 被杀掉后，已经注入的 agent 会怎样？</li><li>为什么建议每个脚本第一句都写 send？</li><li>如果 <code>frida-ps -U</code> 能列进程，但 attach 失败，问题可能在哪一层？</li></ul>
-<h2>10.5 深入：agent 是怎么被“放”进去的</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「注入」两个字掩盖了很多步骤：先进到目标进程里、再拿到执行权、再把要用的库映射进来、最后才轮到脚本。哪一步出岔子，表现都是「什么都没发生」。</p><p>这一节按顺序走一遍。读完你排查失败时，能判断是「没进去」还是「进去了没跑起来」——这两类原因的修法完全不同。</p></div></aside>
+<h2 id="sec-5">10.5 深入：agent 是怎么被“放”进去的</h2>
 <p>frida-server 支持多种注入方式，选择依据是“目标状态”与“权限”。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>适用</th><th>代价</th></tr></thead><tbody>
@@ -136,10 +138,11 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <tr><td>preload</td><td>能控制启动参数时</td><td>需要改 rc / 环境变量</td></tr>
 <tr><td>调试器附加</td><td>开发阶段</td><td>会留下调试状态</td></tr>
 </tbody></table></div>
-<h2>10.6 源码阅读的入口建议</h2>
+<h2 id="sec-6">10.6 源码阅读的入口建议</h2>
 <ol><li>先看 <code>frida-core</code> 里的 Device / Session 抽象，理解“一次连接”的模型。</li><li>再看 server 侧的注入实现，理解“agent 如何被映射”。</li><li>然后看 <code>frida-gum</code> 里的 Interceptor，理解 hook 的实现。</li><li>最后看 JS 运行时绑定（QuickJS / V8），理解脚本如何被调度。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>不要从“最先执行的 main 函数”开始读。Frida 代码库很大，从抽象层往下读，比从入口往上读高效得多。</div></aside>
-<h2>10.7 原理推演：为什么 agent 能“自带运行时”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一般注入是把一小段机器码塞进别人进程，那段码只能干很有限的事。agent 不一样：它把自己要用的整个脚本引擎一起搬进去了，所以进去之后能自己解释、自己执行，不需要目标进程提供任何配合。</p><p>代价是体积和「留痕」都更大。这节讲的是这份能力从哪来、又必须付出什么，读完你能判断一个方案到底是「借住」还是「自建」，两者的排查手感完全不同。</p></div></aside>
+<h2 id="sec-7">10.7 原理推演：为什么 agent 能“自带运行时”</h2>
 <p>因为 agent 是一个完整的 so，它自己链接了 JS 引擎（静态链接进 agent）。所以它不依赖目标进程里有没有 V8、有没有 QuickJS——它把引擎一起搬进去了。</p>
 <div class="tbl"><table>
 <thead><tr><th>依赖</th><th>来源</th><th>是否依赖目标</th></tr></thead><tbody>
@@ -149,7 +152,8 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <tr><td>libc++</td><td>通常静态链接</td><td>否</td></tr>
 </tbody></table></div>
 <p>这也解释了 agent 为什么这么大（几 MB 到几十 MB）：它把整个运行时都打包了。而“体积大”本身就是个检测信号——映射进目标后，maps 里会多出一大段。</p>
-<h2>10.8 数据细节：agent 的映射布局</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>注入进去的东西在内存里占几块、分别是什么权限、彼此什么顺序——这张表画的就是这个。</p><p>它的用处是排查：注入失败或者跑飞的时候，对照这张表看「少了一块」还是「权限不对」，比从头猜快得多。看的时候重点看每块的权限和顺序。</p></div></aside>
+<h2 id="sec-8">10.8 数据细节：agent 的映射布局</h2>
 <div class="code">
 <div class="code-title">典型的 agent 映射（简化）</div>
 <pre><code>7f0000000000-7f0000100000 r-xp  &lt;anonymous&gt;   # 代码
@@ -159,7 +163,7 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <button class="copy" type="button">复制</button>
 </div>
 <p>这就是 F11 里“Gum ELF 匿名映射”那一条的来源。它的处理思路是：把 agent 拆成多段，塞进已有合法 so 的 padding 区域，或者伪装成 <code>[anon:dalvik-...]</code> 之类的系统命名。</p>
-<h2>在 host 敲下回车的那一秒</h2>
+<h2 id="sec-9">在 host 敲下回车的那一秒</h2>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_frida">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -190,11 +194,11 @@ frida -U -f com.app -l a.js    # 能进 = 注入通了
 <script type="application/json" class="anim-data">["frida-tools 发起 spawn / attach 请求", "设备端 frida-server 建立 HostSession", "ptrace 暂停目标，或由 zygote 门控抢占 fork 窗口", "bootstrap / loader 把 frida-agent 映射进目标", "agent 启动 Gum 与 JS 线程，脚本开始注册 hook"]</script>
 <p>终端里 <code>frida -U -f com.target.app -l a.js</code> 敲下去，到屏幕上蹦出第一行 log，大约一秒。这一秒里发生了五次换手：host 上的 Python 客户端找到设备，设备上的 <code>frida-server</code> 接下请求，注入器把一段 so 塞进刚被 spawn 出来、还停在 zygote 门口的进程，这段 so 在目标进程里起了一个 JS 引擎，最后才轮到你写的那行 <code>send(&#x27;alive&#x27;)</code>。把这一秒按帧拆开，「Device / Session / Script 三层」就不再是三个名词，而是三个具体的交接点。</p>
 <p>最容易搞错的一件事先摆在前面：<strong>你写的 JS 从来不在 host 上跑</strong>。它在目标进程的地址空间里执行，由 agent 自带的 QuickJS（部分构建用 V8）解释；<code>console.log</code> 和 <code>send</code> 只是把消息序列化后，经 server 中转运回 host 显示。这个事实决定了后面所有排查顺序。</p>
-<h2>一条命令穿过五段链路</h2>
+<h2 id="sec-10">一条命令穿过的六拍</h2>
 <ol><li><strong>`frida-tools`（host）</strong> → 对 <code>frida-core</code> 的 <code>DeviceManager</code> → 通过 USB 走 <code>adb forward tcp:27042</code>，或直接 TCP 连设备端口 → 结果：拿到一个 <code>Device</code> 句柄，能枚举进程。</li><li><strong>`Device.spawn()`</strong> → 对 <code>frida-server</code> → 发 spawn 请求与包名 → 结果：server 借 zygote 门控把目标进程创建出来并暂时挂住，等 agent 就位。</li><li><strong>注入器（server 侧）</strong> → 对目标进程 → ptrace 附加或走 spawn 时的早期注入，把 <code>frida-agent.so</code> 映射进去 → 结果：目标地址空间里多了一个模块，它的入口 <code>_frida_agent_main</code> 被调用。</li><li><strong>agent 初始化</strong> → 对自身 → 建 Gum 引擎（<code>Interceptor</code> / <code>Stalker</code> / <code>MemoryAccessMonitor</code>）、起 JS 运行时、开一条回到 server 的控制通道 → 结果：一个能执行脚本、能收发消息的运行时活了。</li><li><strong>`Session.createScript()` + `load()`</strong> → 对 JS 运行时 → 把 <code>a.js</code> 的源码编译并求值 → 结果：脚本第一句 <code>send(&#x27;alive&#x27;)</code> 执行，消息经 agent → server → host 三段中转到终端。</li><li><strong>脚本运行期</strong> → 对 <code>Interceptor.attach</code> 等 API → 转成 Gum 的插桩动作 → 结果：hook 真正挂到目标函数上，回调在目标进程里被触发。</li></ol>
-<h2>断在哪一层，症状完全不同</h2>
+<h2 id="sec-11">断在哪一层，症状完全不同</h2>
 <ol><li><strong>连不上设备</strong> → 对 <code>DeviceManager</code> → 报 <code>unable to connect to remote frida-server</code> → 结果：还没进到注入，先查 server 与端口转发。</li><li><strong>能枚举进程、spawn 失败</strong> → 对 <code>Device.spawn</code> → 报包名找不到或 SELinux 拒绝 → 结果：server 活着但没拿到进程，查包名与权限。</li><li><strong>能 attach、脚本没反应</strong> → 对 <code>Script.load</code> → 多半是 JS 语法错或目标类还没加载 → 结果：以脚本第一句 <code>send</code> 是否到达为分界。</li><li><strong>有 hook 但回调不触发</strong> → 对 Gum 的 <code>Interceptor</code> → 目标函数地址错、或被 JIT 内联 → 结果：脚本活着，插桩点没命中。</li></ol>
-<h2>动手：把五段链路逐段点亮</h2>
+<h2 id="sec-12">动手：把这条链路逐段点亮</h2>
 <div class="code">
 <div class="code-title">从 server 到脚本的完整连通性验证</div>
 <pre><code># 1) 推 server 并在设备上后台运行（按 ABI 选对二进制）
@@ -206,7 +210,7 @@ adb forward tcp:27042 tcp:27042
 # 2) 第一段：Device 通不通
 frida-ps -U | head -20
  
-# 3) 第五段：脚本有没有真的在目标里跑
+# 3) 最后一拍：脚本有没有真的在目标里跑
 # probe.js 内容：
 #   send(&#x27;alive&#x27;);
 #   console.log(&#x27;pid =&#x27;, Process.id);

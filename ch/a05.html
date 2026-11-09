@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">A05</span><h1>附录 E · 常见问题与排错清单</h1><p class="ch-en">90% 的“不工作”，都能在这几页里找到答案</p></div>
 <p class="lead">按“症状 → 可能原因 → 排查动作”组织，遇到问题直接查。</p>
-<h2>E.1 环境类</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一页收的是<strong>排错顺序</strong>，不是排错知识。</p><p>为什么强调顺序？因为着急的时候人的本能是“同时改三个地方”，结果现象一变就再也不知道是哪个改动起的作用了。这一页给的是“先做什么、再做什么”的固定顺序，让你在最慌的时候也有章可循。</p><p>用法：按“症状 → 可能原因 → 该敲什么命令”三列查。查到之后<strong>一次只改一处</strong>，改完立刻重跑。</p></div></aside>
+<h2 id="sec-1">E.1 环境类</h2>
 <div class="tbl"><table>
 <thead><tr><th>症状</th><th>可能原因</th><th>排查动作</th></tr></thead><tbody>
 <tr><td>frida-ps -U 无输出</td><td>server 没起 / 端口没转发 / 权限</td><td>adb forward；确认 server 进程在；看 dmesg 有无 avc</td></tr>
@@ -107,7 +108,7 @@
 <tr><td>adb 设备 offline</td><td>adb 服务版本不匹配 / 授权未确认</td><td>adb kill-server；重新插拔；看设备端弹窗</td></tr>
 <tr><td>u2 初始化失败</td><td>设备端 atx-agent 未装或被拦</td><td>python -m uiautomator2 init；检查网络与权限</td></tr>
 </tbody></table></div>
-<h2>E.2 Hook 类</h2>
+<h2 id="sec-2">E.2 Hook 类</h2>
 <div class="tbl"><table>
 <thead><tr><th>症状</th><th>可能原因</th><th>排查动作</th></tr></thead><tbody>
 <tr><td>hook 生效但值不对</td><td>hook 了错的重载</td><td>用 overload 指定签名</td></tr>
@@ -116,7 +117,7 @@
 <tr><td>hook 一段时间后失效</td><td>JIT 内联 / 方法被重新编译</td><td>deopt 或改 hook 位置</td></tr>
 <tr><td>Java.use 找不到类</td><td>类未加载 / 不是同一 ClassLoader</td><td>enumerateClassLoaders 逐个试</td></tr>
 </tbody></table></div>
-<h2>E.3 脱壳类</h2>
+<h2 id="sec-3">E.3 脱壳类</h2>
 <div class="tbl"><table>
 <thead><tr><th>症状</th><th>可能原因</th><th>排查动作</th></tr></thead><tbody>
 <tr><td>dump 出来是空的</td><td>时机太早（未回填）</td><td>挂方法首次执行再 dump</td></tr>
@@ -124,7 +125,7 @@
 <tr><td>方法体是 nop</td><td>抽取型壳未触发回填</td><td>跑一遍功能再 dump</td></tr>
 <tr><td>只有壳的类</td><td>dump 错了 dex</td><td>按 ClassLoader 的 dexPath 定位</td></tr>
 </tbody></table></div>
-<h2>E.4 内核类</h2>
+<h2 id="sec-4">E.4 内核类</h2>
 <div class="tbl"><table>
 <thead><tr><th>症状</th><th>可能原因</th><th>排查动作</th></tr></thead><tbody>
 <tr><td>模块加载 -ENOENT</td><td>符号不存在/未导出</td><td>查 kallsyms 与 EXPORT_SYMBOL</td></tr>
@@ -133,17 +134,19 @@
 <tr><td>加载后立即崩</td><td>init 顺序错 / 空指针</td><td>先只做只读观测验证环境</td></tr>
 <tr><td>卸载后崩</td><td>timer/work 未取消</td><td>cancel + flush 再释放</td></tr>
 </tbody></table></div>
-<h2>E.5 一张“三分钟自检表”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>出问题时最耗时的不是修，是「不知道从哪开始查」。这张表就是给这个时刻用的：按顺序问几个问题，每个问题都能用一条命令回答。</p><p>三分钟内你能把范围缩小到某一层。这一节讲这张表怎么用，读完你遇到「什么都没反应」时，会先照表走一遍，而不是乱试。</p></div></aside>
+<h2 id="sec-5">E.5 一张“三分钟自检表”</h2>
 <ol><li>设备能 <code>adb shell</code> 吗？→ 不能就先解决连接。</li><li><code>getenforce</code> 是 Enforcing 吗？→ 是的话所有跨域操作先想 SELinux。</li><li><code>frida-ps -U</code> 能列进程吗？→ 不能就是 server/端口/权限问题。</li><li>脚本里有 <code>send(&#x27;alive&#x27;)</code> 吗？→ 没有就先加，否则无法判断是否执行。</li><li>目标类真的被加载了吗？→ 打印 ClassLoader 与类名确认。</li><li>dmesg 里有新报错吗？→ 有就先读它，比猜快十倍。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>最后一条最重要：<strong>先读日志，再改代码</strong>。绝大多数“玄学问题”，答案都躺在 dmesg 或 host 端的 error 里。</div></aside>
-<h2>周五晚上，脚本突然一个字都不吐</h2>
+<h2 id="sec-6">周五晚上，脚本突然一个字都不吐</h2>
 <p>周五晚上，离收工还有二十分钟，昨天还好的脚本今天一个字都不吐。终端安静得可疑：<code>frida</code> 连上了，进程也在，但回调一次没进。你第一反应是改脚本——加个 log、换个 hook 点、再改一次——三处一起动，改完现象变了，却更不知道是哪处起的效。前面 E.1 到 E.4 已经按环境、Hook、脱壳、内核分过类，E.5 给了三分钟自检表。这一页把那几张表摊成一条<strong>自上而下的五层二分</strong>：每层只问一个问题，看到什么算通过，不通过就停在这一层，绝不往下改代码。</p>
 <p>把两只手从键盘上拿开，先念一遍顺序：连接 → server → 注入 → 脚本 → 目标逻辑。九成的「玄学」都卡在前三层，而人总爱直接冲到第五层。按这个顺序走，二十分钟够你把范围缩到一行命令上。</p>
-<h2>五层二分，逐拍往下走</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>排查的本质是不断对半砍：先判断「问题在应用层还是系统层」，再在那一半里继续分。每砍一次，可疑范围就小一半。</p><p>关键不是砍得快，而是每次砍的依据要硬——能用一个现象证明「不在这边」。这一节讲这个流程，读完你不会再凭感觉猜，而是每一步都留下一条排除理由。</p></div></aside>
+<h2 id="sec-7">五层二分，逐拍往下走</h2>
 <ol><li><strong>第一层 连接</strong> → 你 → 对 <strong>adb 通道</strong> → 敲 <code>adb devices</code> 与 <code>adb shell echo ok</code> → 结果通过是状态 <code>device</code> 且回显 <code>ok</code>；不通过就先 <code>adb kill-server</code>、重插线、看设备端授权弹窗，此层不解决绝不往下走。</li><li><strong>第二层 server</strong> → 你 → 对 <strong>frida-server 进程与端口</strong> → <code>adb shell ps -A | grep frida</code> 加 <code>adb forward --list</code> → 结果通过是进程在、转发规则在、<code>frida-ps -U</code> 能列出目标 pid。</li><li><strong>第三层 注入</strong> → 你 → 对 <strong>脚本执行证据</strong> → 在脚本第一行放 <code>send(&#x27;alive&#x27;)</code> 并用 <code>-f</code> spawn → 结果通过是 host 端立刻收到 <code>alive</code>；收不到就是注入层断了，此层以下的所有判断都不作数。</li><li><strong>第四层 脚本</strong> → 你 → 对 <strong>目标类与方法</strong> → 打印 ClassLoader 列表、确认类已加载、用 <code>overload</code> 指定签名 → 结果通过是能打印出方法签名，且命中计数大于零。</li><li><strong>第五层 目标逻辑</strong> → 你 → 对 <strong>hook 位置</strong> → 查 JIT 内联、查抽取型壳的回填时机、查 native 实现 → 结果是终于允许改业务逻辑，而且此时只动一处。</li><li><strong>每层收尾</strong> → 你 → 对 <strong>本层结论</strong> → 写一行「通过 / 卡住 + 依据」→ 结果是二十分钟后你手上有一份可复用的排查记录，而不是一堆改乱的脚本。</li></ol>
-<h2>每层「看到什么算通过」</h2>
+<h2 id="sec-8">每层「看到什么算通过」</h2>
 <ul><li><strong>连接层</strong>：<code>adb devices</code> 显示 <code>device</code> 而非 <code>offline</code> / <code>unauthorized</code>；<code>adb shell echo ok</code> 原样回显。</li><li><strong>server 层</strong>：<code>ps -A | grep frida</code> 有进程，<code>adb forward --list</code> 有 27042 规则，<code>frida-ps -U</code> 能列出目标包名与 pid。</li><li><strong>注入层</strong>：<code>send(&#x27;alive&#x27;)</code> 在 spawn 后一秒内到达 host；没有它，后面所有「值不对」的讨论都是空谈。</li><li><strong>脚本层</strong>：<code>Java.enumerateClassLoaders</code> 能枚举出目标加载器，<code>overload(...)</code> 打印的签名与 jadx 里一致，命中计数 ≥ 1。</li><li><strong>逻辑层</strong>：同一输入在不 hook 与 hook 两种状态下结果可对照，且差异能由你改的那一处唯一解释。</li><li><strong>内核层补充</strong>：<code>dmesg</code> 里若有新 avc 或 <code>-ENOENT</code> / <code>-EINVAL</code> / <code>-ENOSPC</code>，先读它再改代码，比猜快十倍。</li></ul>
-<h2>可复现实验：一条脚本跑完五层</h2>
+<h2 id="sec-9">可复现实验：一条脚本跑完五层</h2>
 <div class="code">
 <div class="code-title">host 端排错脚本（逐层看输出，卡住即停）</div>
 <pre><code>PKG=com.example.range
@@ -181,7 +184,7 @@ adb shell &#x27;dmesg | grep -i avc | tail -10&#x27;</code></pre>
 <tr><td>冷启动才复现</td><td>am force-stop 后重跑</td><td>三次结果一致</td><td>把冷启动列为独立用例</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>这章最反直觉的一点：<strong>九成的「玄学问题」不是代码写错，是你以为在跑的那份代码根本没被加载</strong>。缓存、旧端口转发、指向另一个目录的 <code>-l</code>、热启动残留的进程，都会让你对着一份没生效的脚本反复调优。所以 <code>send(&#x27;alive&#x27;)</code> 不是调试小技巧，它是整条排错链的地基：先证明「它在跑」，再谈「它跑得对不对」。</div></aside>
-<h2>一页收尾：三条不许破的规矩</h2>
+<h2 id="sec-10">一页收尾：四条不许破的规矩</h2>
 <ul><li><strong>先读日志，再改代码</strong>：<code>dmesg</code>、<code>logcat</code>、host 端 error，三处里通常已经写着答案。</li><li><strong>一次只改一处</strong>：改完立刻重跑同一套用例，否则现象一变就失去归因能力。</li><li><strong>每次都留回归</strong>：修好之后 <code>am force-stop</code> 冷启动再跑一遍，确认差异只由那一处引起。</li><li><strong>先分类，再动手</strong>：A01 的速查卡负责定层，本页负责定顺序，两者配合才不会在着急时同时改三处。</li></ul>
 <p>这本手册正好是全书收尾：A01 把六十五章压成一张按症状倒推的卡，A02 教你看懂日志里的缩写，A03 把环境固定成可复现的档案，A04 把答案练成能推导的能力，到这里 A05 把「出了问题怎么办」变成一条不需要临场发挥的顺序。合上附录回头看，D01 的采样时间线、T03 的三组记录、L10 的八项用例，其实都在说同一句话——先建模型，再做实验，用数据说话，然后把限制老实写下来。</p>
 </article>

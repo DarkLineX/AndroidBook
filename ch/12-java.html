@@ -98,16 +98,17 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">12</span><h1>Android Java Hook 原理</h1><p class="ch-en">Java Hook 到底改了什么</p></div>
 <p class="lead">一个指针的替换，撑起了整个 Java 层的注入生态。</p>
-<h2>12.1 一次 Java 方法调用的真实过程</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Java 层的方法调用，剥到最后只有两步：<strong>查表，跳转</strong>。</p><p>每个 Java 方法在运行时都有一个“档案袋”，里面写着“我的代码从哪个地址开始”。调用一个方法，就是找到这个档案袋、读出地址、跳过去。所以想改变一个方法的行为，最直接的办法就是把档案袋里那个地址换掉。</p><p>听起来简单，坑却很多：换了不生效（因为代码已经被编译成机器码，不再查表）、换了之后原方法调不回去、换了会被检测方从“方法标志位”上看出来。这一章把这些坑一个个讲清楚。</p></div></aside>
+<h2 id="sec-1">12.1 一次 Java 方法调用的真实过程</h2>
 <p>字节码里的 <code>invoke-virtual</code> 只带一个方法索引。ART 执行时会先 resolve 出 <code>ArtMethod*</code>，再读它的 <code>entry_point_from_quick_compiled_code</code>，然后跳过去。也就是说：<strong>方法调用的本质是“查表 + 跳转”</strong>。</p>
 <figure>
 <img src="../assets/f12_java_hook.png" alt="图 12-1" width="1080">
 <figcaption><b>图 12-1</b><span>正常调用与 Hook 之后的调用路径对比</span></figcaption>
 </figure>
-<h2>12.2 把表项换掉</h2>
+<h2 id="sec-2">12.2 把表项换掉</h2>
 <ol><li>拿到目标方法的 <code>ArtMethod*</code>（反射、JVMTI、或扫描内存）。</li><li>备份原始的 entrypoint，以便“调用原方法”。</li><li>把自己的桩函数地址写进 entrypoint。</li><li>如果桩函数是 native 实现，还要把方法标志位改成 <code>kAccNative</code>。</li></ol>
 <p>听起来简单，实际有三个坑：<strong>一是 ArtMethod 的布局随版本变化</strong>（Android 14/16 有调整，见 L07/L08）；<strong>二是 JIT 可能已经把方法内联到调用者里</strong>，改 entrypoint 不生效，需要去优化（deopt，见 L03）；<strong>三是调用原方法要遵守 ART 的调用约定</strong>，不能简单跳回旧入口。</p>
-<h2>12.3 检测方怎么看</h2>
+<h2 id="sec-3">12.3 检测方怎么看</h2>
 <div class="tbl"><table>
 <thead><tr><th>痕迹</th><th>怎么看</th><th>说明</th></tr></thead><tbody>
 <tr><td>方法变 native</td><td>Method.getModifiers()</td><td>原本 Java 实现突然带 native 标志</td></tr>
@@ -126,9 +127,10 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>学习建议：先用 Frida 的 <code>Java.use().implementation</code> 跑通“改行为”，再去看 LSPlant 的源码理解“为什么这么写”。顺序反了容易被细节淹没。</div></aside>
-<h2>12.4 本章自测</h2>
+<h2 id="sec-4">12.4 本章自测</h2>
 <ul><li>Java 方法调用的两步是什么？</li><li>为什么要改 kAccNative 标志？</li><li>JIT 内联为什么会让你 hook 失效？怎么解决？</li><li>检测方如何在不读内存的情况下发现方法被 hook？</li></ul>
-<h2>12.5 深入：ArtMethod 布局的版本差异</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>描述一个 Java 方法的那块结构，在不同系统版本上字段的位置和个数都变过。按旧版本算出来的偏移，到新版本上会指到别的地方去。</p><p>所以这类代码必须「先问版本、再算偏移」。这一节把几个典型版本的差别摆出来，读完你看到「在老机器上好使、新机器上崩」的现象，能立刻想到是这里对不上。</p></div></aside>
+<h2 id="sec-5">12.5 深入：ArtMethod 布局的版本差异</h2>
 <p><code>ArtMethod</code> 的字段顺序在不同 Android 版本里改过多次。写死偏移的代码，换一个版本就会读到垃圾数据。这也是为什么成熟的框架都会做“运行时探测 + 多套布局”。</p>
 <div class="tbl"><table>
 <thead><tr><th>版本区间</th><th>主要变化</th><th>影响</th></tr></thead><tbody>
@@ -137,7 +139,7 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <tr><td>12 – 13</td><td>方法索引与指针分离</td><td>缓存策略要改</td></tr>
 <tr><td>14+</td><td>GC 与声明类处理调整</td><td>引用不能跨 GC</td></tr>
 </tbody></table></div>
-<h2>12.6 三种拿 ArtMethod 的方式对比</h2>
+<h2 id="sec-6">12.6 三种拿 ArtMethod 的方式对比</h2>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>优点</th><th>缺点</th></tr></thead><tbody>
 <tr><td>反射 + 内部字段</td><td>无权限要求</td><td>字段名/布局随版本变</td></tr>
@@ -145,10 +147,11 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <tr><td>内存扫描</td><td>版本无关（靠特征）</td><td>慢，且容易误判</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>工程建议：优先 JVMTI（准确），用反射做兜底（无权限场景），内存扫描只作为最后的验证手段。三条路都实现，才能在各类设备上稳定工作。</div></aside>
-<h2>12.7 调用原方法的三种写法</h2>
+<h2 id="sec-7">12.7 调用原方法的三种写法</h2>
 <ol><li><strong>备份副本</strong>：复制一份 ArtMethod，把 entrypoint 指回原实现，调用这份副本。</li><li><strong>蹦床</strong>：在跳板里保存现场、恢复原入口、调用、再切回。</li><li><strong>原入口直调</strong>：需要处理 kAccNative 与调用约定，最容易出错。</li></ol>
 <p>第一种最稳，也是主流框架的做法；第二种性能最好但实现复杂；第三种只在特定场景下用。</p>
-<h2>12.8 原理推演：为什么“改一个指针”就够了</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>调用一个 Java 方法时，真正决定「跳到哪段代码」的，是某个结构里存着的一个地址。方法名、参数、返回值都是给人看的，机器只认那个地址。</p><p>所以不用重写方法体，把那个地址换成自己的函数就完事了。这节讲的是这个「一格地址」在什么位置、为什么改它比改指令更便宜，以及它为什么在不同系统版本上会挪窝。</p></div></aside>
+<h2 id="sec-8">12.8 原理推演：为什么“改一个指针”就够了</h2>
 <p>因为 ART 的方法调用是“间接”的：字节码里只有索引，真正的入口在运行时从 <code>ArtMethod</code> 里读。这种设计本来是为了支持 JIT（让同一个方法可以在解释执行与编译执行之间切换），但它同时也让“替换入口”变成一次简单的指针写。</p>
 <div class="tbl"><table>
 <thead><tr><th>执行模式</th><th>入口来源</th><th>能否被替换</th></tr></thead><tbody>
@@ -156,7 +159,8 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <tr><td>JIT 编译</td><td>quick code 入口</td><td>能（但要 deopt）</td></tr>
 <tr><td>AOT 编译</td><td>oat 里的 code</td><td>能（要处理 already-compiled</td></tr>
 </tbody></table></div>
-<h2>12.9 数据细节：kAccNative 这个标志位</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个 Java 方法到底是「用 Java 写的」还是「转给 C 代码执行」，靠的是一个标志位区分。这一位设了，方法体就不在 Java 那边。</p><p>这张表把这个标志的取值和含义列出来。它的用处很实际：判断一个方法该去 Java 侧找还是去 native 侧找，看这一位就够了，不用试。</p></div></aside>
+<h2 id="sec-9">12.9 数据细节：kAccNative 这个标志位</h2>
 <div class="code">
 <div class="code-title">标志位的影响</div>
 <pre><code>kAccNative = 0x0100
@@ -166,19 +170,21 @@ m-&gt;access_flags |= kAccNative;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>这就是为什么“桩函数必须是 native 实现”——如果你用 Java 方法做桩，却把标志位改成了 native，ART 会按 JNI 约定去调用一个 Java 方法，直接崩。</p>
-<h2>12.10 工程权衡：三种桩实现的对比</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「桩」就是替原方法站位的那个东西。它可以是编译期就写好的类，可以是运行时生成的，也可以是手写的汇编跳板。三种做法能做的事差不多，代价完全不同：谁更通用、谁更脆、谁更容易被认出来。</p><p>这一节把这三笔账摆在一起。读完你能按「要不要兼容老系统」「要不要支持大量方法」这两个问题，直接挑一个，而不是照着教程抄一个。</p></div></aside>
+<h2 id="sec-10">12.10 工程权衡：三种桩实现的对比</h2>
 <div class="tbl"><table>
 <thead><tr><th>实现</th><th>性能</th><th>复杂度</th><th>适用</th></tr></thead><tbody>
 <tr><td>Java 方法（不改标志）</td><td>中</td><td>低</td><td>简单 hook</td></tr>
 <tr><td>native 桩 + 蹦床</td><td>高</td><td>高</td><td>框架级</td></tr>
 <tr><td>替换整个方法体</td><td>高</td><td>中</td><td>静态改动</td></tr>
 </tbody></table></div>
-<h2>贴着 invoke-virtual 那一纳秒</h2>
+<h2 id="sec-11">贴着 invoke-virtual 那一纳秒</h2>
 <p>把镜头压到 ART 解释器/编译代码执行 <code>invoke-virtual</code> 的那一纳秒。字节码里只有一个方法索引，ART 先拿它 resolve 出一个 <code>ArtMethod*</code>，再从这个结构的 <code>ptr_sized_fields_.entry_point_from_quick_compiled_code_</code> 里读出一个地址，最后一条 <code>BLR</code> 跳过去。<strong>一次 Java 方法调用，剥到底就是「查表 + 跳转」</strong>——和 native 里的 GOT 几乎是同一套戏法，只不过表换了个名字。</p>
 <p>于是一个指针的替换，就撑起了整个 Java 层注入生态：把那个 entrypoint 换成自己的桩，顺手把 <code>access_flags_</code> 置上 <code>kAccNative</code>，调用方毫无察觉地跳进了你的代码。但这套写法有个著名的「改了却没生效」，根子不在地址算错，而在 JIT——下面会讲到那一拍。</p>
-<h2>一次替换，ART 内部走过的六拍</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>Java 层的方法调用，最后落到一个叫 ArtMethod 的结构上，里面存着“这个方法该从哪儿开始执行”。所谓 Java hook，就是把这个地址换掉。</p><p>听起来只有一步，实际要七拍，是因为 ART 有很多缓存：编译过的代码、内联过的调用、去优化状态。你改完地址，这些缓存还记着旧的，于是“看着改成功了，调用还是走老路”。这七拍讲的就是：改完之后还要挨个通知谁。</p></div></aside>
+<h2 id="sec-12">一次替换，ART 内部走过的七拍</h2>
 <ol><li><strong>调用者</strong> → 对 <code>invoke-virtual</code> 的方法索引 → 经解析缓存拿到 <code>ArtMethod*</code> → 结果：得到一个指向方法元数据的指针，还没决定跳哪。</li><li><strong>ART</strong> → 对 <code>ArtMethod</code> 的 entrypoint 字段 → 读出编译代码入口（或解释器的桥接入口）→ 结果：确定本次调用的目标地址。</li><li><strong>hook 方</strong> → 对目标方法 → 用反射 / JVMTI / 内存扫描定位 <code>ArtMethod*</code>，备份整个结构或至少备份 entrypoint → 结果：手里有了「原路」的副本。</li><li><strong>hook 方</strong> → 对 <code>access_flags_</code> → 置 <code>kAccNative</code>，并把 <code>data_</code> 指向自己的 JNI 回调 → 结果：ART 从此按 native 方法的约定去取参数、进桩函数。</li><li><strong>hook 方</strong> → 对 entrypoint → 写入蹦床地址，必要时让 ART 挂起所有线程、刷内存屏障 → 结果：新的调用路径接通，旧路径靠第 3 步的副本保留。</li><li><strong>桩函数</strong> → 对原方法 → 经备份的 <code>ArtMethod</code> 调回去，再改参数或改返回值 → 结果：调用方拿到被加工过的结果，全程没有 Java 层的感知。</li><li><strong>检测方</strong> → 对 <code>getModifiers()</code> / 调用耗时 / 方法列表 → 看有没有方法突然带 native 标志、有没有多出 backup 方法、p95 是否右移 → 结果：痕迹落在「元数据」而不是「字节」上。</li></ol>
-<h2>动手：让方法自己报出被改了</h2>
+<h2 id="sec-13">动手：让方法自己报出被改了</h2>
 <div class="code">
 <div class="code-title">flag_probe.js —— 挂钩前后读一次 native 标志</div>
 <pre><code>// frida -U -f com.target.app -l flag_probe.js

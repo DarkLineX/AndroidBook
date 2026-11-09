@@ -98,13 +98,14 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">M01</span><h1>KPM 模块设计、装载与生命周期</h1><p class="ch-en">KPM ELF、编译重定位、符号与 offset、安装/卸载顺序、退出回收</p></div>
 <p class="lead">KPM 不是普通 .ko：它自己带 loader，自己解决符号，也自己负责收尾。</p>
-<h2>1.1 五个阶段</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>KPM 可以理解成“跑在内核里的插件”：编译成一段 ELF，运行时被加载进内核，就能直接看内核的数据、挂内核的钩子。</p><p>它跟普通内核模块（.ko）最大的区别是：<strong>它自己带装载器</strong>。.ko 由内核的模块系统负责加载、解决符号、处理依赖；KPM 得自己干这些事，因为它的目标环境往往根本没有正常的模块加载通道。</p><p>这一章讲五个阶段（编译、重定位、解析符号、装载、卸载）、四类风险（写崩内核、符号对不上、卸载不干净、被检测到），以及一份生命周期管理清单。</p></div></aside>
+<h2 id="sec-1">1.1 五个阶段</h2>
 <figure>
 <img src="../assets/m01_kpm.png" alt="图 M1-1" width="1080">
 <figcaption><b>图 M1-1</b><span>从编译到卸载的五个阶段，以及四类风险</span></figcaption>
 </figure>
 <ol><li><strong>编译输出 .kpm</strong>：ELF 格式，保留符号表与重定位信息。</li><li><strong>用户态 loader 读取</strong>：解析段，向内核申请内存（<code>vmalloc</code> / <code>module_alloc</code>）。</li><li><strong>重定位与符号绑定</strong>：解析内核符号地址，填入 GOT 或直接改写指令。</li><li><strong>执行入口</strong>：调用 init 函数，注册 hook 与观测点。</li><li><strong>卸载</strong>：还原 hook、释放内存、摘除链表节点。</li></ol>
-<h2>1.2 四类风险</h2>
+<h2 id="sec-2">1.2 四类风险</h2>
 <div class="tbl"><table>
 <thead><tr><th>风险</th><th>表现</th><th>对策</th></tr></thead><tbody>
 <tr><td>顺序错</td><td>先注册后初始化 → 崩</td><td>严格按 init 顺序</td></tr>
@@ -112,7 +113,7 @@
 <tr><td>回收不全</td><td>残留 timer / workqueue 踩空</td><td>逐项登记，逐项注销</td></tr>
 <tr><td>符号缺失</td><td>换内核版本后找不到符号</td><td>能力探测 + 回退</td></tr>
 </tbody></table></div>
-<h2>1.3 生命周期管理清单</h2>
+<h2 id="sec-3">1.3 生命周期管理清单</h2>
 <p>建议在模块里维护一张“资源表”：每申请一样东西就登记一行（内存、hook 点、timer、workqueue、链表节点、perf event），卸载时逐行注销。这样不会漏。</p>
 <div class="code">
 <div class="code-title">资源登记表的思路</div>
@@ -127,9 +128,10 @@ for (int i = n_res - 1; i &gt;= 0; i--) table[i].free(table[i].ptr);</code></pre
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>KPM 与标准 .ko 最大的差别在于“谁负责校验”。标准模块要过签名与 vermagic 检查，KPM 一般绕开这条路径——这意味着所有的正确性责任，都落在你的 loader 与模块代码上。</div></aside>
-<h2>1.4 本章自测</h2>
+<h2 id="sec-4">1.4 本章自测</h2>
 <ul><li>KPM 为什么通常不走标准模块加载路径？</li><li>四类风险里，哪一类最难调试？</li><li>资源登记表解决了什么问题？</li><li>卸载顺序为什么要“倒序”？</li></ul>
-<h2>1.5 深入：为什么 KPM 要自己带 loader</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核模块得由内核认得的加载器送进去。可原生的加载器往往被限制得很死：只认签过名的、只从固定位置读。想放自己的东西进去，就得自己准备一个能通过这道门的搬运工。</p><p>这一节讲这个搬运工要做什么、又必须避开什么。读完你就明白为什么这类工程总有一半工作量花在「怎么进去」上，而不是「进去干什么」。</p></div></aside>
+<h2 id="sec-5">1.5 深入：为什么 KPM 要自己带 loader</h2>
 <p>标准内核模块加载要过三道关：模块签名、<code>vermagic</code> 匹配、<code>MODVERSIONS</code> 符号 CRC 校验。任何一关不过，<code>init_module</code> 就返回失败。KPM 自己带 loader，等于绕开这三道关——代价是所有的正确性检查都要自己做。</p>
 <div class="tbl"><table>
 <thead><tr><th>检查</th><th>标准模块</th><th>KPM</th></tr></thead><tbody>
@@ -138,7 +140,7 @@ for (int i = n_res - 1; i &gt;= 0; i--) table[i].free(table[i].ptr);</code></pre
 <tr><td>符号 CRC</td><td>必须匹配</td><td>自己解析</td></tr>
 <tr><td>内存分配</td><td>内核代劳</td><td>自己申请</td></tr>
 </tbody></table></div>
-<h2>1.6 实战：加载失败怎么定位</h2>
+<h2 id="sec-6">1.6 实战：加载失败怎么定位</h2>
 <div class="code">
 <div class="code-title">按顺序排查</div>
 <pre><code>dmesg | tail -40              # 内核有没有报错
@@ -148,7 +150,8 @@ cat /proc/modules             # 模块列表（KPM 通常不在这里）
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>最常见的原因是“符号找不到”。新内核把某些符号取消了导出，或者改了名字。写代码时一定要做“符号存在性检查”，而不是假设它一定在。</div></aside>
-<h2>1.7 原理推演：为什么“模块”比“改内核”更容易维护</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>直接改内核，等于在别人的房子上开洞：改一次要重编、重刷，出了事只能整套回退，而且每换一个内核版本都得重来一遍。</p><p>做成模块是把东西搬到插件里：内核只留一个很薄的接口，功能都在外面，坏了自己卸载就行。这一节讲这条边界怎么划，读完你判断一个需求该放里还是放外时，标准会清楚很多。</p></div></aside>
+<h2 id="sec-7">1.7 原理推演：为什么“模块”比“改内核”更容易维护</h2>
 <p>因为模块可以被卸载。改内核是“一次性、不可逆”的；模块是“可加载、可卸载、可替换”的。这让“试错”的成本从“刷机”降到“重新加载”。</p>
 <div class="tbl"><table>
 <thead><tr><th>方式</th><th>可逆性</th><th>迭代成本</th></tr></thead><tbody>
@@ -157,7 +160,8 @@ cat /proc/modules             # 模块列表（KPM 通常不在这里）
 <tr><td>KPM</td><td>可卸载</td><td>低（但要自己管）</td></tr>
 </tbody></table></div>
 <p>代价是：模块必须自己处理“卸载时的清理”。清理不干净，就会在“卸载之后”崩溃——而这类崩溃最难定位。</p>
-<h2>1.8 数据细节：一次加载的内存布局</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>一个模块被加载进来之后，在内存里占哪几块、各是什么权限、代码和数据怎么分开——这张表画的就是这个。</p><p>它的用处是排查加载失败：对着表看是「没分配上」「权限设错」还是「地址冲突」，比看返回值猜要准。</p></div></aside>
+<h2 id="sec-8">1.8 数据细节：一次加载的内存布局</h2>
 <div class="code">
 <div class="code-title">典型布局</div>
 <pre><code>module_alloc 区:  [代码][只读数据][可写数据]
@@ -167,7 +171,8 @@ kmalloc 区:       [小对象]</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <p>注意“代码”必须落在可执行区。有些内核配了 <code>CONFIG_STRICT_MODULE_RWX</code>，会让模块的代码段变成只读——这时“运行时改自己的代码”就会失败，需要额外的处理（比如先改 PTE 权限）。</p>
-<h2>1.9 深入：一次加载失败的错误码对照</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>加载失败会返回一个负数，每个负数对应一种原因：格式不对、版本不匹配、符号找不到、权限不够。不查表的话，这些数字看起来一模一样。</p><p>这一节把常见的几个列出来。读完你拿到一个错误码就能直接定位到哪一步，不用再靠一遍遍试。</p></div></aside>
+<h2 id="sec-9">1.9 深入：一次加载失败的错误码对照</h2>
 <div class="tbl"><table>
 <thead><tr><th>错误</th><th>含义</th><th>处理</th></tr></thead><tbody>
 <tr><td>-ENOENT</td><td>符号找不到</td><td>换符号或做探测</td></tr>
@@ -176,7 +181,8 @@ kmalloc 区:       [小对象]</code></pre>
 <tr><td>-EPERM</td><td>权限不足</td><td>检查 SELinux / 能力</td></tr>
 </tbody></table></div>
 <p>把错误码打出来，是最省力的排查方式。很多“加载失败”其实只是 <code>-ENOENT</code>——某个符号在新内核里没了。</p>
-<h2>1.10 深入：为什么“卸载”比“加载”难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>加载是往里加东西：加错了大不了重来。卸载是往外拿：得确认没有别人还在用它、所有登记过的地方都要撤、撤的顺序错了就崩。</p><p>这一节讲这几道关卡。读完你不会把「卸载」当成「加载的反向操作」来写——它复杂得多。</p></div></aside>
+<h2 id="sec-10">1.10 深入：为什么“卸载”比“加载”难</h2>
 <p>因为加载是“从无到有”，卸载是“从有到无”——后者要处理“还有谁在引用我”。定时器、workqueue、hook 点、链表节点、内存，任何一样没清干净，都会在之后某个时刻崩。</p>
 <div class="code">
 <div class="code-title">卸载的自检清单</div>
@@ -187,7 +193,7 @@ kmalloc 区:       [小对象]</code></pre>
 5. 引用计数归零</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>1.11 实战：写一个“资源登记”宏</h2>
+<h2 id="sec-11">1.11 实战：写一个“资源登记”宏</h2>
 <div class="code">
 <div class="code-title">把登记变成习惯</div>
 <pre><code>#define REG(type, ptr, fn)  register_res(type, ptr, fn)
@@ -196,12 +202,12 @@ kmalloc 区:       [小对象]</code></pre>
 p = module_alloc(size);  REG(RES_MEM, p, vfree_wrap);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>把 .kpm 拖进 EL1 的那只手</h2>
+<h2 id="sec-12">把 .kpm 拖进 EL1 的那只手</h2>
 <p>串口线接着，dmesg 一行行往上滚。你敲下装载命令的那一刻，用户态的 loader 正把 ELF 里的 PT_LOAD 一段段搬进内核地址空间：先申请页、再拷贝、再逐项改重定位，最后把 init 的地址写进一个调用桩。此刻你写下的每一行代码都跑在 EL1，页表是内核的页表，栈是内核的栈，指针错一次就直接 panic——没有 vermagic 替你挡版本，没有模块引用计数替你挡卸载，也没有人为你兜底。</p>
 <p>标准 .ko 走的是 <code>init_module</code>：内核自己验签名、查 vermagic、建 <code>struct module</code>、挂 sysfs、维护依赖图。KPM 走的是另一条路：这些活全部由 loader 和模块自己承担。好处是能装进不开放模块加载的内核，代价是<strong>每一个你没做的检查，都变成一个没人替你做的检查</strong>。</p>
-<h2>装载五拍：谁把什么写到哪里</h2>
+<h2 id="sec-13">装载五拍：谁把什么写到哪里</h2>
 <ol><li><strong>loader → 对 .kpm 文件</strong>：读出 <code>Elf64_Ehdr</code> 与程序头表，逐项记下 <code>p_vaddr</code>、<code>p_filesz</code>、<code>p_memsz</code>、<code>p_flags</code>，结果是一张待映射清单；只读段与可执行段必须分开建权限，否则后面改代码页会踩 W^X。</li><li><strong>loader → 对内核</strong>：通过已植入的超级调用申请 <code>module_alloc</code> 区间，结果拿到一段 EL1 可执行的虚拟地址；ARM64 上这段地址通常落在 <code>VMALLOC</code> 附近，与 <code>B</code> 指令的 ±128MB 跳转范围要一起核算。</li><li><strong>loader → 对每个 PT_LOAD 段</strong>：按 <code>p_filesz</code> 拷贝文件内容，再把 <code>p_memsz - p_filesz</code> 的尾部整段清零，结果是 .bss 里的静态变量从 0 开始；漏掉清零，未初始化全局量会带着脏数据进 init。</li><li><strong>loader → 对重定位表</strong>：拿 <code>kallsyms_lookup_name</code> 或导出符号表解析每个未定义符号，把 <code>R_AARCH64_ABS64</code>、<code>R_AARCH64_CALL26</code>、<code>R_AARCH64_ADR_PREL_PG_HI21</code> 逐项改写，结果是外部调用指向真实内核地址；<code>CALL26</code> 超出 ±128MB 时必须插 veneer 中转，否则链接期看着正常、运行期跳飞。</li><li><strong>loader → 对模块入口</strong>：把 init 地址写进调用桩并触发，结果是模块开始注册 hook、建 proc 节点、起 timer；init 返回非零立刻按倒序回滚，已经映射的段一并释放。</li></ol>
-<h2>卸载是比装载更危险的那一半</h2>
+<h2 id="sec-14">卸载是比装载更危险的那一半</h2>
 <p>装载失败顶多是回滚，卸载失败是整个内核跟着塌。原因在于“卸载”这个动作没有原子性：hook 入口刚被还原的那个瞬间，可能正有一个 CPU 停在 trampoline 里执行，另一个 CPU 刚从 TLB 里取到旧映射。所以卸载不是“把装载倒着做一遍”，而是分出一条明确的停流—等待—回收三段路径。</p>
 <ol><li><strong>模块 → 对 hook 入口</strong>：用一次原子写入把跳转槽换回原字节，结果是后续所有调用走原路径，不再有新的执行流进入 trampoline；先在旧代码上“开口”再摘钩子，会留下一个短暂无处可跳的窗口。</li><li><strong>模块 → 对所有 CPU</strong>：<code>stop_machine</code> 或一次 RCU 宽限期，等每个核都报告已离开被改代码段，结果是“在途执行”清零；这一步省掉，后面 <code>vfree</code> 回收的就是别人脚下的那块地。</li><li><strong>模块 → 对资源登记表</strong>：按登记的逆序逐行调注销函数，结果是 timer、workqueue、perf event、hook 点、链表节点、内存依次归位；倒序的原因是后申请的资源往往依赖先申请的资源。</li><li><strong>模块 → 对 module_alloc 区间</strong>：最后才 <code>vfree</code> 并把模块从管理链表摘掉，结果是内核里不再留任何指向已释放地址的指针；提前释放会在下一次中断里表现为一个莫名其妙的 <code>Unable to handle kernel paging request</code>。</li></ol>
 <div class="tbl"><table>
@@ -212,7 +218,7 @@ p = module_alloc(size);  REG(RES_MEM, p, vfree_wrap);</code></pre>
 <tr><td>hook 点</td><td>改跳转槽 / text_poke</td><td>原子写回原字节</td><td>跳到已回收的 trampoline</td></tr>
 <tr><td>内核内存</td><td>module_alloc / vmalloc</td><td>vfree</td><td>/proc/vmallocinfo 残留段</td></tr>
 </tbody></table></div>
-<h2>最小可复现实验：装一次、卸一次、数一遍</h2>
+<h2 id="sec-15">最小可复现实验：装一次、卸一次、数一遍</h2>
 <div class="code">
 <div class="code-title">装载—观测—卸载的对账脚本</div>
 <pre><code># 0. 记录实验前基线（原值要记下来，实验结束改回）

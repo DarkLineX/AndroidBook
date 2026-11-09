@@ -98,13 +98,15 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F03</span><h1>Frida Java.perform 原理</h1><p class="ch-en">Java VM attach、ActivityThread、LoadedApk、ClassLoader、pending VM ops</p></div>
 <p class="lead">Java.perform 做的不是“执行你的代码”，而是“等到能执行你的代码”。</p>
-<h2>3.1 五步流程</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p><code>Java.perform</code> 这个名字让很多人以为它的作用是“执行我的代码”。其实它做的是<strong>等待</strong>：等到这个进程的 Java 运行时准备好、等到能安全地操作类和方法了，才把你的代码放进去跑。</p><p>为什么需要等？因为 frida 是在进程跑到一半时才进去的。进去的那一刻，Java 环境可能还没初始化完，这时候去 <code>Java.use</code> 一个类，拿到的可能是空。</p><p>这一章讲这五步等待具体在等什么，以及三种“hook 不生效”的典型原因——大多数都是时机问题，不是写法问题。</p></div></aside>
+<h2 id="sec-1">3.1 五步流程</h2>
 <figure>
 <img src="../assets/f_f03.png" alt="图 F3-1" width="1080">
 <figcaption><b>图 F3-1</b><span>从判断 ART 可用到执行回调的五个步骤</span></figcaption>
 </figure>
 <ol><li>判断 ART 是否可用（枚举 <code>libart.so</code>、找 <code>JavaVM</code> 相关符号）。</li><li><code>AttachCurrentThread</code> 把当前线程挂到 JavaVM 上，拿到 <code>JNIEnv</code>。</li><li>找关键类：<code>ActivityThread</code>、<code>LoadedApk</code>、ClassLoader。</li><li>把回调排进 pending VM ops，等 ClassLoader 就绪。</li><li>执行你的代码——此时 <code>Java.use</code> / <code>Java.choose</code> 才有效。</li></ol>
-<h2>3.2 为什么要在 perform 里用 Java.use</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「拿到一个 Java 类的引用」这件事，前提是虚拟机已经把那个类准备好了。在外面拿，可能拿到一半、或者根本拿不到。</p><p>所以这类操作要放进那个「等虚拟机就绪」的约定里。这一节讲这个约定的意义，读完你不会再把代码随手写在文件顶层，然后奇怪为什么有时好使有时不好使。</p></div></aside>
+<h2 id="sec-2">3.2 为什么要在 perform 里用 Java.use</h2>
 <p><code>Java.use</code> 需要一个“能解析类的环境”。如果 ART 还没起来，或者当前线程没 attach，它拿不到 <code>JNIEnv</code>，就会失败。perform 保证了这两个前提。</p>
 <div class="code">
 <div class="code-title">最可靠的“环境就绪”探针</div>
@@ -115,7 +117,7 @@
 });</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.3 三种“hook 不生效”的典型原因</h2>
+<h2 id="sec-3">3.3 三种“hook 不生效”的典型原因</h2>
 <div class="tbl"><table>
 <thead><tr><th>现象</th><th>原因</th><th>对策</th></tr></thead><tbody>
 <tr><td>perform 没进</td><td>ART 未就绪 / 注入太早</td><td>等 Application 创建后再执行</td></tr>
@@ -123,9 +125,10 @@
 <tr><td>hook 挂上但没回调</td><td>调用的不是同一个 ClassLoader</td><td>多 ClassLoader 逐个尝试</td></tr>
 </tbody></table></div>
 <aside class="note"><span class="note-tag">要点</span><div>多 ClassLoader 场景（插件化 App）是新手最容易踩的坑：<code>Java.use</code> 走的是“默认加载器”，而目标类可能由插件自己的加载器负责。这时要用 <code>Java.enumerateClassLoaders</code> 逐个试。</div></aside>
-<h2>3.4 本章自测</h2>
+<h2 id="sec-4">3.4 本章自测</h2>
 <ul><li>Java.perform 保证了哪两个前提？</li><li>AttachCurrentThread 的作用是什么？</li><li>三种 hook 不生效的原因分别怎么排查？</li><li>多 ClassLoader 场景下，Java.use 为什么可能失败？</li></ul>
-<h2>3.5 深入：pending VM ops 是什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>有些操作必须在「虚拟机自己的线程」上做，可你的代码跑在别的线程上。于是系统先把你这件事记在一张待办单上，等虚拟机那根线程转到合适的时机再替你办。</p><p>所以这些操作不是「立刻生效」，而是「排队等生效」。这一节讲这张待办单，读完你就能解释为什么有些代码明明写了却没跑，以及为什么顺序会跟你写的不一样。</p></div></aside>
+<h2 id="sec-5">3.5 深入：pending VM ops 是什么</h2>
 <p>它是一张“待执行”的队列。<code>Java.perform</code> 的回调不是立刻执行，而是被放进这个队列，由 VM 在合适的时机（通常是线程 attach 后、且 ClassLoader 可用时）取出来执行。</p>
 <div class="code">
 <div class="code-title">观察排队行为</div>
@@ -135,7 +138,7 @@ console.log(&#x27;C&#x27;);
 # 输出顺序通常是 A C B —— B 被排队了</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.6 实战：多 ClassLoader 的逐个尝试</h2>
+<h2 id="sec-6">3.6 实战：多 ClassLoader 的逐个尝试</h2>
 <div class="code">
 <div class="code-title">遍历所有 ClassLoader 找目标类</div>
 <pre><code>Java.perform(() =&gt; {
@@ -151,7 +154,8 @@ console.log(&#x27;C&#x27;);
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意：<code>loader.loadClass</code> 拿到的是 Class 对象，不是 <code>Java.use</code> 的包装。要 hook 它，需要 <code>Java.use</code> 配合 <code>classLoader</code> 参数，或者直接用底层 API。</div></aside>
-<h2>3.7 原理推演：为什么“ART 就绪”是个模糊概念</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「虚拟机准备好了」听起来像个开关，其实是一串先后发生的事：类加载器建好了、常用类加载完了、JIT 开始工作了、线程挂上了。每一件事都有自己的时间点。</p><p>所以「就绪」不是一个时刻，而是一个区间：早一点做，东西还没准备好；晚一点做，目标代码已经跑过去了。这一节讲的是怎么在这个区间里挑位置，读完你能解释「同一份脚本有时好使有时不好使」这种玄学。</p></div></aside>
+<h2 id="sec-7">3.7 原理推演：为什么“ART 就绪”是个模糊概念</h2>
 <p>“就绪”至少有三个层次：<strong>JavaVM 存在</strong>（能 attach）、<strong>ClassLoader 可用</strong>（能加载类）、<strong>目标类已加载</strong>（能 hook）。<code>Java.perform</code> 只保证前两个，第三个要你自己等。</p>
 <div class="tbl"><table>
 <thead><tr><th>层次</th><th>Java.perform 保证</th><th>失败表现</th></tr></thead><tbody>
@@ -160,7 +164,8 @@ console.log(&#x27;C&#x27;);
 <tr><td>目标类已加载</td><td>否</td><td>hook 挂不上或挂错</td></tr>
 </tbody></table></div>
 <p>所以“perform 里 hook 不生效”的最常见原因，不是 perform 有问题，而是“目标类还没加载”。</p>
-<h2>3.8 数据细节：三种等目标类的方法</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「等某个类加载好再动手」有三种常见写法：轮询、挂加载回调、等到某个已知时机。三种的可靠性和开销都不同。</p><p>这张表把它们摆在一起比较。它的用处是选：如果你的场景对启动速度敏感，就别用轮询；如果目标是动态加载的类，就别只用固定时机。</p></div></aside>
+<h2 id="sec-8">3.8 数据细节：三种等目标类的方法</h2>
 <div class="code">
 <div class="code-title">从粗到细</div>
 <pre><code>// 1. 等时间（最差）
@@ -173,7 +178,8 @@ setTimeout(main, 3000);
 //    hook ClassLoader.loadClass，命中目标名再动手</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.9 深入：Java.perform 的“嵌套”问题</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这个调用本身是「等虚拟机准备好再执行」。如果在一个已经在等的地方再等一次，就可能互相卡住，谁也不会先走。</p><p>这一节讲这种嵌套为什么危险、怎么写能避开。读完你的脚本不会再出现「大部分时候能跑、偶尔整个卡死」这种最难查的现象。</p></div></aside>
+<h2 id="sec-9">3.9 深入：Java.perform 的“嵌套”问题</h2>
 <p>在 <code>Java.perform</code> 里再套一个 <code>Java.perform</code> 是合法的，但会多一层排队。更常见的问题是“在 hook 回调里调 <code>Java.perform</code>”——那是在目标线程上排队，可能导致死锁。</p>
 <div class="tbl"><table>
 <thead><tr><th>场景</th><th>是否安全</th><th>说明</th></tr></thead><tbody>
@@ -182,7 +188,8 @@ setTimeout(main, 3000);
 <tr><td>JS 线程里 perform</td><td>安全</td><td>正常用法</td></tr>
 </tbody></table></div>
 <p>判断方法：看当前代码跑在哪个线程上。如果是“目标线程”（hook 回调），就不要做重活，把数据 send 出去。</p>
-<h2>3.10 深入：`Java.choose` 为什么不推荐在启动时用</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>它的作用是「把内存里现存的这类对象全找出来」。可启动阶段对象还在不断创建，你扫一遍得到的是一份很快过时的名单，而且扫的过程会把整个虚拟机拖慢。</p><p>这一节讲这个代价。读完你会把这类操作放到「界面稳定之后」，而不是一进来就扫。</p></div></aside>
+<h2 id="sec-10">3.10 深入：`Java.choose` 为什么不推荐在启动时用</h2>
 <p><code>Java.choose</code> 会遍历堆上的所有实例——这是一个非常重的操作，而且在启动早期堆还没稳定，可能崩溃或超时。</p>
 <div class="code">
 <div class="code-title">更好的替代</div>
@@ -198,7 +205,7 @@ T.$init.overload().implementation = function () {
 };</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>3.11 实战：一个可复用的“环境探针”脚本</h2>
+<h2 id="sec-11">3.11 实战：一个可复用的“环境探针”脚本</h2>
 <div class="code">
 <div class="code-title">三件事一次确认</div>
 <pre><code>Java.perform(() =&gt; {
@@ -212,12 +219,13 @@ T.$init.overload().implementation = function () {
 });</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>现场：类明明在，为什么找不到</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>「这个类肯定在」这句话经常是错的：它可能在，但不在你能看到的那个范围里——被另一个加载器装着、还没被加载、或者名字其实是另一个。</p><p>这一节讲这几种「在但找不到」。读完你的排查会从「换个写法试试」变成「先确认它在哪个加载器手里」。</p></div></aside>
+<h2 id="sec-12">现场：类明明在，为什么找不到</h2>
 <p>脚本一跑就抛 <code>Error: java.lang.ClassNotFoundException: com.foo.Secret</code>。可你翻 logcat，明明看到这个插件类在两百毫秒前被 dex 加载过；用 <code>frida -U -n</code> 晚一点附加上去，同样的 <code>Java.use</code> 又能成功。更邪门的一种是：不抛异常、不崩、hook 也“挂上了”，但回调永远不触发，日志里安静得像什么都没发生。</p>
 <p>两种现象指向同一个误会：我们以为 <code>Java.perform</code> 是“执行我的代码”，其实它是“<strong>等到能执行我的代码</strong>”。它保证两件事——JavaVM 存在、当前线程能拿到 <code>JNIEnv</code>；第三件事“目标类已经被正确的 ClassLoader 加载”，它一概不管。而“找到同名但不同源的类”恰恰不报错，只会让 hook 落在一个永远不会被调用的副本上。</p>
-<h2>把一次 attach 拆成六拍</h2>
+<h2 id="sec-13">把一次 attach 拆成六拍</h2>
 <ol><li><strong>agent 的 Java 运行时 → 对 libart.so → 枚举模块、定位 JNI_GetCreatedJavaVMs 与 JavaVM 实例</strong> → 结果：拿到 VM 句柄；若 ART 还没起来，就把回调挂起，一个字节都不执行。</li><li><strong>agent → 对当前这条 JS 线程 → AttachCurrentThread 取得 JNIEnv 指针</strong> → 结果：一条原本不属于 ART 的 native 线程被登记成 Java 线程，从此可以合法调 JNI；代价是它顺带带上了系统默认的 ClassLoader，而不是 App 的 PathClassLoader。</li><li><strong>agent → 对 VM → 通过 JNI 解析 ActivityThread 与 LoadedApk</strong> → 结果：拿到当前进程的 Application 上下文、包名，以及查找应用 ClassLoader 的入口。</li><li><strong>agent → 对 pending VM ops 队列 → 把你的 fn 追加进去并订阅就绪通知</strong> → 结果：Java.perform 立即返回，调用栈回到顶层；此刻 fn 还没跑，这正是 F02 里 <code>top</code> 先打印的原因。</li><li><strong>ART → 对 agent → 在 ClassLoader 可用（通常在 handleBindApplication 之后）时触发通知</strong> → 结果：队列被 drain，你的回调在 JS 线程上执行，<code>Java.use</code> 终于有了可解析类的环境。</li><li><strong>你的回调 → 对 Java.use → FindClass 解析类、生成 wrapper、改 ArtMethod 入口</strong> → 结果：hook 生效；若目标类属于插件自己的加载器，这一拍解析到的是“另一份同名类”，不报错也不触发。</li></ol>
-<h2>复现：把三个加载器摆到台面上</h2>
+<h2 id="sec-14">复现：把三个加载器摆到台面上</h2>
 <p>插件化 App 里最有效的排查动作不是加 <code>setTimeout</code>，而是<strong>先把所有 ClassLoader 枚举出来，再逐个试一遍</strong>。下面这段脚本会把“默认加载器能不能找到”和“哪个加载器里真的有”分别打出来；注意它会临时改 <code>Java.classFactory.loader</code>，验证完要记得改回去。</p>
 <div class="code">
 <div class="code-title">loaders.js：枚举加载器并逐个试</div>

@@ -98,7 +98,8 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">F05</span><h1>Frida server 与 Android SELinux</h1><p class="ch-en">patch policy、frida_file、pipe socket、zygote ptrace、setcontext</p></div>
 <p class="lead">root 只是“有权限”，SELinux 决定“允不允许”。</p>
-<h2>5.1 两种“拒绝”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>root 之后 frida 还是起不来，九成是 SELinux 拦的。</p><p>这两种“拒绝”要分清：DAC 拒绝长得像“Permission denied”，意思是“你的权限不够”；MAC 拒绝也长得像“Permission denied”，但意思是“你权限够了，但规则不允许”。分不清这两种，就会一直在“我明明 root 了”里打转。</p><p>这一章讲怎么从 dmesg 里认出 avc denied 这条记录、frida 到底需要哪几项权限、以及两条处理路线（改规则 / 换域）各自的代价。</p></div></aside>
+<h2 id="sec-1">5.1 两种“拒绝”</h2>
 <figure>
 <img src="../assets/f_f05.png" alt="图 F5-1" width="1080">
 <figcaption><b>图 F5-1</b><span>DAC 与 MAC 的区别，以及三条排查命令</span></figcaption>
@@ -109,7 +110,7 @@
 <tr><td>MAC (SELinux)</td><td>domain × type 的策略</td><td>不能</td></tr>
 </tbody></table></div>
 <p>所以“我已经 root 了为什么还是 Permission denied”这个问题的答案，永远是：你过的是 MAC 那一关，不是 DAC。</p>
-<h2>5.2 关键概念</h2>
+<h2 id="sec-2">5.2 关键概念</h2>
 <ul><li><strong>frida_file</strong>：为 frida 相关文件定义的 type；策略里要允许访问它。</li><li><strong>pipe / socket</strong>：agent 与 server 通信要用到，需要相应的 allow 规则。</li><li><strong>zygote ptrace</strong>：门控注入需要 <code>allow untrusted_app zygote:process ptrace</code> 之类的规则。</li><li><strong>setcontext</strong>：改进程上下文（寄存器）的权限要求，注入时会用到。</li></ul>
 <div class="code">
 <div class="code-title">看拒绝现场</div>
@@ -121,12 +122,13 @@ dmesg | grep avc               # 拒绝日志
 #                          tcontext=u:r:zygote</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.3 两条处理路线</h2>
+<h2 id="sec-3">5.3 两条处理路线</h2>
 <ol><li><strong>放宽策略</strong>：改 sepolicy 或加载自定义规则。见效快，但策略文件的改动本身是痕迹。</li><li><strong>换路径</strong>：用不被检查的方式完成同样的操作（比如内核态直接干活，见 M06）。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>注意：策略放宽会留下可观测证据——avc 日志、policy 版本号、<code>/sys/fs/selinux</code> 的状态。如果目标是“安静”，第一条路要慎用。</div></aside>
-<h2>5.4 本章自测</h2>
+<h2 id="sec-4">5.4 本章自测</h2>
 <ul><li>DAC 与 MAC 的区别是什么？</li><li>frida 注入通常需要哪几类 SELinux 权限？</li><li>放宽策略会留下哪些痕迹？</li><li>除了改策略，还有什么思路？</li></ul>
-<h2>5.5 深入：为什么 setcontext 也要权限</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把寄存器恢复成某个状态，听起来只是改几个数。可这些数里包括「接下来执行哪条指令」，等于直接决定了程序下一步干什么——这是一项很重的能力。</p><p>所以它也被管着。这一节讲这条限制，读完你就明白为什么某些看起来无害的操作会莫名其妙被拒。</p></div></aside>
+<h2 id="sec-5">5.5 深入：为什么 setcontext 也要权限</h2>
 <p>注入过程中要改目标的寄存器（PC、SP），这在 SELinux 里对应 <code>process:setcontext</code> 权限。没有这个权限，即使能 ptrace attach，也改不了现场。</p>
 <div class="tbl"><table>
 <thead><tr><th>权限</th><th>对应操作</th><th>典型拒绝</th></tr></thead><tbody>
@@ -135,7 +137,7 @@ dmesg | grep avc               # 拒绝日志
 <tr><td>sigchld</td><td>处理子进程信号</td><td>少见</td></tr>
 <tr><td>execute</td><td>执行注入的代码</td><td>avc: denied { execute }</td></tr>
 </tbody></table></div>
-<h2>5.6 实战：写一条最小 allow 规则</h2>
+<h2 id="sec-6">5.6 实战：写一条最小 allow 规则</h2>
 <div class="code">
 <div class="code-title">sepolicy 片段（示意）</div>
 <pre><code>allow untrusted_app zygote:process ptrace;
@@ -145,7 +147,8 @@ allow untrusted_app frida_file:dir search;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>注意：<code>untrusted_app</code> 是所有第三方 App 的域，放开它等于对所有 App 放开。更精细的做法是给特定包定义独立域。</div></aside>
-<h2>5.7 原理推演：为什么“root 不等于万能”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>平时说的 root，是在「谁」这一层拿到最高权限。可系统还有另一层判断：不看你是谁，只看你属于哪个类别、能不能碰这个类别的资源。这一层是独立的，你把第一层拉到顶，它也一点不动。</p><p>所以「已经 root 了怎么还是被拒」不是工具的问题，是你待在了一个不该待的类别里。这一节讲这两层的关系，读完你能分清「权限不够」和「身份不对」——它们的修法完全不同。</p></div></aside>
+<h2 id="sec-7">5.7 原理推演：为什么“root 不等于万能”</h2>
 <p>root 只是 DAC 层面的“全通行证”。SELinux 是 MAC，它不看你是谁，只看“你的域”与“目标的类型”之间有没有 allow 规则。所以 root 进程如果处在受限域里，照样被拒。</p>
 <div class="tbl"><table>
 <thead><tr><th>场景</th><th>DAC</th><th>MAC</th><th>结果</th></tr></thead><tbody>
@@ -154,7 +157,8 @@ allow untrusted_app frida_file:dir search;</code></pre>
 <tr><td>普通用户 + 允许规则</td><td>拒绝</td><td>允许</td><td>失败</td></tr>
 </tbody></table></div>
 <p>这解释了为什么“root 了但 frida 还是不行”——不是 frida 有问题，是域不对。</p>
-<h2>5.8 数据细节：查看当前域</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>排查权限问题，第一步永远是「我现在在哪个域里」。答案不是猜的，几条命令就能问出来：当前进程的上下文、系统的执行模式、某个文件标的是什么。</p><p>这几条命令的价值在于「先确认前提」。很多争论不休的问题，跑一下这几条就发现双方根本不在同一个域里。</p></div></aside>
+<h2 id="sec-8">5.8 数据细节：查看当前域</h2>
 <div class="code">
 <div class="code-title">三条命令</div>
 <pre><code>id -Z                     # 当前进程的 SELinux 上下文
@@ -162,7 +166,8 @@ getenforce                # Enforcing / Permissive
 ls -Z /data/adb           # 文件的上下文</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>5.9 深入：SELinux 的三种模式</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>它有三档：完全执行、只记不管、彻底关掉。三档下「同样的操作」表现完全不同，所以排查时第一件事就是确认现在是哪一档。</p><p>这一节讲三档的差别。读完你不会再拿一台「只记不管」的设备上的结论，去推断一台「完全执行」的设备上会发生什么。</p></div></aside>
+<h2 id="sec-9">5.9 深入：SELinux 的三种模式</h2>
 <div class="tbl"><table>
 <thead><tr><th>模式</th><th>行为</th><th>痕迹</th></tr></thead><tbody>
 <tr><td>Enforcing</td><td>拒绝并记录</td><td>avc denied</td></tr>
@@ -170,7 +175,8 @@ ls -Z /data/adb           # 文件的上下文</code></pre>
 <tr><td>Disabled</td><td>完全不检查</td><td>无</td></tr>
 </tbody></table></div>
 <p>注意中间那行：<strong>Permissive 模式不是“没有痕迹”，而是“允许了但记了一笔”</strong>。所以把系统切到 permissive 来“方便调试”，本身就是一个非常明显的信号。</p>
-<h2>5.10 深入：为什么 zygote 的 ptrace 特别难</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>所有 App 都是从母进程分出来的。你想跟踪其中某一个，就得先让母进程同意被跟踪——可它一旦被跟踪，之后分出来的所有孩子都带着这个状态，等于全体露馅。</p><p>所以这里不是「难在技术」，而是「难在连带影响太大」。这一节讲这个矛盾，读完你知道为什么有些方案宁愿绕远路，也不直接去碰母进程。</p></div></aside>
+<h2 id="sec-10">5.10 深入：为什么 zygote 的 ptrace 特别难</h2>
 <p>因为 zygote 是所有 App 的父进程，权限敏感度极高。系统对它的保护是多层的：SELinux 域限制、Yama 的 ptrace_scope、以及部分厂商的额外 LSM 钩子。</p>
 <div class="tbl"><table>
 <thead><tr><th>限制层</th><th>内容</th><th>绕过难度</th></tr></thead><tbody>
@@ -179,7 +185,7 @@ ls -Z /data/adb           # 文件的上下文</code></pre>
 <tr><td>厂商 LSM</td><td>自定义检查</td><td>视实现</td></tr>
 </tbody></table></div>
 <p>这就是为什么“zygote 门控”类方案通常要 root：不是因为“需要 root 权限”，而是因为“需要处在能 ptrace 的域里”。</p>
-<h2>5.11 实战：确认是 SELinux 还是别的</h2>
+<h2 id="sec-11">5.11 实战：确认是 SELinux 还是别的</h2>
 <div class="code">
 <div class="code-title">三步定位</div>
 <pre><code>1. getenforce                 # 是不是 Enforcing
@@ -189,12 +195,12 @@ ls -Z /data/adb           # 文件的上下文</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>第 3 步只是诊断手段，不是解决方案。把系统长期跑在 permissive 上，等于对所有 App 敞开大门。</div></aside>
-<h2>现场：root 已经到手，还是被拒</h2>
+<h2 id="sec-12">现场：root 已经到手，还是被拒</h2>
 <p><code>adb shell id</code> 打印 <code>uid=0(root)</code>，<code>ls -l /data/local/tmp/frida-server</code> 是 <code>-rwxrwxrwx</code>，文件权限挑不出一点毛病。可执行起来就是 <code>Permission denied</code>；换成 <code>frida -U -f</code> 又变成<code>Failed to attach: unable to ptrace</code>。你重装 server、换端口、重启 adbd，折腾一小时，答案却一直躺在 dmesg 里没人看。</p>
 <p>root 只是 DAC 那一关的通行证：uid 0 让文件权限位对你失去意义。可 SELinux 是 MAC，它不看“你是谁”，只看“<strong>你的域 × 目标的类型 × 动作</strong>”三元组有没有 allow 规则。所以排查顺序应该反过来：<strong>先看 avc 日志，再看文件权限</strong>。把一次拒绝拆开，你会发现失败点不止一处，而且每一处都在不同的规则里。</p>
-<h2>把一次拒绝拆成六拍</h2>
+<h2 id="sec-13">把一次拒绝拆成六拍</h2>
 <ol><li><strong>frida-server（如 u:r:su 之类域）→ 对目标进程（u:r:untrusted_app）→ 发起 PTRACE_ATTACH</strong> → 结果：内核先做 DAC 检查，uid 0 / CAP_SYS_PTRACE 直接通过，第一关轻松过。</li><li><strong>内核 LSM hook → 对这次 ptrace → 取出 scontext 与 tcontext</strong> → 结果：拿着两个域去 AVC 里查 <code>allow &lt;源域&gt; &lt;目标域&gt;:process ptrace</code>；这才是决定生死的一查。</li><li><strong>AVC → 对查询结果 → 未命中允许规则</strong> → 结果：调 avc_denied，往 dmesg 写一条 <code>avc: denied { ptrace }</code>，并返回 -EACCES 给系统调用。</li><li><strong>frida-server → 对系统调用返回值 → 收到 EACCES</strong> → 结果：上层包装成 <code>Failed to attach</code>，而不是文件式的 Permission denied，于是很多人去查文件权限，查错方向。</li><li><strong>server 退而求其次 → 对自己创建的 agent 文件 / pipe → 尝试 open、mmap、connect</strong> → 结果：若文件 type 被标成 frida_file 或 app_data_file 而域没被允许，又是一串 <code>{ read open map execute }</code> 拒绝。</li><li><strong>改走 zygote 门控 → 对 zygote 域 → 需要 allow &lt;域&gt; zygote:process ptrace 或 setcontext 类规则</strong> → 结果：即便 root，缺规则一样停在 specialize 之前，spawn 出来的进程永远等不到注入。</li></ol>
-<h2>复现：把 avc 抓到手再决定改什么</h2>
+<h2 id="sec-14">复现：把 avc 抓到手再决定改什么</h2>
 <p>不要在日志之外猜规则。下面这组命令先固定现场（域、enforce 状态、文件标签），再实时盯 avc，最后跑一次注入；把新增的拒绝条目抄下来，缺哪条规则一目了然。最关键的是最后那次二分：临时切 Permissive 再跑一遍，能立刻区分 MAC 与 DAC。</p>
 <div class="code">
 <div class="code-title">抓现场、跑注入、做二分</div>

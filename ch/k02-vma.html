@@ -98,13 +98,18 @@
 <article class="chapter">
 <div class="ch-head"><span class="ch-no">K02</span><h1>Linux 内存管理</h1><p class="ch-en">VMA、页表、fault、COW、物理页、分配器、TLB</p></div>
 <p class="lead">所有“不可见”的改动，最后都要落到某一张页表项上。</p>
-<h2>2.1 从 mm_struct 到物理页</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这块结构是分层的，一层比一层细：</p><p><strong>mm_struct</strong>：一个进程的“内存总账”，记着我一共有多少内存、页表在哪。
+<strong>VMA</strong>：总账下面的一段一段，每段有各自的权限（这段能读、那段能写、那段可执行）。
+<strong>页表</strong>：真正干翻译的字典，一般四级，虚拟地址被切成几段，一级一级查下去。
+<strong>物理页</strong>：最后落到的那块真实内存，通常 4KB 一格。</p><p>为什么要分这么多层？因为权限是“按段”设的，而分配是“按页”做的——分段好管理，分页好复用。</p></div></aside>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>这一章讲内存在内核里是怎么被管起来的。听起来枯燥，但有一个结论必须记住：<strong>所有“看不见”的改动，最后都要落到某一张页表项上</strong>。</p><p>页表是什么？可以理解成一本“地址翻译字典”：程序用的是虚拟地址（我觉得我住在 0x1000），CPU 拿这个地址去字典里查，才知道真正该读哪块物理内存。改字典，就能让同一句话读到不同的东西；这也正是所有内存级 hook 的原理。</p><p>这一章会讲清四层结构（进程 → 内存描述 → 一段一段的区域 → 页表）、缺页和写时复制是怎么发生的、以及 Text Shadow 那个“双 PFN”方案到底在解决什么问题。</p></div></aside>
+<h2 id="sec-1">2.1 从 mm_struct 到物理页</h2>
 <figure>
 <img src="../assets/k02_mm.png" alt="图 K2-1" width="1080">
 <figcaption><b>图 K2-1</b><span>五级结构：mm → VMA → 页表 → 物理页 → TLB</span></figcaption>
 </figure>
 <ol><li><strong>mm_struct</strong>：每个进程一个，挂着一棵 VMA 树。</li><li><strong>VMA</strong>：一段连续虚拟区间，记录权限、偏移、对应文件。<code>/proc/self/maps</code> 就是它的文本投影。</li><li><strong>页表</strong>：ARM64 常见 4 级（PGD→PUD→PMD→PTE），4K 页；大页会跳过中间层。</li><li><strong>物理页</strong>：由 buddy（大块）与 slab（小对象）分配，带引用计数。</li><li><strong>TLB</strong>：地址翻译缓存。改页表必须 flush，否则 CPU 还在用旧翻译。</li></ol>
-<h2>2.2 四个必须能讲清的概念</h2>
+<h2 id="sec-2">2.2 四个必须能讲清的概念</h2>
 <div class="tbl"><table>
 <thead><tr><th>概念</th><th>含义</th><th>工程意义</th></tr></thead><tbody>
 <tr><td>缺页 fault</td><td>访问未映射页 → do_page_fault 补映射</td><td>hook 内存访问的入口</td></tr>
@@ -112,7 +117,8 @@
 <tr><td>RSS / PSS</td><td>驻留页数 / 按共享比例均摊</td><td>隐藏内存常被 PSS 暴露</td></tr>
 <tr><td>rmap</td><td>从物理页反查映射它的 VMA</td><td>Text Shadow 必须维护</td></tr>
 </tbody></table></div>
-<h2>2.3 为什么 Text Shadow 需要“双 PFN”</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>问题出在这：代码段是<strong>只读 + 多进程共享</strong>的。你想改它一行，直接写会崩（只读）；把只读改成可写，所有共享同一份代码的进程都会看到你的改动（共享）。</p><p>双 PFN 的思路是“偷梁换柱”：给这个虚拟地址换一张新的物理页（新 PFN），内容照抄一份，然后你改新的那份。旧的那份原封不动还给别人用。</p><p>这样做的副作用是：同一个地址在不同进程里指向不同的物理页，检测方一对比 PFN 就发现了。所以真正的实现还要把 PFN 的读数也抹平——这就是后面 M03 要处理的事。</p></div></aside>
+<h2 id="sec-3">2.3 为什么 Text Shadow 需要“双 PFN”</h2>
 <p>代码页是只读且多进程共享的。想改它而不被别人看见，只有一条路：<strong>不改原页，改“你看到的页”</strong>。具体做法是复制一份物理页，写入跳转，然后只把目标进程页表里的 PFN 换成新页——其他进程的页表还指着原来的页，什么都看不到。</p>
 <div class="code">
 <div class="code-title">双 PFN 的核心动作（示意）</div>
@@ -124,9 +130,10 @@ flush_tlb_range(vma, start, end);            // 别忘了刷 TLB</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>配套还要维护：rmap（否则反向映射会崩）、RSS 计数（否则内存统计对不上）、以及 GUP（get_user_pages）路径——不少检测正是通过“页表与统计不一致”发现的。</div></aside>
-<h2>2.4 本章自测</h2>
+<h2 id="sec-4">2.4 本章自测</h2>
 <ul><li>VMA 与页表的关系是什么？</li><li>为什么改页表必须 flush TLB？</li><li>COW 让 fork 变便宜，代价是什么？</li><li>Text Shadow 除了换 PFN，还要维护哪三样东西？</li></ul>
-<h2>2.5 深入：ARM64 的四级页表怎么走</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>把一个虚拟地址翻成物理地址，要按四层目录一层层往下查，每层用地址里的一段比特当索引。查到底才拿到真正的那一页。</p><p>这一节把这四层和每层用几位讲清楚。读完你能自己算「某个地址的表项在哪」，也就能理解为什么改一页映射要连着改好几处。</p></div></aside>
+<h2 id="sec-5">2.5 深入：ARM64 的四级页表怎么走</h2>
 <p>虚拟地址被切成四段，每段是一个页表的索引：PGD（bit 39–47）、PUD（30–38）、PMD（21–29）、PTE（12–20），最低 12 位是页内偏移。任何一级的表项无效，就会触发缺页。</p>
 <div class="tbl"><table>
 <thead><tr><th>级别</th><th>覆盖范围</th><th>常见大小</th></tr></thead><tbody>
@@ -135,7 +142,7 @@ flush_tlb_range(vma, start, end);            // 别忘了刷 TLB</code></pre>
 <tr><td>PMD</td><td>2MB</td><td>4K（或大页）</td></tr>
 <tr><td>PTE</td><td>4KB</td><td>4K</td></tr>
 </tbody></table></div>
-<h2>2.6 实战：把一个虚拟地址翻译成物理地址</h2>
+<h2 id="sec-6">2.6 实战：把一个虚拟地址翻译成物理地址</h2>
 <ol><li>读 <code>/proc/self/pagemap</code>，按 <code>vaddr / 4096 * 8</code> 定位表项。</li><li>取低 55 位作为 PFN（bit 0–54），乘 4096 加上页内偏移得到物理地址；bit 63 是 present。</li><li><strong>权限门槛</strong>：自 Linux 4.0 起，能否看到真实 PFN 由 <code>CAP_SYS_ADMIN</code>（init user namespace）决定——<strong>普通进程连读自己的 pagemap 也只会得到 PFN=0</strong>，只能看到 present / soft-dirty 等标志位。</li></ol>
 <aside class="note"><span class="note-tag">要点</span><div>这条很关键：如果你想用“两个进程读同一虚拟地址、比 PFN 是否相同”来验证 Text Shadow，在普通 adb shell（非 root、无 CAP_SYS_ADMIN）下会两边都读到 0，从而得出错误结论。验证时必须以 root 身份、或在内核模块里直接读页表。</div></aside>
 <div class="code">
@@ -148,7 +155,8 @@ phys = pfn * 4096 + (vaddr &amp; 0xfff);</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>为什么要会这个：验证 Text Shadow 是否真的“只改了目标进程的 PTE”，最直接的方法就是把两个进程的同一虚拟地址翻译成物理地址，看 PFN 是否不同。</div></aside>
-<h2>2.7 原理推演：为什么“共享代码页”这么难改</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>同一份代码被几十个进程共用，物理上只有一份。你要改其中一个进程看到的内容，不能就地改——那等于把所有人的代码都改了。只能给它单独做一份副本，再把它的映射指过去。</p><p>麻烦就在「指过去」这一步：映射是内核管的，页表是硬件读的，改完还得让所有核上的缓存都认这个新说法。这一节讲的就是这三层为什么要一起动。读完你才知道为什么这类方案总在「一致性」上翻车。</p></div></aside>
+<h2 id="sec-7">2.7 原理推演：为什么“共享代码页”这么难改</h2>
 <p>因为代码页被多个进程共享，且被标记为只读 + 可执行。想改它，必须同时满足：找到所有映射它的进程、临时改权限、处理并发执行、改完再恢复。任何一步做错，就是崩溃或暴露。</p>
 <div class="tbl"><table>
 <thead><tr><th>难点</th><th>原因</th><th>解法</th></tr></thead><tbody>
@@ -157,7 +165,8 @@ phys = pfn * 4096 + (vaddr &amp; 0xfff);</code></pre>
 <tr><td>并发执行</td><td>改的瞬间有人在跑</td><td>停核或中转</td></tr>
 </tbody></table></div>
 <p>Text Shadow 的巧妙之处在于：它不解决“共享”这个问题，而是<strong>绕开</strong>它——让“共享”继续存在，只是让目标进程看到不同的页。</p>
-<h2>2.8 数据细节：一个 PTE 的位布局</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>页表项就是一组比特，每一位或每一段都有含义：这段指向哪一页、能不能写、能不能执行、是不是脏了、有没有被访问过。</p><p>这张表把位置和含义对上。它是这类工作里查得最频繁的一张表——改权限、判断状态、算物理地址，全都要回来翻它。看的时候注意「不同层级上同一位的语义可能不同」。</p></div></aside>
+<h2 id="sec-8">2.8 数据细节：一个 PTE 的位布局</h2>
 <div class="code">
 <div class="code-title">ARM64 的 PTE 关键位（4KB 页，L3 表项）</div>
 <pre><code>bit 0     valid
@@ -174,7 +183,7 @@ bit 54    UXN（用户态不可执行）</code></pre>
 </div>
 <p>注意两位的<strong>极性相反</strong>：AP[1]（bit6）为 <strong>1</strong> 才是“EL0 可访问”，AP[2]（bit7）为 <strong>1</strong> 才是“只读”。在 Linux 里它们分别对应 <code>PTE_USER</code> 与 <code>PTE_RDONLY</code>。写代码时把两位搞反，表现就是“要么用户态访问直接 fault，要么改了权限却仍然是只读”。</p>
 <p>“双 PFN”改的就是 bit 12–47。改完必须刷 TLB，否则 CPU 还用旧的翻译。</p>
-<aside class="note"><span class="note-tag">要点</span><div>以上是 4KB 粒度的 L3 表项。若是 L2 块描述符（2MB 大页），地址位会到 bit 12–47 之外还多出bit 29 附近的 contiguous hint，写代码时按页大小分别处理，不要混用。</div></aside>
+<aside class="note"><span class="note-tag">要点</span><div>以上是 4KB 粒度的 L3 表项（page descriptor）。若是 L2 块描述符（2MB 大页），地址位仍在 bit 12–47，变的是 bit 1 的语义：L0–L2 上 bit1=0 表示“块”、bit1=1 表示“下一级表”，只有 L3 才固定是页。另外“连续映射提示”是 <strong>bit 52 的 Contiguous</strong>（要求一组相邻表项的该位一致），不在 bit 29 附近。写代码时按页大小分别处理，不要混用。</div></aside>
 <figure class="anim" data-delay="820" data-n="5" data-key="a_cow">
   <div class="anim-head">
     <span class="anim-badge">动图演示</span>
@@ -203,13 +212,13 @@ bit 54    UXN（用户态不可执行）</code></pre>
   <noscript><p>动图需要 JavaScript；也可查看 <a href="../assets/anim/a_cow.gif">GIF 自动播放版</a>。</p></noscript>
 </figure>
 <script type="application/json" class="anim-data">["fork 完成：父子 PTE 指向同一物理页，标记 COW 只读", "子进程尝试写，CPU 报 permission fault", "进入 do_page_fault，查 VMA 确认是 COW 可写页", "分配新物理页、复制内容、改写子进程 PTE", "返回用户态重跑写指令，这次成功写入自己的副本"]</script>
-<h2>盯着一个刚 fork 出来的进程，看它第一次写内存</h2>
+<h2 id="sec-9">盯着一个刚 fork 出来的进程，看它第一次写内存</h2>
 <p>前零点几微秒风平浪静：父子俩的页表项一模一样，指向同一张物理页，权限都是只读。下一瞬，子进程往一个全局变量里存了个 1——CPU 立刻把这条 store 拦下来，甩给内核一个同步数据异常。这一拍，就是 COW 从<strong>承诺</strong>变成<strong>字节</strong>的时刻。</p>
 <p>内核里没有谁在提前复制。fork 只做了一件事：把双方的页表项都标成只读，然后记一笔这张页还欠着谁。真正掏钱买新物理页，要一直拖到有人动手写。整个内存管理的戏剧性都在这句话里：先许诺，后兑现。</p>
-<h2>一次写操作，五拍走完 COW</h2>
+<h2 id="sec-10">一次写操作，五拍走完 COW</h2>
 <ol><li><strong>CPU</strong> 对 <strong>页表项</strong> 做地址翻译：store 指令查到 PTE 有效但没有写权限 → 结果：触发同步异常，把出错虚拟地址写进 <code>FAR_EL1</code>，原因写进 <code>ESR_EL1</code>。</li><li><strong>`do_page_fault`</strong> 对 <strong>`mm_struct`</strong> 查账：拿 <code>FAR_EL1</code> 里的地址去 VMA 树里找归属区间 → 结果：确认这次写落在合法的可写 VMA 内；找不到就直接送 SIGSEGV。</li><li><strong>`handle_mm_fault`</strong> 对 <strong>页表</strong> 逐层补齐：PGD、PUD、PMD、PTE，最后走进 <code>wp_page_copy</code> 分支 → 结果：判定这是写时复制，不是从磁盘换入。</li><li><strong>`wp_page_copy`</strong> 对 <strong>物理页</strong> 分配新页：从 buddy 拿一页，把旧页原样拷过来，读 <code>page_mapcount</code> 判断还有几个人共享 → 结果：只有写者拿到可写的新页，旧页继续留给父进程和其它共享者。</li><li><strong>`set_pte_at` 加 `flush_tlb_range`</strong> 对 <strong>CPU 的 TLB</strong> 收尾：把写者 PTE 的 PFN 换成新页并置可写位，再刷掉旧翻译 → 结果：那条 store 重新执行一遍，这次成功；父进程读到的仍是原来的值。</li></ol>
 <p>第 4 拍有个容易漏掉的分支：如果 <code>mapcount</code> 已经等于 1，内核不会分配新页，直接把原 PTE 的可写位打开就返回，这叫复用。所以 COW 的代价不是每次写都复制，而是<strong>最后一次写反而免费</strong>。这类不需要 I/O 的缺页会记进 <code>/proc/self/stat</code> 的 <code>min_flt</code> 字段。</p>
-<h2>一段虚拟地址是怎么长成物理页的</h2>
+<h2 id="sec-11">一段虚拟地址是怎么长成物理页的</h2>
 <ol><li><strong>`mmap`</strong> 对 <strong>`mm_struct`</strong> 只画边界：新建一个 <code>vm_area_struct</code>，填好起止地址、flags、后备文件，挂进 maple tree → 结果：一段虚拟区间存在了，但一个物理页都没分配。</li><li><strong>首次读</strong> 对 <strong>PTE</strong> 触发缺页：若 VMA 是匿名且只读，内核统一映射到全局 <code>ZERO_PAGE</code> → 结果：读出一串 0，全系统只花一页物理内存。</li><li><strong>首次写</strong> 对 <strong>buddy</strong> 才真要页：分配匿名页、清零、填 PTE → 结果：<code>/proc/self/smaps</code> 里的 <code>Anonymous</code> 与 <code>Private_Dirty</code> 开始上涨。</li><li><strong>文件映射</strong> 对 <strong>page cache</strong> 借页：把文件 <code>address_space</code> 里已有的物理页直接映射进来，标成干净页 → 结果：多个进程映射同一个 so，RSS 各算一遍，PSS 却按映射者数量均摊。</li><li><strong>`exit_mmap`</strong> 对 <strong>VMA 树</strong> 反向清账：逐条摘 VMA、清 PTE、把物理页引用计数减回去 → 结果：页还给 buddy，进程消失后内存统计归零。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>/proc/self/smaps 字段</th><th>它统计什么</th><th>隐藏手段为什么会露</th></tr></thead><tbody>
@@ -220,7 +229,7 @@ bit 54    UXN（用户态不可执行）</code></pre>
 <tr><td>Anonymous</td><td>无文件后备的匿名映射</td><td>mmap 出来的跳板与 shellcode 无处可藏</td></tr>
 <tr><td>VmFlags</td><td>VMA 的 rd、wr、ex、mr、mw 等标志</td><td>一段 rwxp 匿名区间本身就是强信号</td></tr>
 </tbody></table></div>
-<h2>把一次 COW 兑现录成数字</h2>
+<h2 id="sec-12">把一次 COW 兑现录成数字</h2>
 <div class="code">
 <div class="code-title">动手：用缺页计数与账本交叉验证</div>
 <pre><code># 1. 基准：/proc/self/stat 第 10 字段是 min_flt，第 12 字段是 maj_flt

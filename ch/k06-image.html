@@ -102,7 +102,8 @@
 <img src="../assets/k06_btf.png" alt="图 K6-1" width="1080">
 <figcaption><b>图 K6-1</b><span>类型信息的五种来源与取 offset 的三条路</span></figcaption>
 </figure>
-<h2>6.1 五种类型信息来源</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>你按手里的头文件算出某个字段在偏移 32，写进代码，装到设备上就崩——因为那台设备的内核是另一个版本，字段挪到了 40。崩的位置还离你改的地方很远，很难查。</p><p>真正的麻烦不是「偏移算错了」，而是「你根本不知道对面长什么样」。所以解法不是更小心地算，而是让内核自己把类型信息带出来，运行时现问现取，不再把偏移写死。</p><p>这一章讲类型信息有哪五种来源、取字段偏移有哪三条路、以及为什么 BTF 是现在的最优解。</p></div></aside>
+<h2 id="sec-1">6.1 五种类型信息来源</h2>
 <div class="tbl"><table>
 <thead><tr><th>来源</th><th>内容</th><th>优缺点</th></tr></thead><tbody>
 <tr><td>vmlinux</td><td>带符号的 ELF</td><td>最全，体积大</td></tr>
@@ -111,7 +112,7 @@
 <tr><td>DWARF</td><td>完整调试信息</td><td>最详细，最大</td></tr>
 <tr><td>BTF</td><td>精简类型信息</td><td>内核自带，CO-RE 基础</td></tr>
 </tbody></table></div>
-<h2>6.2 取 offset 的三条路</h2>
+<h2 id="sec-2">6.2 取 offset 的三条路</h2>
 <ol><li><strong>编译期</strong>：<code>offsetof(struct task_struct, cred)</code>。最可靠，但需要对应版本的头文件。</li><li><strong>BTF 运行期</strong>：读 <code>/sys/kernel/btf/vmlinux</code>，按名字查字段偏移。版本无关。</li><li><strong>特征扫描</strong>：在 vmlinux 里按指令模式定位函数，再反推偏移。通用但必须做验证。</li></ol>
 <div class="code">
 <div class="code-title">两条常用命令</div>
@@ -120,9 +121,10 @@ nm -n vmlinux | grep -E &#x27; (init_task|commit_creds)$&#x27;</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>工程原则：<strong>能算相对偏移就不要写死绝对地址；能读 BTF 就不要硬编码结构体大小</strong>。这样换内核版本时改动面最小。</div></aside>
-<h2>6.3 本章自测</h2>
+<h2 id="sec-3">6.3 本章自测</h2>
 <ul><li>BTF 与 DWARF 的区别是什么？</li><li>为什么 CO-RE 依赖 BTF？</li><li>三条取 offset 的路各自的风险是什么？</li><li>如果目标内核没有 BTF，你会怎么办？</li></ul>
-<h2>6.4 深入：BTF 里到底有什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核自己带了一份「我的结构体长什么样」的说明书：每个类型有哪些字段、每个字段多大、在哪个位置。它不是给人读的，是给程序运行时查的。</p><p>有了这份说明书，同一份程序换个内核版本也能自己找到字段。这一节讲这份说明书里到底写了什么，读完你就明白为什么没有它，很多内核工具根本没法做到「一次编译、多版本可用」。</p></div></aside>
+<h2 id="sec-4">6.4 深入：BTF 里到底有什么</h2>
 <p>BTF 把类型信息压缩成一种紧凑的格式，包含：结构体/联合体的成员与偏移、枚举值、函数原型、以及 <code>BTF_KIND_FUNC</code> / <code>BTF_KIND_VAR</code> 等类型。它不含源码行号（那是 DWARF 的活），因此体积小得多。</p>
 <div class="tbl"><table>
 <thead><tr><th>BTF 类型</th><th>内容</th><th>用途</th></tr></thead><tbody>
@@ -132,7 +134,7 @@ nm -n vmlinux | grep -E &#x27; (init_task|commit_creds)$&#x27;</code></pre>
 <tr><td>VAR</td><td>全局变量</td><td>定位符号</td></tr>
 <tr><td>TYPEDEF</td><td>别名</td><td>可读性</td></tr>
 </tbody></table></div>
-<h2>6.5 实战：用 bpftool 查一个字段偏移</h2>
+<h2 id="sec-5">6.5 实战：用 bpftool 查一个字段偏移</h2>
 <div class="code">
 <div class="code-title">查 task_struct 的 cred 偏移</div>
 <pre><code>bpftool btf dump file /sys/kernel/btf/vmlinux format c \
@@ -143,7 +145,8 @@ bpftool btf dump file /sys/kernel/btf/vmlinux | less</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
 <aside class="note"><span class="note-tag">要点</span><div>提示：<code>format c</code> 会输出一个巨大的 C 头文件，适合“人读”；<code>raw</code> 格式带明确的偏移数字，适合脚本解析。</div></aside>
-<h2>6.6 原理推演：CO-RE 到底“一次编译”了什么</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>内核结构体的字段位置每个版本都可能变。传统做法是给每个版本各编一份，CO-RE 换个思路：编译时只记「我要第几个字段、叫什么名」，到运行时再照着当前内核的描述去对位置。</p><p>所以「一次编译」省掉的是重复劳动，不是省掉了适配——适配被挪到了运行时的改动里。这一节讲清这份描述从哪来。读完你就知道为什么没有它，同一个程序换个内核就跑不起来。</p></div></aside>
+<h2 id="sec-6">6.6 原理推演：CO-RE 到底“一次编译”了什么</h2>
 <p>CO-RE 的核心思想是：编译时记录“相对偏移的表达式”，运行时用 BTF 把表达式求值成实际偏移。所以同一个二进制在不同内核上都能跑——因为它不写死偏移，而是“现场算”。</p>
 <div class="tbl"><table>
 <thead><tr><th>阶段</th><th>产物</th><th>依赖</th></tr></thead><tbody>
@@ -152,7 +155,8 @@ bpftool btf dump file /sys/kernel/btf/vmlinux | less</code></pre>
 <tr><td>执行</td><td>直接内存访问</td><td>无</td></tr>
 </tbody></table></div>
 <p>这也是为什么“没有 BTF 的老内核”用不了 CO-RE：缺了运行时的类型信息，表达式就没法求值。</p>
-<h2>6.7 数据细节：一个 BTF 类型条目的结构</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>那份运行时可查的说明书，是由一条条记录组成的。每条记录说「有个类型，叫什么、多大、有哪些成员」。记录本身也是紧凑排布的。</p><p>这张表讲一条记录里各字段的位置。它的用处是：想自己解析这份说明书、或者想不通某个字段为什么读出来是那个值时，回来对着看。</p></div></aside>
+<h2 id="sec-7">6.7 数据细节：一个 BTF 类型条目的结构</h2>
 <div class="code">
 <div class="code-title">BTF 类型条目（简化）</div>
 <pre><code>struct btf_type {
@@ -166,7 +170,8 @@ struct btf_member {
 };</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.8 深入：为什么 BTF 比 DWARF 小这么多</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>两份说明书描述的是同一件事，体积差一个数量级。原因是它们的目标不同：一份是给「调试人」看的，什么都要；一份是给「程序运行时」查的，够用就行。</p><p>这一节讲这个取舍。读完你就明白为什么能塞进内核的东西必须精简，也明白精简之后丢了哪些能力。</p></div></aside>
+<h2 id="sec-8">6.8 深入：为什么 BTF 比 DWARF 小这么多</h2>
 <p>因为 BTF 只保留“类型结构”，不保留“源码位置、变量名作用域、宏展开”等调试信息。对于“取 offset”这个需求，那些信息完全是冗余的。</p>
 <div class="tbl"><table>
 <thead><tr><th>信息</th><th>DWARF</th><th>BTF</th></tr></thead><tbody>
@@ -176,7 +181,8 @@ struct btf_member {
 <tr><td>体积（vmlinux）</td><td>数百 MB</td><td>几 MB</td></tr>
 </tbody></table></div>
 <p>所以“用 BTF 取 offset”是标准做法；只有需要“源码级调试”时才用 DWARF。</p>
-<h2>6.9 深入：没有 BTF 时的三条退路</h2>
+<aside class="plain"><span class="plain-tag">说人话</span><div><p>不是每台设备都带着那份说明书。没有它，就得自己想办法把字段位置找出来：要么手写死、要么从别处抠、要么运行时效验。</p><p>这一节比较这三条路的稳和脆。读完你能按「设备可控不可控」直接选一条，而不是先假设说明书一定在。</p></div></aside>
+<h2 id="sec-9">6.9 深入：没有 BTF 时的三条退路</h2>
 <ol><li><strong>用 System.map + 硬编码偏移</strong>：版本一变就失效。</li><li><strong>用特征扫描</strong>：在 vmlinux 里找指令模式，反推结构。工作量中等。</li><li><strong>用运行时探测</strong>：写一小段代码，试探性地读某个偏移，看是否得到合理值。</li></ol>
 <div class="code">
 <div class="code-title">运行时探测的思路</div>
@@ -184,20 +190,20 @@ struct btf_member {
 // 试探几个候选偏移，选“读出来像 uid”的那个</code></pre>
 <button class="copy" type="button">复制</button>
 </div>
-<h2>6.10 实战：验证 offset 是否正确的三种方法</h2>
+<h2 id="sec-10">6.10 实战：验证 offset 是否正确的三种方法</h2>
 <div class="tbl"><table>
 <thead><tr><th>方法</th><th>可靠性</th><th>成本</th></tr></thead><tbody>
 <tr><td>与 BTF 对比</td><td>高</td><td>低</td></tr>
 <tr><td>读出来的值是否合理</td><td>中</td><td>低</td></tr>
 <tr><td>改值看行为是否变化</td><td>高</td><td>中</td></tr>
 </tbody></table></div>
-<h2>换一颗内核，一行偏移打崩整个模块</h2>
+<h2 id="sec-11">换一颗内核，一行偏移打崩整个模块</h2>
 <p>同一份内核模块，在 5.10 的设备上跑得好好的，换到 5.15 一加载就把进程打崩。差异只有一行：<code>task_struct</code> 里插了一个新字段，<code>cred</code> 的偏移往后挪了 8 字节。你的代码还在按老偏移读，读出来的是一个指向别处的指针。写内核代码最贵的一课，不是算法，是<strong>结构体对不上</strong>。</p>
 <p>BTF 就是给这件事兜底的：内核把自己身上每个结构体的名字、成员名、成员偏移，压缩成一张类型表，随运行内核一起挂在 <code>/sys/kernel/btf/vmlinux</code>。它不是外部文件，不会版本错配——因为它就是这颗内核编译时自己生成的那一份。</p>
-<h2>从 DWARF 到 CO-RE，一张类型表的五拍</h2>
+<h2 id="sec-12">从 DWARF 到 CO-RE，一张类型表的五拍</h2>
 <ol><li><strong>`pahole`</strong> 对 <strong>带 DWARF 的 vmlinux</strong> 做去重与裁剪：丢掉局部变量、行号、宏，只保留结构体、联合体、枚举、typedef 与函数原型的类型图 → 结果：几十 MB 的调试信息压成几 MB 的 <code>.BTF</code> ELF section。</li><li><strong>链接与启动</strong> 对 <strong>`/sys/kernel/btf/vmlinux`</strong> 暴露这张表：内核把 BTF 数据挂成只读的二进制属性 → 结果：用户态按字节读就能拿到当前内核的类型图，与 KASLR 的 slide 完全无关。</li><li><strong>`bpftool btf dump ... format c`</strong> 对 <strong>类型表</strong> 反向生成头文件：产出只含类型定义、不含任何宏的 <code>vmlinux.h</code> → 结果：编译 CO-RE 程序时不必再去找对应版本的内核头文件。</li><li><strong>libbpf 的 CO-RE 重定位</strong> 对 <strong>字段访问</strong> 改写法：代码里写 <code>task-&gt;cred</code>，加载器查 BTF 拿到这个成员在结构体里的偏移，再填进实际指令 → 结果：换内核版本时<strong>不用重编译</strong>，只重算一次重定位。</li><li><strong>运行期兜底</strong> 对 <strong>失败路径</strong> 降级：目标内核没 BTF 就退回编译期 <code>offsetof</code> 或特征扫描，并把探测结果写进日志 → 结果：工具不至于直接崩，而是明确报出缺哪份类型信息。</li></ol>
 <p>第 1 拍要划清界限：BTF <strong>不含</strong>函数局部变量、行号、宏和常量值。它能回答 cred 在偏移多少、是什么类型，回答不了这个常量是多少或这行源码在哪。要那些得回到 DWARF 与 vmlinux；要常量，通常还得靠 K07 的符号与特征扫描。把 BTF 当成万能调试信息，是第二个常见误会。</p>
-<h2>取一个字段偏移的三条路和一个锚点</h2>
+<h2 id="sec-13">取一个字段偏移的三条路和一个锚点</h2>
 <ol><li><strong>编译期 `offsetof`</strong> 对 <strong>对应版本头文件</strong> 求值：编译时就把偏移烘进指令 → 结果：最快最准，但换一颗内核就全错，必须一版一编。</li><li><strong>BTF 运行期</strong> 对 <strong>类型表</strong> 按名字查询：拿到 <code>BTF_KIND_STRUCT</code>，遍历 <code>btf_member</code> 读 <code>offset</code> → 结果：版本无关；注意位域成员的 offset 高位还打包了位偏移，得先拆再用。</li><li><strong>符号锚点</strong> 对 <strong>`init_task`</strong> 取地址：<code>/proc/kallsyms</code> 或 <code>nm -n vmlinux</code> 拿到静态链接地址，再叠加 K07 的 slide → 结果：在没有 BTF 的内核里也能读出实际字段值，反推布局。</li><li><strong>特征扫描</strong> 对 <strong>剥了符号的 Image</strong> 找指令模式：定位 <code>commit_creds</code> 之类的调用点，从立即数反推访问偏移 → 结果：最通用，但必须用上一步的结果做交叉验证，否则会把相似指令认错。</li><li><strong>三层探测</strong> 对 <strong>工具启动流程</strong> 收口：先探测 BTF 是否存在，再探测关键符号，最后决定走哪条路并写日志 → 结果：任何一层失败都能优雅降级，而不是拿一个野指针去解引用。</li></ol>
 <div class="tbl"><table>
 <thead><tr><th>信息源</th><th>能回答什么</th><th>回答不了什么</th><th>随内核版本变吗</th></tr></thead><tbody>
@@ -208,7 +214,7 @@ struct btf_member {
 <tr><td>Image（剥离符号）</td><td>指令字节序列</td><td>任何名字与类型</td><td>只能靠特征扫描</td></tr>
 <tr><td>运行期 /proc/kallsyms</td><td>当前符号的运行地址</td><td>字段偏移，因为不含类型信息</td><td>每次开机随 slide 变</td></tr>
 </tbody></table></div>
-<h2>从内核身上直接把偏移读出来</h2>
+<h2 id="sec-14">从内核身上直接把偏移读出来</h2>
 <div class="code">
 <div class="code-title">动手：BTF 优先，没 BTF 就退回符号</div>
 <pre><code># 1. 先确认这颗内核有没有 BTF
